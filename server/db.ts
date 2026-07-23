@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,232 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// Routes queries
+export async function getAllRoutes() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(routes);
+}
+
+export async function getRouteById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(routes).where(eq(routes.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+// Posts queries
+export async function getPostsByRouteId(routeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(posts).where(eq(posts.routeId, routeId)).orderBy(posts.order);
+}
+
+export async function getPostById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+// Supervisor Routes queries
+export async function createSupervisorRoute(supervisorId: number, routeId: number, date: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(supervisorRoutes).values({
+    supervisorId,
+    routeId,
+    date,
+    status: 'pending',
+  });
+  
+  return (result as any).insertId || 0;
+}
+
+export async function getSupervisorRouteById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(supervisorRoutes).where(eq(supervisorRoutes.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getSupervisorRoutesToday(supervisorId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  return await db.select().from(supervisorRoutes)
+    .where(and(
+      eq(supervisorRoutes.supervisorId, supervisorId),
+      gte(supervisorRoutes.date, today),
+      lte(supervisorRoutes.date, tomorrow)
+    ));
+}
+
+export async function updateSupervisorRoute(id: number, updates: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return await db.update(supervisorRoutes)
+    .set(updates)
+    .where(eq(supervisorRoutes.id, id));
+}
+
+// Visit Checklists queries
+export async function createVisitChecklist(supervisorRouteId: number, postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(visitChecklists).values({
+    supervisorRouteId,
+    postId,
+    status: 'pending',
+  });
+  
+  return (result as any).insertId || 0;
+}
+
+export async function getVisitChecklistsByRoute(supervisorRouteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(visitChecklists)
+    .where(eq(visitChecklists.supervisorRouteId, supervisorRouteId));
+}
+
+export async function getVisitChecklistById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(visitChecklists).where(eq(visitChecklists.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function updateVisitChecklist(id: number, updates: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return await db.update(visitChecklists)
+    .set(updates)
+    .where(eq(visitChecklists.id, id));
+}
+
+// Checklist Items queries
+export async function createChecklistItem(visitChecklistId: number, category: string, description: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(checklistItems).values({
+    visitChecklistId,
+    category,
+    description,
+  });
+  
+  return (result as any).insertId || 0;
+}
+
+export async function getChecklistItemsByVisit(visitChecklistId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(checklistItems)
+    .where(eq(checklistItems.visitChecklistId, visitChecklistId));
+}
+
+export async function updateChecklistItem(id: number, updates: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return await db.update(checklistItems)
+    .set(updates)
+    .where(eq(checklistItems.id, id));
+}
+
+// Supervisor Locations queries
+export async function saveSupervisorLocation(supervisorId: number, supervisorRouteId: number | null, latitude: number, longitude: number, accuracy?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const values: any = {
+    supervisorId,
+    latitude: latitude.toString(),
+    longitude: longitude.toString(),
+  };
+  
+  if (supervisorRouteId !== null) {
+    values.supervisorRouteId = supervisorRouteId;
+  }
+  
+  if (accuracy !== undefined) {
+    values.accuracy = accuracy.toString();
+  }
+  
+  return await db.insert(supervisorLocations).values(values);
+}
+
+export async function getLatestSupervisorLocation(supervisorId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(supervisorLocations)
+    .where(eq(supervisorLocations.supervisorId, supervisorId))
+    .orderBy(desc(supervisorLocations.recordedAt))
+    .limit(1);
+  
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getAllSupervisorsLatestLocations() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get the latest location for each supervisor
+  return await db.select().from(supervisorLocations)
+    .orderBy(desc(supervisorLocations.recordedAt));
+}
+
+// Post Visit History queries
+export async function recordPostVisit(postId: number, supervisorId: number, observations?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const values: any = {
+    postId,
+    supervisorId,
+    visitedAt: new Date(),
+  };
+  
+  if (observations) {
+    values.observations = observations;
+  }
+  
+  return await db.insert(postVisitHistory).values(values);
+}
+
+export async function getLastPostVisit(postId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(postVisitHistory)
+    .where(eq(postVisitHistory.postId, postId))
+    .orderBy(desc(postVisitHistory.visitedAt))
+    .limit(1);
+  
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getPostVisitsByDateRange(startDate: Date, endDate: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(postVisitHistory)
+    .where(and(
+      gte(postVisitHistory.visitedAt, startDate),
+      lte(postVisitHistory.visitedAt, endDate)
+    ))
+    .orderBy(desc(postVisitHistory.visitedAt));
+}
