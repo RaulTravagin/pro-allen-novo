@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, MapPin, Clock, Fuel, AlertCircle } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 export default function SupervisorDashboard() {
@@ -37,9 +38,11 @@ export default function SupervisorDashboard() {
         supervisorRouteId: result as number,
       });
       
+      toast.success("Rota criada com sucesso!");
       // Navigate to route details
       window.location.href = `/supervisor/route/${result}`;
     } catch (error) {
+      toast.error("Erro ao criar rota. Tente novamente.");
       console.error("Error starting route:", error);
     }
   };
@@ -47,6 +50,8 @@ export default function SupervisorDashboard() {
   const handleContinueRoute = () => {
     if (todayRoute) {
       window.location.href = `/supervisor/route/${todayRoute.id}`;
+    } else {
+      toast.error("Nenhuma rota ativa encontrada");
     }
   };
 

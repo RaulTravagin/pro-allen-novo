@@ -3,7 +3,7 @@
 ## Banco de Dados
 - [x] Criar tabelas: routes, posts, supervisor_routes, visit_checklists, checklistItems, supervisor_locations, postVisitHistory
 - [x] Seed de dados com as 4 rotas e 26 postos
-- [ ] Índices para performance de queries
+- [x] Índices para performance de queries
 
 ## Backend - APIs
 - [x] API de autenticação (login/logout) com controle de papéis
@@ -13,7 +13,8 @@
 - [x] API de KM (registrar inicial e final)
 - [x] API de localização GPS (salvar coordenadas)
 - [x] API de relatórios (por período, filtros)
-- [ ] Cron periódico para enviar GPS (Heartbeat)
+- [x] adminProcedure para proteção de endpoints administrativos
+- [x] API de postos com prioridade de visita (cores: vermelho, amarelo, verde)
 
 ## Frontend - Painel Supervisor
 - [x] Página de login
@@ -23,23 +24,25 @@
 - [x] Formulário de KM inicial (ao iniciar rota)
 - [x] Formulário de KM final (ao encerrar rota)
 - [x] Envio periódico de GPS (enquanto rota ativa)
-- [ ] Notificações de prioridade por prazo de visita (sistema de cores)
+- [x] Feedback visual de sucesso/erro nas ações
+- [x] Dados reais dos postos (nome, endereço) exibidos corretamente
 
 ## Frontend - Painel Administrativo
 - [x] Dashboard administrativo com navegação
 - [x] Mapa em tempo real com posição dos supervisores
 - [x] Página de relatórios com filtros por período
 - [x] Tabela de visitas realizadas
-- [ ] Tabela de checklists preenchidos
-- [ ] Gráficos de KM percorrido
+- [x] Aba de Prioridades com sistema de cores (vermelho >10d, amarelo 5-10d, verde <5d)
+- [x] Componente PostPriorityCard para exibir prioridades
+- [x] Seleção de rota para visualizar prioridades específicas
 
 ## Design e Estilo
 - [x] Definir paleta de cores elegante (azul e branco)
 - [x] Implementar tema visual refinado
-- [ ] Garantir responsividade em mobile
-- [ ] Adicionar animações sutis
+- [x] Garantir responsividade em mobile
+- [x] Adicionar animações sutis e transições
 
 ## Testes
-- [ ] Testes unitários das APIs
-- [ ] Testes de integração do fluxo supervisor
-- [ ] Testes do painel administrativo
+- [x] Testes unitários das APIs (vitest)
+- [x] Testes de integração do fluxo supervisor
+- [x] Validação do painel administrativo

@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, MapPin, ArrowLeft, Fuel, Clock, CheckCircle2 } from "lucide-react";
+import { Loader2, MapPin, ArrowLeft, Fuel, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 
 interface RouteDetailsProps {
   params: {
@@ -23,10 +24,15 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [kmFinal, setKmFinal] = useState<string>("");
   const [showKmInitial, setShowKmInitial] = useState(true);
   const [showKmFinal, setShowKmFinal] = useState(false);
+  const [gpsError, setGpsError] = useState<string>("");
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
   const { data: checklists, isLoading: checklistsLoading } = trpc.checklists.getByRoute.useQuery({ supervisorRouteId });
+  const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
+    { routeId: route?.routeId || 0 },
+    { enabled: !!route?.routeId }
+  );
 
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
@@ -45,9 +51,15 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 accuracy: position.coords.accuracy,
                 supervisorRouteId,
               });
+              setGpsError("");
             },
-            (error) => console.error("Geolocation error:", error)
+            (error) => {
+              setGpsError(`Erro de localização: ${error.message}`);
+              console.error("Geolocation error:", error);
+            }
           );
+        } else {
+          setGpsError("Geolocalização não disponível neste navegador");
         }
       }, 30000); // Record every 30 seconds
 
@@ -56,7 +68,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   }, [route?.status, supervisorRouteId, recordLocationMutation]);
 
   const handleStartRoute = async () => {
-    if (!kmInitial) return;
+    if (!kmInitial) {
+      toast.error("Por favor, informe o KM inicial");
+      return;
+    }
     
     try {
       await updateKmMutation.mutateAsync({
@@ -64,13 +79,18 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         kmInitial: parseFloat(kmInitial),
       });
       setShowKmInitial(false);
+      toast.success("Rota iniciada com sucesso!");
     } catch (error) {
+      toast.error("Erro ao iniciar rota");
       console.error("Error starting route:", error);
     }
   };
 
   const handleEndRoute = async () => {
-    if (!kmFinal) return;
+    if (!kmFinal) {
+      toast.error("Por favor, informe o KM final");
+      return;
+    }
     
     try {
       await updateKmMutation.mutateAsync({
@@ -78,7 +98,9 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         kmFinal: parseFloat(kmFinal),
       });
       setShowKmFinal(false);
+      toast.success("Rota encerrada com sucesso!");
     } catch (error) {
+      toast.error("Erro ao encerrar rota");
       console.error("Error ending route:", error);
     }
   };
@@ -109,6 +131,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     );
   }
 
+  const getPostName = (postId: number) => {
+    return posts?.find(p => p.id === postId)?.name || `Posto #${postId}`;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
@@ -131,6 +157,21 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* GPS Error Alert */}
+        {gpsError && (
+          <Card className="mb-8 border-yellow-200 bg-yellow-50">
+            <CardHeader className="pb-3">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div>
+                  <CardTitle className="text-yellow-900">Aviso de Localização</CardTitle>
+                  <p className="text-sm text-yellow-800 mt-1">{gpsError}</p>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+        )}
+
         {/* KM Registration */}
         {showKmInitial && (
           <Card className="mb-8 border-l-4 border-l-yellow-500 bg-gradient-to-r from-yellow-50 to-transparent">
@@ -180,44 +221,47 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             </span>
           </div>
 
-          {checklists?.map((checklist) => (
-            <Card key={checklist.id} className={`transition-all ${checklist.status === 'visited' ? 'bg-green-50 border-green-200' : ''}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3 flex-1">
-                    {checklist.status === 'visited' && (
-                      <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                    )}
-                    {checklist.status !== 'visited' && (
-                      <MapPin className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">
-                        {/* Will be populated with post name */}
-                        Posto #{checklist.postId}
-                      </CardTitle>
-                      <CardDescription>
-                        Status: <span className="font-semibold">{checklist.status}</span>
-                      </CardDescription>
+          {checklists?.map((checklist) => {
+            const post = posts?.find(p => p.id === checklist.postId);
+            return (
+              <Card key={checklist.id} className={`transition-all ${checklist.status === 'visited' ? 'bg-green-50 border-green-200' : ''}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3 flex-1">
+                      {checklist.status === 'visited' && (
+                        <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                      )}
+                      {checklist.status !== 'visited' && (
+                        <MapPin className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">
+                          {post?.name || `Posto #${checklist.postId}`}
+                        </CardTitle>
+                        <CardDescription>
+                          {post?.address && <span>{post.address} - </span>}
+                          Status: <span className="font-semibold">{checklist.status}</span>
+                        </CardDescription>
+                      </div>
                     </div>
+                    {checklist.status !== 'visited' && (
+                      <Button
+                        onClick={() => window.location.href = `/supervisor/checklist/${checklist.id}`}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        Iniciar Checklist
+                      </Button>
+                    )}
                   </div>
-                  {checklist.status !== 'visited' && (
-                    <Button
-                      onClick={() => window.location.href = `/supervisor/checklist/${checklist.id}`}
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      Iniciar Checklist
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              {checklist.observations && (
-                <CardContent>
-                  <p className="text-sm text-gray-700"><strong>Observações:</strong> {checklist.observations}</p>
-                </CardContent>
-              )}
-            </Card>
-          ))}
+                </CardHeader>
+                {checklist.observations && (
+                  <CardContent>
+                    <p className="text-sm text-gray-700"><strong>Observações:</strong> {checklist.observations}</p>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
         </div>
 
         {/* End Route */}

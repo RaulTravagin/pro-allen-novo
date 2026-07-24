@@ -273,8 +273,18 @@ export async function getAllSupervisorsLatestLocations() {
   if (!db) return [];
   
   // Get the latest location for each supervisor
-  return await db.select().from(supervisorLocations)
+  const allLocations = await db.select().from(supervisorLocations)
     .orderBy(desc(supervisorLocations.recordedAt));
+  
+  // Group by supervisor and keep only the latest
+  const latestBySuper: Record<number, any> = {};
+  for (const loc of allLocations) {
+    if (!latestBySuper[loc.supervisorId]) {
+      latestBySuper[loc.supervisorId] = loc;
+    }
+  }
+  
+  return Object.values(latestBySuper);
 }
 
 // Post Visit History queries
@@ -317,4 +327,23 @@ export async function getPostVisitsByDateRange(startDate: Date, endDate: Date) {
       lte(postVisitHistory.visitedAt, endDate)
     ))
     .orderBy(desc(postVisitHistory.visitedAt));
+}
+
+// Helper function to calculate visit priority
+export function calculateVisitPriority(lastVisitDate: Date | null): { priority: 'red' | 'yellow' | 'green', daysSinceVisit: number } {
+  if (!lastVisitDate) {
+    return { priority: 'red', daysSinceVisit: 999 };
+  }
+  
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - lastVisitDate.getTime());
+  const daysSinceVisit = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (daysSinceVisit > 10) {
+    return { priority: 'red', daysSinceVisit };
+  } else if (daysSinceVisit > 5) {
+    return { priority: 'yellow', daysSinceVisit };
+  } else {
+    return { priority: 'green', daysSinceVisit };
+  }
 }

@@ -6,6 +6,14 @@ import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 
+// Admin-only procedure
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user?.role !== 'admin') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+  }
+  return next({ ctx });
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -29,6 +37,23 @@ export const appRouter = router({
     }),
     getPostsByRoute: publicProcedure.input(z.object({ routeId: z.number() })).query(async ({ input }) => {
       return await db.getPostsByRouteId(input.routeId);
+    }),
+    getPostsWithPriority: adminProcedure.input(z.object({ routeId: z.number() })).query(async ({ input }) => {
+      const posts = await db.getPostsByRouteId(input.routeId);
+      
+      const postsWithPriority = await Promise.all(posts.map(async (post) => {
+        const lastVisit = await db.getLastPostVisit(post.id);
+        const { priority, daysSinceVisit } = db.calculateVisitPriority(lastVisit?.visitedAt || null);
+        
+        return {
+          ...post,
+          lastVisitDate: lastVisit?.visitedAt || null,
+          priority,
+          daysSinceVisit,
+        };
+      }));
+      
+      return postsWithPriority;
     }),
   }),
 
@@ -185,14 +210,14 @@ export const appRouter = router({
         return await db.getLatestSupervisorLocation(input.supervisorId);
       }),
     
-    getAllLatest: protectedProcedure.query(async () => {
+    getAllLatest: adminProcedure.query(async () => {
       return await db.getAllSupervisorsLatestLocations();
     }),
   }),
 
   // Reports
   reports: router({
-    visitsByDateRange: protectedProcedure
+    visitsByDateRange: adminProcedure
       .input(z.object({ startDate: z.date(), endDate: z.date() }))
       .query(async ({ input }) => {
         return await db.getPostVisitsByDateRange(input.startDate, input.endDate);

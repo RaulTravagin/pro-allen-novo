@@ -3,20 +3,28 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapPin, Users, TrendingUp, AlertCircle, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { MapView } from "@/components/Map";
+import { PostPriorityCard } from "@/components/PostPriorityCard";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), end: new Date() });
+  const [selectedRouteId, setSelectedRouteId] = useState<string>("");
 
   // Queries
+  const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
   const { data: locations, isLoading: locationsLoading } = trpc.locations.getAllLatest.useQuery();
   const { data: reports, isLoading: reportsLoading } = trpc.reports.visitsByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
+  const { data: postsWithPriority, isLoading: postsLoading } = trpc.routes.getPostsWithPriority.useQuery(
+    { routeId: parseInt(selectedRouteId) },
+    { enabled: !!selectedRouteId }
+  );
 
   const handleMapReady = (map: google.maps.Map) => {
     if (!locations || locations.length === 0) return;
@@ -115,10 +123,14 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="map" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="map" className="flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               Mapa em Tempo Real
+            </TabsTrigger>
+            <TabsTrigger value="priority" className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              Prioridades
             </TabsTrigger>
             <TabsTrigger value="reports" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
@@ -169,6 +181,119 @@ export default function AdminDashboard() {
                     ))}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Priority Tab */}
+          <TabsContent value="priority" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Prioridades de Visita</CardTitle>
+                <CardDescription>
+                  Postos ordenados por urgência de visita
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Selecione uma Rota</label>
+                  <Select value={selectedRouteId} onValueChange={setSelectedRouteId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Selecione uma rota..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {routes?.map((route) => (
+                        <SelectItem key={route.id} value={route.id.toString()}>
+                          {route.name} - {route.region}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedRouteId && (
+                  <div className="space-y-3 mt-6">
+                    {postsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                      </div>
+                    ) : (
+                      <>
+                        {/* Red Priority (Critical) */}
+                        {postsWithPriority?.filter(p => p.priority === 'red').length ? (
+                          <div>
+                            <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                              Críticos (Mais de 10 dias sem visita)
+                            </h4>
+                            <div className="space-y-2">
+                              {postsWithPriority?.filter(p => p.priority === 'red').map(post => (
+                                <PostPriorityCard
+                                  key={post.id}
+                                  name={post.name}
+                                  address={post.address}
+                                  lastVisitDate={post.lastVisitDate}
+                                  priority="red"
+                                  daysSinceVisit={post.daysSinceVisit}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Yellow Priority (Attention) */}
+                        {postsWithPriority?.filter(p => p.priority === 'yellow').length ? (
+                          <div>
+                            <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                              Atenção (5-10 dias sem visita)
+                            </h4>
+                            <div className="space-y-2">
+                              {postsWithPriority?.filter(p => p.priority === 'yellow').map(post => (
+                                <PostPriorityCard
+                                  key={post.id}
+                                  name={post.name}
+                                  address={post.address}
+                                  lastVisitDate={post.lastVisitDate}
+                                  priority="yellow"
+                                  daysSinceVisit={post.daysSinceVisit}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Green Priority (On Track) */}
+                        {postsWithPriority?.filter(p => p.priority === 'green').length ? (
+                          <div>
+                            <h4 className="font-semibold text-green-900 mb-2 flex items-center gap-2">
+                              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                              Em Dia (Menos de 5 dias)
+                            </h4>
+                            <div className="space-y-2">
+                              {postsWithPriority?.filter(p => p.priority === 'green').map(post => (
+                                <PostPriorityCard
+                                  key={post.id}
+                                  name={post.name}
+                                  address={post.address}
+                                  lastVisitDate={post.lastVisitDate}
+                                  priority="green"
+                                  daysSinceVisit={post.daysSinceVisit}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {!postsWithPriority?.length && (
+                          <div className="text-center py-8 text-gray-600">
+                            Nenhum posto encontrado para esta rota
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
