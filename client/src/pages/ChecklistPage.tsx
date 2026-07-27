@@ -5,8 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface ChecklistPageProps {
   params: {
@@ -19,6 +21,8 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   const checklistId = parseInt(params.checklistId);
   
   const [observations, setObservations] = useState<string>("");
+  const [arrivalTime, setArrivalTime] = useState<string>("");
+  const [departureTime, setDepartureTime] = useState<string>("");
   const [itemStates, setItemStates] = useState<Record<number, { isCompliant: boolean; notes: string }>>({});
 
   // Queries
@@ -46,14 +50,23 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   };
 
   const handleMarkVisited = async () => {
+    if (!arrivalTime) {
+      toast.error("Por favor, informe a hora de chegada");
+      return;
+    }
+
     try {
       await markVisitedMutation.mutateAsync({
         checklistId,
         observations,
+        arrivalTime: new Date(arrivalTime),
+        departureTime: departureTime ? new Date(departureTime) : undefined,
       });
+      toast.success("Visita registrada com sucesso!");
       // Redirect back to route
       window.history.back();
     } catch (error) {
+      toast.error("Erro ao registrar visita");
       console.error("Error marking visited:", error);
     }
   };
@@ -109,6 +122,48 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Horários Card */}
+        <Card className="mb-8 border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-transparent">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-600" />
+              Horários de Visita
+            </CardTitle>
+            <CardDescription>Registre a hora de chegada e saída do posto</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="arrivalTime">Hora de Chegada *</Label>
+                <Input
+                  id="arrivalTime"
+                  type="datetime-local"
+                  value={arrivalTime}
+                  onChange={(e) => setArrivalTime(e.target.value)}
+                  className="text-base"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="departureTime">Hora de Saída</Label>
+                <Input
+                  id="departureTime"
+                  type="datetime-local"
+                  value={departureTime}
+                  onChange={(e) => setDepartureTime(e.target.value)}
+                  className="text-base"
+                />
+              </div>
+            </div>
+            {arrivalTime && departureTime && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-900">
+                  <strong>Tempo de visita:</strong> {calculateDuration(arrivalTime, departureTime)}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Progress Bar */}
         <div className="mb-8">
           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -184,7 +239,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
           </Button>
           <Button
             onClick={handleMarkVisited}
-            disabled={completedItems === 0 || markVisitedMutation.isPending}
+            disabled={!arrivalTime || markVisitedMutation.isPending}
             className="bg-green-600 hover:bg-green-700"
           >
             {markVisitedMutation.isPending ? (
@@ -195,7 +250,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4 mr-2" />
-                Marcar como Visitado
+                Registrar Visita
               </>
             )}
           </Button>
@@ -203,4 +258,18 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
       </div>
     </div>
   );
+}
+
+function calculateDuration(start: string, end: string): string {
+  try {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${hours}h ${mins}m`;
+  } catch {
+    return "Inválido";
+  }
 }

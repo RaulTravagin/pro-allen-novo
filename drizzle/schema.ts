@@ -87,6 +87,8 @@ export const visitChecklists = mysqlTable("visitChecklists", {
   id: int("id").autoincrement().primaryKey(),
   supervisorRouteId: int("supervisorRouteId").notNull(),
   postId: int("postId").notNull(),
+  arrivalTime: timestamp("arrivalTime"),
+  departureTime: timestamp("departureTime"),
   visitedAt: timestamp("visitedAt"),
   observations: text("observations"),
   status: mysqlEnum("status", ["pending", "visited", "skipped"]).default("pending").notNull(),

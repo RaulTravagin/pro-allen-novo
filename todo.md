@@ -46,3 +46,9 @@
 - [x] Testes unitários das APIs (vitest)
 - [x] Testes de integração do fluxo supervisor
 - [x] Validação do painel administrativo
+
+## Alterações Solicitadas
+- [x] Adicionar campos de hora de chegada e saída em cada posto
+- [x] Remover mapa do painel administrativo
+- [x] Criar interface para registrar horários durante a visita
+- [x] Adicionar coluna de horários no relatório de visitas

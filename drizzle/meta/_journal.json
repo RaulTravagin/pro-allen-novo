@@ -15,6 +15,13 @@
       "when": 1784820240372,
       "tag": "0001_fixed_swordsman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784904753440,
+      "tag": "0002_common_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

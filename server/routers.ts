@@ -163,7 +163,7 @@ export const appRouter = router({
       }),
     
     markVisited: protectedProcedure
-      .input(z.object({ checklistId: z.number(), observations: z.string().optional() }))
+      .input(z.object({ checklistId: z.number(), observations: z.string().optional(), arrivalTime: z.date().optional(), departureTime: z.date().optional() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         
@@ -174,6 +174,8 @@ export const appRouter = router({
           status: 'visited',
           visitedAt: new Date(),
           observations: input.observations,
+          arrivalTime: input.arrivalTime,
+          departureTime: input.departureTime,
         });
         
         // Record in visit history
@@ -221,6 +223,12 @@ export const appRouter = router({
       .input(z.object({ startDate: z.date(), endDate: z.date() }))
       .query(async ({ input }) => {
         return await db.getPostVisitsByDateRange(input.startDate, input.endDate);
+      }),
+    
+    visitChecklistsByDateRange: adminProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await db.getVisitChecklistsWithTimes(input.startDate, input.endDate);
       }),
   }),
 });

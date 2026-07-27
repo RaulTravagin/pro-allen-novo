@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapPin, Users, TrendingUp, AlertCircle, Loader2 } from "lucide-react";
+import { TrendingUp, AlertCircle, Loader2, Calendar, Clock } from "lucide-react";
 import { useState } from "react";
-import { MapView } from "@/components/Map";
 import { PostPriorityCard } from "@/components/PostPriorityCard";
 
 export default function AdminDashboard() {
@@ -16,8 +15,7 @@ export default function AdminDashboard() {
 
   // Queries
   const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
-  const { data: locations, isLoading: locationsLoading } = trpc.locations.getAllLatest.useQuery();
-  const { data: reports, isLoading: reportsLoading } = trpc.reports.visitsByDateRange.useQuery({
+  const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -26,35 +24,28 @@ export default function AdminDashboard() {
     { enabled: !!selectedRouteId }
   );
 
-  const handleMapReady = (map: google.maps.Map) => {
-    if (!locations || locations.length === 0) return;
+  const formatTime = (date: any) => {
+    if (!date) return '-';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '-';
+    }
+  };
 
-    // Add markers for each supervisor location
-    locations.forEach((location) => {
-      new google.maps.Marker({
-        position: {
-          lat: parseFloat(location.latitude.toString()),
-          lng: parseFloat(location.longitude.toString()),
-        },
-        map,
-        title: `Supervisor #${location.supervisorId}`,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: '#2563eb',
-          fillOpacity: 0.8,
-          strokeColor: '#fff',
-          strokeWeight: 2,
-        },
-      });
-    });
-
-    // Center map on first location
-    if (locations.length > 0) {
-      map.setCenter({
-        lat: parseFloat(locations[0].latitude.toString()),
-        lng: parseFloat(locations[0].longitude.toString()),
-      });
+  const calculateDuration = (arrival: any, departure: any) => {
+    if (!arrival || !departure) return '-';
+    try {
+      const start = typeof arrival === 'string' ? new Date(arrival) : arrival;
+      const end = typeof departure === 'string' ? new Date(departure) : departure;
+      const diffMs = end.getTime() - start.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      return `${hours}h ${mins}m`;
+    } catch {
+      return '-';
     }
   };
 
@@ -80,20 +71,7 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Supervisores Ativos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{locations?.length || 0}</div>
-              <p className="text-xs text-gray-600 mt-2">Localizações registradas</p>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
@@ -122,12 +100,8 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="map" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="map" className="flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              Mapa em Tempo Real
-            </TabsTrigger>
+        <Tabs defaultValue="priority" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="priority" className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
               Prioridades
@@ -137,53 +111,6 @@ export default function AdminDashboard() {
               Relatórios
             </TabsTrigger>
           </TabsList>
-
-          {/* Map Tab */}
-          <TabsContent value="map" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Localização dos Supervisores</CardTitle>
-                <CardDescription>
-                  Posição em tempo real de todos os supervisores em campo
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {locationsLoading ? (
-                  <div className="h-96 flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                  </div>
-                ) : (
-                  <div className="h-96 rounded-lg overflow-hidden border border-gray-200">
-                    <MapView onMapReady={handleMapReady} />
-                  </div>
-                )}
-                
-                {/* Supervisors List */}
-                <div className="mt-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Supervisores Ativos</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {locations?.map((location) => (
-                      <div key={location.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                          <div>
-                            <p className="font-medium text-gray-900">Supervisor #{location.supervisorId}</p>
-                            <p className="text-xs text-gray-600">
-                              Lat: {parseFloat(location.latitude.toString()).toFixed(4)}, 
-                              Lng: {parseFloat(location.longitude.toString()).toFixed(4)}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-600">
-                          {new Date(location.recordedAt).toLocaleTimeString()}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           {/* Priority Tab */}
           <TabsContent value="priority" className="mt-6">
@@ -304,11 +231,14 @@ export default function AdminDashboard() {
               {/* Date Range Filter */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Filtro de Período</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5" />
+                    Filtro de Período
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex gap-4 items-end">
-                    <div className="flex-1">
+                  <div className="flex gap-4 items-end flex-wrap">
+                    <div className="flex-1 min-w-[200px]">
                       <label className="text-sm font-medium text-gray-700">Data Inicial</label>
                       <input
                         type="date"
@@ -317,7 +247,7 @@ export default function AdminDashboard() {
                         className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg"
                       />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-[200px]">
                       <label className="text-sm font-medium text-gray-700">Data Final</label>
                       <input
                         type="date"
@@ -333,9 +263,12 @@ export default function AdminDashboard() {
               {/* Visits Report */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Visitas Realizadas</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    Visitas Realizadas com Horários
+                  </CardTitle>
                   <CardDescription>
-                    Relatório de postos visitados no período selecionado
+                    Relatório detalhado de postos visitados com horários de chegada e saída
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -347,22 +280,34 @@ export default function AdminDashboard() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-gray-200">
+                          <tr className="border-b border-gray-200 bg-gray-50">
                             <th className="text-left py-3 px-4 font-semibold text-gray-900">Posto</th>
                             <th className="text-left py-3 px-4 font-semibold text-gray-900">Supervisor</th>
-                            <th className="text-left py-3 px-4 font-semibold text-gray-900">Data/Hora</th>
+                            <th className="text-left py-3 px-4 font-semibold text-gray-900">Chegada</th>
+                            <th className="text-left py-3 px-4 font-semibold text-gray-900">Saída</th>
+                            <th className="text-left py-3 px-4 font-semibold text-gray-900">Duração</th>
+                            <th className="text-left py-3 px-4 font-semibold text-gray-900">Data</th>
                             <th className="text-left py-3 px-4 font-semibold text-gray-900">Observações</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {reports?.map((report) => (
+                          {reports?.map((report: any) => (
                             <tr key={report.id} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-3 px-4 text-gray-900">Posto #{report.postId}</td>
-                              <td className="py-3 px-4 text-gray-900">Supervisor #{report.supervisorId}</td>
+                              <td className="py-3 px-4 text-gray-900 font-medium">Posto #{report.postId}</td>
+                              <td className="py-3 px-4 text-gray-900">Rota #{report.supervisorRouteId}</td>
                               <td className="py-3 px-4 text-gray-600">
-                                {new Date(report.visitedAt).toLocaleString()}
+                                {formatTime(report.arrivalTime)}
                               </td>
-                              <td className="py-3 px-4 text-gray-600">{report.observations || '-'}</td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {formatTime(report.departureTime)}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {calculateDuration(report.arrivalTime, report.departureTime)}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {report.visitedAt ? new Date(report.visitedAt).toLocaleDateString('pt-BR') : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600 max-w-xs truncate">{report.observations || '-'}</td>
                             </tr>
                           ))}
                         </tbody>

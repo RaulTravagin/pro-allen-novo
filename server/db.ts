@@ -347,3 +347,17 @@ export function calculateVisitPriority(lastVisitDate: Date | null): { priority: 
     return { priority: 'green', daysSinceVisit };
   }
 }
+
+// Get visit checklists with times for reporting
+export async function getVisitChecklistsWithTimes(startDate: Date, endDate: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(visitChecklists)
+    .where(and(
+      gte(visitChecklists.visitedAt, startDate),
+      lte(visitChecklists.visitedAt, endDate),
+      eq(visitChecklists.status, 'visited')
+    ))
+    .orderBy(desc(visitChecklists.visitedAt));
+}
