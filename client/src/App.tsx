@@ -10,6 +10,8 @@ import SupervisorDashboard from "./pages/SupervisorDashboard";
 import RouteDetails from "./pages/RouteDetails";
 import ChecklistPage from "./pages/ChecklistPage";
 import AdminDashboard from "./pages/AdminDashboard";
+import MetricsDashboard from "./pages/MetricsDashboard";
+import ReportExport from "./pages/ReportExport";
 
 
 function Router() {
@@ -33,6 +35,8 @@ function Router() {
     return (
       <Switch>
         <Route path={"/admin"} component={AdminDashboard} />
+        <Route path={"/admin/metrics"} component={MetricsDashboard} />
+        <Route path={"/admin/export"} component={ReportExport} />
         <Route path={"/"} component={AdminDashboard} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />

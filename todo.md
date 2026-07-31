@@ -52,3 +52,14 @@
 - [x] Remover mapa do painel administrativo
 - [x] Criar interface para registrar horários durante a visita
 - [x] Adicionar coluna de horários no relatório de visitas
+
+
+## Funcionalidades Avançadas
+- [x] Exportar relatórios em CSV com dados formatados
+- [x] Gráficos de tempo médio de visita por posto/rota
+- [x] Gráficos de conformidade do checklist
+- [x] Dashboard de métricas com KPIs
+- [x] Análise de desempenho por período
+- [x] Página de exportação de relatórios
+- [x] Página de métricas com gráficos interativos
+- [x] Navegação entre páginas administrativas

@@ -53,18 +53,31 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Painel Administrativo</h1>
-            <p className="text-gray-600 mt-1">Bem-vindo, {user?.name}</p>
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Painel Administrativo</h1>
+              <p className="text-gray-600 mt-1">Bem-vindo, {user?.name}</p>
+            </div>
+            <Button
+              onClick={() => logout()}
+              variant="outline"
+              className="text-gray-700"
+            >
+              Sair
+            </Button>
           </div>
-          <Button
-            onClick={() => logout()}
-            variant="outline"
-            className="text-gray-700"
-          >
-            Sair
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin'}>
+              Relatórios
+            </Button>
+            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin/metrics'}>
+              Métricas
+            </Button>
+            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin/export'}>
+              Exportar
+            </Button>
+          </div>
         </div>
       </div>
 
