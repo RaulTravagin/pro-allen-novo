@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, MapPin, ArrowLeft, Fuel, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, ArrowLeft, Fuel, Clock, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import PostCard from "@/components/PostCard";
 
 interface RouteDetailsProps {
   params: {
@@ -37,6 +38,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
   const recordLocationMutation = trpc.locations.record.useMutation();
+  const checkInMutation = trpc.checklists.checkIn.useMutation();
+  const checkOutMutation = trpc.checklists.checkOut.useMutation();
 
   useEffect(() => {
     // Start recording GPS location periodically
@@ -131,10 +134,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     );
   }
 
-  const getPostName = (postId: number) => {
-    return posts?.find(p => p.id === postId)?.name || `Posto #${postId}`;
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
@@ -224,42 +223,59 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           {checklists?.map((checklist) => {
             const post = posts?.find(p => p.id === checklist.postId);
             return (
-              <Card key={checklist.id} className={`transition-all ${checklist.status === 'visited' ? 'bg-green-50 border-green-200' : ''}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      {checklist.status === 'visited' && (
-                        <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                      )}
-                      {checklist.status !== 'visited' && (
-                        <MapPin className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                      )}
-                      <div className="flex-1">
-                        <CardTitle className="text-lg">
-                          {post?.name || `Posto #${checklist.postId}`}
-                        </CardTitle>
-                        <CardDescription>
-                          {post?.address && <span>{post.address} - </span>}
-                          Status: <span className="font-semibold">{checklist.status}</span>
-                        </CardDescription>
-                      </div>
-                    </div>
-                    {checklist.status !== 'visited' && (
-                      <Button
-                        onClick={() => window.location.href = `/supervisor/checklist/${checklist.id}`}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        Iniciar Checklist
-                      </Button>
-                    )}
-                  </div>
-                </CardHeader>
-                {checklist.observations && (
-                  <CardContent>
-                    <p className="text-sm text-gray-700"><strong>Observações:</strong> {checklist.observations}</p>
-                  </CardContent>
-                )}
-              </Card>
+              <PostCard
+                key={checklist.id}
+                id={checklist.id}
+                postId={checklist.postId}
+                postName={post?.name || `Posto #${checklist.postId}`}
+                postAddress={post?.address}
+                status={checklist.status as 'pending' | 'in_progress' | 'visited'}
+                observations={checklist.observations || undefined}
+                arrivalTime={checklist.arrivalTime}
+                departureTime={checklist.departureTime}
+                onCheckIn={async (checklistId) => {
+                  try {
+                    // Capture geolocation if available
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        async (position) => {
+                          await checkInMutation.mutateAsync({ checklistId });
+                          // Invalidate to refresh the list
+                          await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                          toast.success("Chegada registrada com sucesso!");
+                        },
+                        (error) => {
+                          console.warn("Geolocation error:", error);
+                          // Continue without geolocation
+                          checkInMutation.mutateAsync({ checklistId }).then(() => {
+                            trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                            toast.success("Chegada registrada com sucesso!");
+                          });
+                        }
+                      );
+                    } else {
+                      await checkInMutation.mutateAsync({ checklistId });
+                      await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                      toast.success("Chegada registrada com sucesso!");
+                    }
+                  } catch (error) {
+                    toast.error("Erro ao registrar chegada");
+                  }
+                }}
+                onCheckOut={async (checklistId) => {
+                  try {
+                    await checkOutMutation.mutateAsync({ checklistId });
+                    await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                    toast.success("Saída registrada com sucesso!");
+                  } catch (error) {
+                    toast.error("Erro ao registrar saída");
+                  }
+                }}
+                onOpenChecklist={(checklistId) => {
+                  window.location.href = `/supervisor/checklist/${checklistId}`;
+                }}
+                isLoading={checkInMutation.isPending || checkOutMutation.isPending}
+              />
             );
           })}
         </div>

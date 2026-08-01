@@ -63,3 +63,15 @@
 - [x] Página de exportação de relatórios
 - [x] Página de métricas com gráficos interativos
 - [x] Navegação entre páginas administrativas
+
+
+## Ajustes de Interface - Cards de Postos
+- [x] Adicionar botão "Registrar Chegada" (check-in) nos cards
+- [x] Adicionar botão "Registrar Saída" (check-out) nos cards
+- [x] Implementar estados visuais dos cards (pendente, em visita, concluído)
+- [x] Registrar geolocalização no check-in
+- [x] Salvar horários de chegada e saída
+- [x] Atualizar status do card após ações
+- [x] Tornar botões responsivos para mobile
+- [x] Criar componente PostCard reutilizável
+- [x] Integrar APIs de check-in e check-out no backend

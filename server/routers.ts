@@ -183,6 +183,41 @@ export const appRouter = router({
         
         return { success: true };
       }),
+    
+    checkIn: protectedProcedure
+      .input(z.object({ checklistId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        
+        const checklist = await db.getVisitChecklistById(input.checklistId);
+        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
+        
+        await db.updateVisitChecklist(input.checklistId, {
+          status: 'in_progress',
+          arrivalTime: new Date(),
+        });
+        
+        return { success: true, arrivalTime: new Date() };
+      }),
+    
+    checkOut: protectedProcedure
+      .input(z.object({ checklistId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        
+        const checklist = await db.getVisitChecklistById(input.checklistId);
+        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
+        
+        await db.updateVisitChecklist(input.checklistId, {
+          status: 'visited',
+          departureTime: new Date(),
+          visitedAt: new Date(),
+        });
+        
+        await db.recordPostVisit(checklist.postId, ctx.user.id);
+        
+        return { success: true, departureTime: new Date() };
+      }),
   }),
 
   // Supervisor Locations
