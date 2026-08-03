@@ -75,3 +75,15 @@
 - [x] Tornar botões responsivos para mobile
 - [x] Criar componente PostCard reutilizável
 - [x] Integrar APIs de check-in e check-out no backend
+
+
+## Melhorias Solicitadas - Visualização de Geolocalização e Horários
+- [x] Exibir indicador visual de geolocalização capturada no check-in
+- [x] Mostrar endereço ou coordenadas GPS no card após check-in
+- [x] Exibir horários exatos de entrada e saída de forma mais visível
+- [x] Adicionar ícone visual claro no botão de check-in (indicador de clique)
+- [x] Melhorar feedback visual após conclusão da visita
+- [x] Adicionar campos de geolocalização ao banco de dados
+- [x] Capturar coordenadas GPS ao check-in e check-out
+- [x] Exibir duração da visita no card
+- [x] Mostrar coordenadas em formato legível (lat, lng)

@@ -185,7 +185,11 @@ export const appRouter = router({
       }),
     
     checkIn: protectedProcedure
-      .input(z.object({ checklistId: z.number() }))
+      .input(z.object({ 
+        checklistId: z.number(),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         
@@ -195,13 +199,19 @@ export const appRouter = router({
         await db.updateVisitChecklist(input.checklistId, {
           status: 'in_progress',
           arrivalTime: new Date(),
+          arrivalLatitude: input.latitude || null,
+          arrivalLongitude: input.longitude || null,
         });
         
         return { success: true, arrivalTime: new Date() };
       }),
     
     checkOut: protectedProcedure
-      .input(z.object({ checklistId: z.number() }))
+      .input(z.object({ 
+        checklistId: z.number(),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         
@@ -212,6 +222,8 @@ export const appRouter = router({
           status: 'visited',
           departureTime: new Date(),
           visitedAt: new Date(),
+          departureLatitude: input.latitude || null,
+          departureLongitude: input.longitude || null,
         });
         
         await db.recordPostVisit(checklist.postId, ctx.user.id);

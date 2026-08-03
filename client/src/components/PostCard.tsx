@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2 } from "lucide-react";
+import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap } from "lucide-react";
 import { useState } from "react";
 
 interface PostCardProps {
@@ -12,6 +12,10 @@ interface PostCardProps {
   observations?: string;
   arrivalTime?: Date | null;
   departureTime?: Date | null;
+  arrivalLatitude?: number | null;
+  arrivalLongitude?: number | null;
+  departureLatitude?: number | null;
+  departureLongitude?: number | null;
   onCheckIn: (checklistId: number) => Promise<void>;
   onCheckOut: (checklistId: number) => Promise<void>;
   onOpenChecklist: (checklistId: number) => void;
@@ -27,6 +31,10 @@ export default function PostCard({
   observations,
   arrivalTime,
   departureTime,
+  arrivalLatitude,
+  arrivalLongitude,
+  departureLatitude,
+  departureLongitude,
   onCheckIn,
   onCheckOut,
   onOpenChecklist,
@@ -61,6 +69,11 @@ export default function PostCard({
     } catch {
       return '-';
     }
+  };
+
+  const formatCoordinates = (lat?: number | null, lng?: number | null) => {
+    if (!lat || !lng) return null;
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   };
 
   const getCardStyles = () => {
@@ -116,8 +129,9 @@ export default function PostCard({
               <Button
                 onClick={handleCheckIn}
                 disabled={isCheckingIn || isLoading}
-                className="bg-green-600 hover:bg-green-700 text-white flex-1 md:flex-none"
+                className="bg-green-600 hover:bg-green-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                 size="sm"
+                title="Clique para registrar sua chegada no condomínio"
               >
                 {isCheckingIn ? (
                   <>
@@ -140,8 +154,9 @@ export default function PostCard({
                 <Button
                   onClick={handleCheckOut}
                   disabled={isCheckingOut || isLoading}
-                  className="bg-red-600 hover:bg-red-700 text-white flex-1 md:flex-none"
+                  className="bg-red-600 hover:bg-red-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                   size="sm"
+                  title="Clique para registrar sua saída do condomínio"
                 >
                   {isCheckingOut ? (
                     <>
@@ -186,28 +201,67 @@ export default function PostCard({
         </div>
       </CardHeader>
 
-      {/* Time Info */}
-      {(arrivalTime || departureTime) && (
-        <CardContent className="pt-0">
-          <div className="flex gap-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-            {arrivalTime && (
-              <div>
-                <span className="font-semibold">Chegada:</span> {formatTime(arrivalTime)}
+      {/* Time and Location Info */}
+      {(arrivalTime || departureTime || arrivalLatitude || departureLatitude) && (
+        <CardContent className="pt-0 space-y-3">
+          {/* Arrival Info */}
+          {arrivalTime && (
+            <div className="flex items-start gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <LogIn className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-blue-900">Chegada Registrada</p>
+                <p className="text-sm text-blue-800 font-mono">{formatTime(arrivalTime)}</p>
+                {arrivalLatitude && arrivalLongitude && (
+                  <div className="flex items-start gap-2 mt-1">
+                    <Navigation className="w-3 h-3 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-blue-700 font-mono break-all">{formatCoordinates(arrivalLatitude, arrivalLongitude)}</p>
+                  </div>
+                )}
               </div>
-            )}
-            {departureTime && (
-              <div>
-                <span className="font-semibold">Saída:</span> {formatTime(departureTime)}
+            </div>
+          )}
+
+          {/* Departure Info */}
+          {departureTime && (
+            <div className="flex items-start gap-3 bg-green-50 p-3 rounded-lg border border-green-100">
+              <LogOut className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-green-900">Saída Registrada</p>
+                <p className="text-sm text-green-800 font-mono">{formatTime(departureTime)}</p>
+                {departureLatitude && departureLongitude && (
+                  <div className="flex items-start gap-2 mt-1">
+                    <Navigation className="w-3 h-3 text-green-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-green-700 font-mono break-all">{formatCoordinates(departureLatitude, departureLongitude)}</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Duration */}
+          {arrivalTime && departureTime && (
+            <div className="flex items-center gap-2 bg-purple-50 p-2 rounded-lg border border-purple-100">
+              <Zap className="w-4 h-4 text-purple-600 flex-shrink-0" />
+              <p className="text-xs text-purple-900">
+                <span className="font-semibold">Duração:</span>{' '}
+                {(() => {
+                  const start = typeof arrivalTime === 'string' ? new Date(arrivalTime) : arrivalTime;
+                  const end = typeof departureTime === 'string' ? new Date(departureTime) : departureTime;
+                  const minutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+                  const hours = Math.floor(minutes / 60);
+                  const mins = minutes % 60;
+                  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                })()}
+              </p>
+            </div>
+          )}
         </CardContent>
       )}
 
       {/* Observations */}
       {observations && (
         <CardContent className="pt-0">
-          <p className="text-sm text-gray-700">
+          <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
             <strong>Observações:</strong> {observations}
           </p>
         </CardContent>

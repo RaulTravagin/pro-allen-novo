@@ -233,13 +233,21 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 observations={checklist.observations || undefined}
                 arrivalTime={checklist.arrivalTime}
                 departureTime={checklist.departureTime}
+                arrivalLatitude={checklist.arrivalLatitude as number | null | undefined}
+                arrivalLongitude={checklist.arrivalLongitude as number | null | undefined}
+                departureLatitude={checklist.departureLatitude as number | null | undefined}
+                departureLongitude={checklist.departureLongitude as number | null | undefined}
                 onCheckIn={async (checklistId) => {
                   try {
                     // Capture geolocation if available
                     if (navigator.geolocation) {
                       navigator.geolocation.getCurrentPosition(
                         async (position) => {
-                          await checkInMutation.mutateAsync({ checklistId });
+                          await checkInMutation.mutateAsync({ 
+                            checklistId,
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                          });
                           // Invalidate to refresh the list
                           await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
                           toast.success("Chegada registrada com sucesso!");
@@ -264,9 +272,33 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 }}
                 onCheckOut={async (checklistId) => {
                   try {
-                    await checkOutMutation.mutateAsync({ checklistId });
-                    await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
-                    toast.success("Saída registrada com sucesso!");
+                    // Capture geolocation if available
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        async (position) => {
+                          await checkOutMutation.mutateAsync({ 
+                            checklistId,
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                          });
+                          // Invalidate to refresh the list
+                          await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                          toast.success("Saída registrada com sucesso!");
+                        },
+                        (error) => {
+                          console.warn("Geolocation error:", error);
+                          // Continue without geolocation
+                          checkOutMutation.mutateAsync({ checklistId }).then(() => {
+                            trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                            toast.success("Saída registrada com sucesso!");
+                          });
+                        }
+                      );
+                    } else {
+                      await checkOutMutation.mutateAsync({ checklistId });
+                      await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                      toast.success("Saída registrada com sucesso!");
+                    }
                   } catch (error) {
                     toast.error("Erro ao registrar saída");
                   }
