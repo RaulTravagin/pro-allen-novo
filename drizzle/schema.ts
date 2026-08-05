@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, index } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
 /**
@@ -55,7 +55,9 @@ export const posts = mysqlTable("posts", {
   order: int("order").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  routeIdIdx: index("idx_posts_routeId").on(table.routeId),
+}))
 
 export type Post = typeof posts.$inferSelect;
 export type InsertPost = typeof posts.$inferInsert;
@@ -75,7 +77,11 @@ export const supervisorRoutes = mysqlTable("supervisorRoutes", {
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  supervisorIdIdx: index("idx_supervisorRoutes_supervisorId").on(table.supervisorId),
+  dateIdx: index("idx_supervisorRoutes_date").on(table.date),
+  statusIdx: index("idx_supervisorRoutes_status").on(table.status),
+}))
 
 export type SupervisorRoute = typeof supervisorRoutes.$inferSelect;
 export type InsertSupervisorRoute = typeof supervisorRoutes.$inferInsert;
@@ -98,7 +104,11 @@ export const visitChecklists = mysqlTable("visitChecklists", {
   departureLongitude: decimal("departureLongitude", { precision: 11, scale: 8 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  supervisorRouteIdIdx: index("idx_visitChecklists_supervisorRouteId").on(table.supervisorRouteId),
+  postIdIdx: index("idx_visitChecklists_postId").on(table.postId),
+  statusIdx: index("idx_visitChecklists_status").on(table.status),
+}))
 
 export type VisitChecklist = typeof visitChecklists.$inferSelect;
 export type InsertVisitChecklist = typeof visitChecklists.$inferInsert;
@@ -147,7 +157,86 @@ export const postVisitHistory = mysqlTable("postVisitHistory", {
   visitedAt: timestamp("visitedAt").notNull(),
   observations: text("observations"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  postIdIdx: index("idx_postVisitHistory_postId").on(table.postId),
+  supervisorIdIdx: index("idx_postVisitHistory_supervisorId").on(table.supervisorId),
+  visitedAtIdx: index("idx_postVisitHistory_visitedAt").on(table.visitedAt),
+}))
 
 export type PostVisitHistory = typeof postVisitHistory.$inferSelect;
 export type InsertPostVisitHistory = typeof postVisitHistory.$inferInsert;
+
+// Relations for better query performance
+export const usersRelations = relations(users, ({ many }) => ({
+  supervisorRoutes: many(supervisorRoutes),
+  supervisorLocations: many(supervisorLocations),
+  postVisitHistory: many(postVisitHistory),
+}));
+
+export const routesRelations = relations(routes, ({ many }) => ({
+  posts: many(posts),
+  supervisorRoutes: many(supervisorRoutes),
+}));
+
+export const postsRelations = relations(posts, ({ one, many }) => ({
+  route: one(routes, {
+    fields: [posts.routeId],
+    references: [routes.id],
+  }),
+  visitChecklists: many(visitChecklists),
+  postVisitHistory: many(postVisitHistory),
+}));
+
+export const supervisorRoutesRelations = relations(supervisorRoutes, ({ one, many }) => ({
+  supervisor: one(users, {
+    fields: [supervisorRoutes.supervisorId],
+    references: [users.id],
+  }),
+  route: one(routes, {
+    fields: [supervisorRoutes.routeId],
+    references: [routes.id],
+  }),
+  visitChecklists: many(visitChecklists),
+  supervisorLocations: many(supervisorLocations),
+}));
+
+export const visitChecklistsRelations = relations(visitChecklists, ({ one, many }) => ({
+  supervisorRoute: one(supervisorRoutes, {
+    fields: [visitChecklists.supervisorRouteId],
+    references: [supervisorRoutes.id],
+  }),
+  post: one(posts, {
+    fields: [visitChecklists.postId],
+    references: [posts.id],
+  }),
+  checklistItems: many(checklistItems),
+}));
+
+export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
+  visitChecklist: one(visitChecklists, {
+    fields: [checklistItems.visitChecklistId],
+    references: [visitChecklists.id],
+  }),
+}));
+
+export const supervisorLocationsRelations = relations(supervisorLocations, ({ one }) => ({
+  supervisor: one(users, {
+    fields: [supervisorLocations.supervisorId],
+    references: [users.id],
+  }),
+  supervisorRoute: one(supervisorRoutes, {
+    fields: [supervisorLocations.supervisorRouteId],
+    references: [supervisorRoutes.id],
+  }),
+}));
+
+export const postVisitHistoryRelations = relations(postVisitHistory, ({ one }) => ({
+  post: one(posts, {
+    fields: [postVisitHistory.postId],
+    references: [posts.id],
+  }),
+  supervisor: one(users, {
+    fields: [postVisitHistory.supervisorId],
+    references: [users.id],
+  }),
+}));

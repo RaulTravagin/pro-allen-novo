@@ -29,6 +29,13 @@
       "when": 1785759790515,
       "tag": "0003_thick_ogun",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1785943093468,
+      "tag": "0004_illegal_cammi",
+      "breakpoints": true
     }
   ]
 }

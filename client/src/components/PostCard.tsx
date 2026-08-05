@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 
 interface PostCardProps {
   id: number;
@@ -22,7 +22,7 @@ interface PostCardProps {
   isLoading?: boolean;
 }
 
-export default function PostCard({
+const PostCard = memo(function PostCard({
   id,
   postId,
   postName,
@@ -102,12 +102,20 @@ export default function PostCard({
     return 'Pendente';
   };
 
+  const cardStyles = useMemo(() => getCardStyles(), [status]);
+  const statusIcon = useMemo(() => getStatusIcon(), [status]);
+  const statusLabel = useMemo(() => getStatusLabel(), [status]);
+  
+  const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
+  const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
+  const memoizedOpenChecklist = useCallback(() => onOpenChecklist(id), [id, onOpenChecklist]);
+
   return (
-    <Card className={`transition-all ${getCardStyles()}`}>
+    <Card className={`transition-all ${cardStyles}`}>
       <CardHeader className="pb-3">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            {getStatusIcon()}
+            {statusIcon}
             <div className="flex-1 min-w-0">
               <CardTitle className="text-lg">{postName}</CardTitle>
               <CardDescription className="mt-1">
@@ -117,7 +125,7 @@ export default function PostCard({
                   status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  {getStatusLabel()}
+                  {statusLabel}
                 </span>
               </CardDescription>
             </div>
@@ -127,7 +135,7 @@ export default function PostCard({
           <div className="flex flex-row md:flex-col gap-2 flex-shrink-0 w-full md:w-auto">
             {status === 'pending' && (
               <Button
-                onClick={handleCheckIn}
+                onClick={memoizedCheckIn}
                 disabled={isCheckingIn || isLoading}
                 className="bg-green-600 hover:bg-green-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                 size="sm"
@@ -152,7 +160,7 @@ export default function PostCard({
             {status === 'in_progress' && (
               <>
                 <Button
-                  onClick={handleCheckOut}
+                  onClick={memoizedCheckOut}
                   disabled={isCheckingOut || isLoading}
                   className="bg-red-600 hover:bg-red-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                   size="sm"
@@ -173,7 +181,7 @@ export default function PostCard({
                   )}
                 </Button>
                 <Button
-                  onClick={() => onOpenChecklist(id)}
+                  onClick={memoizedOpenChecklist}
                   disabled={isLoading}
                   variant="outline"
                   className="text-blue-600 border-blue-600 flex-1 md:flex-none"
@@ -268,4 +276,6 @@ export default function PostCard({
       )}
     </Card>
   );
-}
+});
+
+export default PostCard;
