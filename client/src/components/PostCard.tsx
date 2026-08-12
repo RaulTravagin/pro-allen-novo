@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap } from "lucide-react";
+import React from "react";
 import { useState, useMemo, memo, useCallback } from "react";
 
 interface PostCardProps {
@@ -18,7 +19,6 @@ interface PostCardProps {
   departureLongitude?: number | null;
   onCheckIn: (checklistId: number) => Promise<void>;
   onCheckOut: (checklistId: number) => Promise<void>;
-  onStartNewVisit: (checklistId: number) => Promise<void>;
   onOpenChecklist: (checklistId: number) => void;
   isLoading?: boolean;
   hasActiveVisit?: boolean;
@@ -40,7 +40,6 @@ const PostCard = memo(function PostCard({
   departureLongitude,
   onCheckIn,
   onCheckOut,
-  onStartNewVisit,
   onOpenChecklist,
   isLoading = false,
   hasActiveVisit = false,
@@ -48,7 +47,6 @@ const PostCard = memo(function PostCard({
 }: PostCardProps) {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [isStartingNewVisit, setIsStartingNewVisit] = useState(false);
 
   const handleCheckIn = async () => {
     setIsCheckingIn(true);
@@ -65,15 +63,6 @@ const PostCard = memo(function PostCard({
       await onCheckOut(id);
     } finally {
       setIsCheckingOut(false);
-    }
-  };
-
-  const handleStartNewVisit = async () => {
-    setIsStartingNewVisit(true);
-    try {
-      await onStartNewVisit(id);
-    } finally {
-      setIsStartingNewVisit(false);
     }
   };
 
@@ -124,7 +113,6 @@ const PostCard = memo(function PostCard({
   
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
-  const memoizedStartNewVisit = useCallback(handleStartNewVisit, [id, onStartNewVisit]);
   const memoizedOpenChecklist = useCallback(() => onOpenChecklist(id), [id, onOpenChecklist]);
 
   return (
@@ -241,17 +229,17 @@ const PostCard = memo(function PostCard({
                 </Button>
                 <Button
                   type="button"
-                  onClick={memoizedStartNewVisit}
-                  disabled={isStartingNewVisit || isLoading || hasActiveVisit}
-                  aria-label={`Registrar nova chegada em ${postName}`}
+                  onClick={memoizedCheckIn}
+                  disabled={isCheckingIn || isLoading || hasActiveVisit}
+                  aria-label={`Registrar chegada em ${postName}`}
                   className="flex-1 bg-blue-600 text-white shadow-lg transition-all hover:bg-blue-700 hover:shadow-xl md:flex-none"
                   size="sm"
-                  title={hasActiveVisit ? "Finalize a visita ativa antes de iniciar uma nova" : "Iniciar uma nova visita neste posto"}
+                  title={hasActiveVisit ? "Finalize a visita ativa antes de iniciar outra chegada" : "Registrar uma nova chegada neste posto"}
                 >
-                  {isStartingNewVisit ? (
-                    <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Preparando...</>
+                  {isCheckingIn ? (
+                    <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Registrando...</>
                   ) : (
-                    <><LogIn className="mr-1 h-4 w-4" />Registrar nova chegada</>
+                    <><LogIn className="mr-1 h-4 w-4" />Registrar chegada</>
                   )}
                 </Button>
                 <Button

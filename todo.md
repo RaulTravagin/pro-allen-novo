@@ -31,5 +31,13 @@
 - [x] Verificados estados administrativos em desktop e mobile
 - [x] Checkpoint da atualização de presença salvo: 24dc0464
 
+## Teste Operacional do Card de Posto
+- [x] Preparar cenário isolado em testes automatizados, sem alterar dados operacionais
+- [x] Executar check-in e confirmar que o card mostra “Registrar saída” e horário de entrada
+- [x] Executar check-out e confirmar tag “Visita concluída” com os dois horários
+- [x] Confirmar que “Registrar chegada” volta a ficar disponível no mesmo card
+- [x] Corrigir a divergência encontrada: a chegada reaparecida agora executa o check-in diretamente
+- [x] Registrar evidência por teste de interação: chegada → saída → visita concluída → chegada reaparecida
+
 ## Nota de Histórico
 - [x] O checklist anterior continha observações repetidas e não acionáveis geradas durante uma recuperação de workspace. Ele foi normalizado nesta versão para manter apenas entregas verificáveis e o histórico relevante.

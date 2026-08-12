@@ -49,7 +49,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const recordLocationMutation = trpc.locations.record.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
-  const startNewVisitMutation = trpc.checklists.startNewVisit.useMutation();
 
   const captureCoordinates = () => new Promise<{ latitude?: number; longitude?: number }>((resolve) => {
     if (!navigator.geolocation) {
@@ -304,22 +303,12 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     console.error("Check-out error:", error);
                   }
                 }}
-                onStartNewVisit={async (checklistId) => {
-                  try {
-                    await startNewVisitMutation.mutateAsync({ checklistId });
-                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                    toast.success("Nova visita preparada. Registre a chegada quando estiver no posto.");
-                  } catch (error) {
-                    toast.error("Não foi possível preparar uma nova visita");
-                    console.error("New visit error:", error);
-                  }
-                }}
                 onOpenChecklist={(checklistId) => {
                   window.location.href = `/supervisor/checklist/${checklistId}`;
                 }}
                 hasActiveVisit={Boolean(activeChecklist && activeChecklist.id !== checklist.id)}
                 isActiveVisit={activeChecklist?.id === checklist.id}
-                isLoading={checkInMutation.isPending || checkOutMutation.isPending || startNewVisitMutation.isPending}
+                isLoading={checkInMutation.isPending || checkOutMutation.isPending}
               />
             );
           })}

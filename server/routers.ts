@@ -272,20 +272,30 @@ export const appRouter = router({
         if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
         const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (checklist.status !== 'pending') throw new TRPCError({ code: 'CONFLICT', message: 'Esta visita já foi iniciada ou concluída' });
+        if (route.status !== 'in_progress') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'A rota precisa estar em andamento para registrar chegada' });
+        }
+        if (checklist.status !== 'pending' && checklist.status !== 'visited') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Esta visita já está em andamento' });
+        }
         const routeChecklists = await db.getVisitChecklistsByRoute(checklist.supervisorRouteId);
         if (routeChecklists.some((item) => item.status === 'in_progress')) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
         }
+
+        const targetChecklistId = checklist.status === 'visited'
+          ? await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId)
+          : checklist.id;
+        const arrivalTime = new Date();
         
-        await db.updateVisitChecklist(input.checklistId, {
+        await db.updateVisitChecklist(targetChecklistId, {
           status: 'in_progress',
-          arrivalTime: new Date(),
-          arrivalLatitude: input.latitude || null,
-          arrivalLongitude: input.longitude || null,
+          arrivalTime,
+          arrivalLatitude: input.latitude ?? null,
+          arrivalLongitude: input.longitude ?? null,
         });
         
-        return { success: true, arrivalTime: new Date() };
+        return { success: true, checklistId: targetChecklistId, arrivalTime };
       }),
     
     checkOut: protectedProcedure
