@@ -37,7 +37,7 @@ const route = {
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     gestorAccess: {
-      session: { useQuery: () => ({ data: { authenticated: true }, isLoading: false }) },
+      session: { useQuery: () => ({ data: { authenticated: true }, isLoading: false, isFetchedAfterMount: true, isSuccess: true }) },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     gestor: {

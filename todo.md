@@ -125,3 +125,9 @@
 - [x] Identificar os registros de Raul Travagin e João Supervisor exibidos na central
 - [x] Excluir os dois nomes da lista operacional sem apagar o histórico de campo
 - [x] Validar a central atualizada e salvar checkpoint
+
+## Regressão de Acesso do Gestor
+- [x] Identificar o componente que dispara o painel protegido em `/gestor/acesso`
+- [x] Impedir a consulta do painel antes da sessão do Gestor estar autenticada
+- [x] Criar teste de regressão e validar o preview sem sessão
+- [x] Salvar checkpoint e disponibilizar a correção

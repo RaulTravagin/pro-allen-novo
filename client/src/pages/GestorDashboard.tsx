@@ -57,15 +57,17 @@ function alertAppearance(severity: string) {
 
 export default function GestorDashboard() {
   const [, navigate] = useLocation();
-  const { data: session, isLoading: isCheckingSession } = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL });
-  const dashboard = trpc.gestor.dashboard.useQuery(undefined, { enabled: !!session?.authenticated, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
+  const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnMount: "always" });
+  const { data: session, isLoading: isCheckingSession } = sessionQuery;
+  const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
+  const dashboard = trpc.gestor.dashboard.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
   const logout = trpc.gestorAccess.logout.useMutation({ onSuccess: () => navigate("/gestor/acesso") });
 
   useEffect(() => {
-    if (!isCheckingSession && !session?.authenticated) navigate("/gestor/acesso");
-  }, [isCheckingSession, navigate, session?.authenticated]);
+    if (sessionQuery.isFetchedAfterMount && !isCheckingSession && !session?.authenticated) navigate("/gestor/acesso");
+  }, [isCheckingSession, navigate, session?.authenticated, sessionQuery.isFetchedAfterMount]);
 
-  if (isCheckingSession || !session?.authenticated) {
+  if (!sessionQuery.isFetchedAfterMount || isCheckingSession || !session?.authenticated) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Conferindo acesso do Gestor...</div>;
   }
 
