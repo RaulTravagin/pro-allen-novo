@@ -109,3 +109,14 @@
 ## Atalho Discreto do Gestor
 - [x] Adicionar link discreto para `/gestor/acesso` no rodapé da tela inicial
 - [x] Validar o atalho em sessão sem login e salvar checkpoint
+
+## Central Operacional do Gestor
+- [x] Consolidar por supervisor a rota atual, o status operacional e o próximo posto
+- [x] Exibir postos em atendimento, visitas concluídas, pendentes e duração da visita
+- [x] Exibir KM inicial, KM final e total percorrido por viatura
+- [x] Exibir última localização GPS, precisão e tempo desde a atualização
+- [x] Adicionar alertas para rota parada, GPS desatualizado, visita em andamento e KM pendente
+- [x] Criar visão detalhada por supervisor com checklist, horários e observações da rota
+- [x] Atualizar automaticamente a central e mostrar a hora da última atualização
+- [x] Cobrir permissões, cálculos e estados da central com testes
+- [x] Validar desktop e celular, salvar checkpoint e disponibilizar a central
