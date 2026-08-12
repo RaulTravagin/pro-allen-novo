@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, MapPin, Clock, Fuel, AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Clock3, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -11,182 +11,136 @@ import { useLocation } from "wouter";
 export default function SupervisorDashboard() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
-  const [supervisorRouteId, setSupervisorRouteId] = useState<number | null>(null);
 
-  // Queries
-  const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
-  const { data: todayRoute } = trpc.supervisorRoutes.getTodayRoute.useQuery();
+  const { data: routes, isLoading: routesLoading, isError: routesError } = trpc.routes.list.useQuery();
+  const { data: todayRoute, isLoading: todayRouteLoading } = trpc.supervisorRoutes.getTodayRoute.useQuery();
+  const { data: selectedPosts } = trpc.routes.getPostsByRoute.useQuery(
+    { routeId: Number(selectedRouteId) },
+    { enabled: Boolean(selectedRouteId) },
+  );
 
-  // Mutations
   const createRouteMutation = trpc.supervisorRoutes.create.useMutation();
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
 
-  const handleSelectRoute = async (routeId: string) => {
-    setSelectedRouteId(routeId);
-    
+  const handleStartRoute = async () => {
+    const routeId = Number(selectedRouteId);
+    if (!Number.isInteger(routeId) || routeId <= 0) {
+      toast.error("Selecione uma rota antes de continuar");
+      return;
+    }
+
     try {
-      const result = await createRouteMutation.mutateAsync({
-        routeId: parseInt(routeId),
+      const supervisorRouteId = await createRouteMutation.mutateAsync({
+        routeId,
         date: new Date(),
       });
-      
-      setSupervisorRouteId(result as number);
-      
-      // Create checklists for all posts in the route
-      await createChecklistsMutation.mutateAsync({
-        supervisorRouteId: result as number,
-      });
-      
-      toast.success("Rota criada com sucesso!");
-      // Navigate to route details
-      window.location.href = `/supervisor/route/${result}`;
+      await createChecklistsMutation.mutateAsync({ supervisorRouteId });
+      await utils.supervisorRoutes.getTodayRoute.invalidate();
+      toast.success("Rota preparada. Informe o KM inicial para começar.");
+      navigate(`/supervisor/route/${supervisorRouteId}`);
     } catch (error) {
-      toast.error("Erro ao criar rota. Tente novamente.");
-      console.error("Error starting route:", error);
+      const message = error instanceof Error ? error.message : "Não foi possível criar a rota";
+      toast.error(message);
     }
   };
 
   const handleContinueRoute = () => {
-    if (todayRoute) {
-      window.location.href = `/supervisor/route/${todayRoute.id}`;
-    } else {
-      toast.error("Nenhuma rota ativa encontrada");
+    if (!todayRoute) {
+      toast.error("Nenhuma rota aberta encontrada para hoje");
+      return;
     }
+    navigate(`/supervisor/route/${todayRoute.id}`);
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard do Supervisor</h1>
-            <p className="text-gray-600 mt-1">Bem-vindo, {user?.name}</p>
-          </div>
-          <Button
-            onClick={() => logout()}
-            variant="outline"
-            className="text-gray-700"
-          >
-            Sair
-          </Button>
-        </div>
-      </div>
+  const isStarting = createRouteMutation.isPending || createChecklistsMutation.isPending;
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Status Card */}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
+      <header className="border-b border-slate-200 bg-white/95">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Operação em campo</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Dashboard do Supervisor</h1>
+            <p className="mt-1 text-sm text-slate-600">Olá, {user?.name || "supervisor"}. Organize sua visita de hoje.</p>
+          </div>
+          <Button onClick={() => logout()} variant="outline" className="self-start sm:self-auto">Sair</Button>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:py-8">
         {todayRoute && (
-          <Card className="mb-8 border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-green-600" />
-                Rota em Andamento
+          <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-emerald-950">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                Rota aberta para hoje
               </CardTitle>
-              <CardDescription>Você tem uma rota ativa para hoje</CardDescription>
+              <CardDescription className="text-emerald-800">Continue de onde parou ou registre o KM inicial na tela da rota.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-gray-600">Status: <span className="font-semibold text-green-600">Ativa</span></p>
-                  <p className="text-sm text-gray-600 mt-1">Iniciada em: {new Date(todayRoute.startedAt || todayRoute.createdAt).toLocaleTimeString()}</p>
-                </div>
-                <Button
-                  onClick={handleContinueRoute}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  Continuar Rota
-                </Button>
+            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-emerald-900">
+                <span className="font-semibold">Status:</span> {todayRoute.status === "in_progress" ? "em andamento" : "pendente de início"}
               </div>
+              <Button onClick={handleContinueRoute} className="bg-emerald-600 hover:bg-emerald-700">
+                Continuar rota <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </CardContent>
           </Card>
         )}
 
-        {/* Select Route Card */}
         {!todayRoute && (
-          <Card className="mb-8">
+          <Card className="border-blue-200 shadow-sm">
             <CardHeader>
-              <CardTitle>Iniciar Nova Rota</CardTitle>
-              <CardDescription>
-                Selecione a rota que deseja executar hoje
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2 text-slate-950"><RouteIcon className="h-5 w-5 text-blue-600" />Iniciar uma rota</CardTitle>
+              <CardDescription>Selecione a rota e confirme. A criação não acontece apenas ao abrir o seletor.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {routesLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                </div>
+            <CardContent className="space-y-4">
+              {routesLoading || todayRouteLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando rotas...</div>
+              ) : routesError ? (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle className="h-4 w-4" />Não foi possível carregar as rotas.</div>
               ) : (
                 <>
-                  <Select value={selectedRouteId} onValueChange={handleSelectRoute}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Selecione uma rota..." />
-                    </SelectTrigger>
+                  <Select value={selectedRouteId} onValueChange={setSelectedRouteId}>
+                    <SelectTrigger aria-label="Selecionar rota" className="w-full"><SelectValue placeholder="Selecione uma rota..." /></SelectTrigger>
                     <SelectContent>
                       {routes?.map((route) => (
                         <SelectItem key={route.id} value={route.id.toString()}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4" />
-                            {route.name} - {route.region}
-                          </div>
+                          <span className="flex items-center gap-2"><MapPin className="h-4 w-4" />{route.name} · {route.region}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
 
                   {selectedRouteId && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-sm text-blue-900">
-                        ✓ Rota selecionada. Os checklists serão criados automaticamente quando você iniciar a rota.
-                      </p>
+                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                      <div className="flex items-start gap-3">
+                        <ShieldCheck className="mt-0.5 h-5 w-5 text-blue-600" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-blue-950">{selectedPosts?.length ?? 0} postos nesta rota</p>
+                          <p className="mt-1 text-sm text-blue-800">Os endereços serão exibidos quando forem cadastrados. Confirme para preparar os checklists.</p>
+                        </div>
+                      </div>
                     </div>
                   )}
+
+                  <Button onClick={handleStartRoute} disabled={!selectedRouteId || isStarting} className="w-full bg-blue-600 hover:bg-blue-700 sm:w-auto">
+                    {isStarting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparando...</> : <>Preparar rota <ArrowRight className="ml-2 h-4 w-4" /></>}
+                  </Button>
                 </>
               )}
             </CardContent>
           </Card>
         )}
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Rotas Disponíveis</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{routes?.length || 0}</div>
-              <p className="text-xs text-gray-600 mt-2">Rotas cadastradas no sistema</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Postos por Rota
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-900">~6</div>
-              <p className="text-xs text-gray-600 mt-2">Média de postos por rota</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <Fuel className="w-4 h-4" />
-                KM Registrado
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-900">0</div>
-              <p className="text-xs text-gray-600 mt-2">Hoje</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        <section aria-label="Resumo da operação" className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600"><RouteIcon className="h-4 w-4" />Rotas disponíveis</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">{routes?.length ?? 0}</p><p className="mt-1 text-xs text-slate-500">Rotas cadastradas</p></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600"><MapPin className="h-4 w-4" />Postos na rota selecionada</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">{selectedRouteId ? selectedPosts?.length ?? 0 : "—"}</p><p className="mt-1 text-xs text-slate-500">Selecione uma rota para consultar</p></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600"><Clock3 className="h-4 w-4" />KM do dia</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">—</p><p className="mt-1 text-xs text-slate-500">Disponível após encerrar a rota</p></CardContent></Card>
+        </section>
+      </main>
     </div>
   );
 }

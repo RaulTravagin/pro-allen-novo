@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Loader2, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface ChecklistPageProps {
@@ -21,8 +21,6 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   const checklistId = parseInt(params.checklistId);
   
   const [observations, setObservations] = useState<string>("");
-  const [arrivalTime, setArrivalTime] = useState<string>("");
-  const [departureTime, setDepartureTime] = useState<string>("");
   const [itemStates, setItemStates] = useState<Record<number, { isCompliant: boolean; notes: string }>>({});
 
   // Queries
@@ -30,7 +28,16 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
 
   // Mutations
   const updateItemMutation = trpc.checklists.updateItem.useMutation();
-  const markVisitedMutation = trpc.checklists.markVisited.useMutation();
+  const updateDetailsMutation = trpc.checklists.updateDetails.useMutation();
+
+  useEffect(() => {
+    if (!checklist) return;
+    setObservations(checklist.observations || "");
+    setItemStates(Object.fromEntries((checklist.items || []).map((item) => [item.id, {
+      isCompliant: item.isCompliant === true,
+      notes: item.notes || "",
+    }])));
+  }, [checklist?.id]);
 
   const handleItemChange = async (itemId: number, isCompliant: boolean, notes?: string) => {
     setItemStates(prev => ({
@@ -49,25 +56,13 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
     }
   };
 
-  const handleMarkVisited = async () => {
-    if (!arrivalTime) {
-      toast.error("Por favor, informe a hora de chegada");
-      return;
-    }
-
+  const handleSaveDetails = async () => {
     try {
-      await markVisitedMutation.mutateAsync({
-        checklistId,
-        observations,
-        arrivalTime: new Date(arrivalTime),
-        departureTime: departureTime ? new Date(departureTime) : undefined,
-      });
-      toast.success("Visita registrada com sucesso!");
-      // Redirect back to route
-      window.history.back();
+      await updateDetailsMutation.mutateAsync({ checklistId, observations });
+      toast.success("Checklist salvo com sucesso");
     } catch (error) {
-      toast.error("Erro ao registrar visita");
-      console.error("Error marking visited:", error);
+      toast.error("Não foi possível salvar as observações");
+      console.error("Error saving checklist details:", error);
     }
   };
 
@@ -99,6 +94,8 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
 
   const completedItems = Object.values(itemStates).filter(s => s.isCompliant).length;
   const totalItems = checklist.items?.length || 0;
+  const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+  const formatDateTime = (value: Date | string | null | undefined) => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Ainda não registrado';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
@@ -129,37 +126,26 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
               <Clock className="w-5 h-5 text-blue-600" />
               Horários de Visita
             </CardTitle>
-            <CardDescription>Registre a hora de chegada e saída do posto</CardDescription>
+              <CardDescription>A presença é registrada pelos botões de chegada e saída no card do posto.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="arrivalTime">Hora de Chegada *</Label>
-                <Input
-                  id="arrivalTime"
-                  type="datetime-local"
-                  value={arrivalTime}
-                  onChange={(e) => setArrivalTime(e.target.value)}
-                  className="text-base"
-                />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Entrada</p>
+                <p className="mt-1 font-mono text-sm text-blue-950">{formatDateTime(checklist.arrivalTime)}</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="departureTime">Hora de Saída</Label>
-                <Input
-                  id="departureTime"
-                  type="datetime-local"
-                  value={departureTime}
-                  onChange={(e) => setDepartureTime(e.target.value)}
-                  className="text-base"
-                />
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Saída</p>
+                <p className="mt-1 font-mono text-sm text-emerald-950">{formatDateTime(checklist.departureTime)}</p>
               </div>
             </div>
-            {arrivalTime && departureTime && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-900">
-                  <strong>Tempo de visita:</strong> {calculateDuration(arrivalTime, departureTime)}
-                </p>
+            {checklist.arrivalTime && checklist.departureTime && (
+              <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
+                <p className="text-sm text-purple-900"><strong>Tempo de visita:</strong> {calculateDuration(new Date(checklist.arrivalTime).toISOString(), new Date(checklist.departureTime).toISOString())}</p>
               </div>
+            )}
+            {checklist.status === 'pending' && (
+              <p className="text-sm font-medium text-amber-800">Volte à lista da rota e clique em “Registrar chegada” para iniciar a visita.</p>
             )}
           </CardContent>
         </Card>
@@ -169,7 +155,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(completedItems / totalItems) * 100}%` }}
+              style={{ width: `${progress}%` }}
             />
           </div>
           <p className="text-sm text-gray-600 mt-2">{completedItems} de {totalItems} itens verificados</p>
@@ -238,20 +224,14 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
             Cancelar
           </Button>
           <Button
-            onClick={handleMarkVisited}
-            disabled={!arrivalTime || markVisitedMutation.isPending}
-            className="bg-green-600 hover:bg-green-700"
+            onClick={handleSaveDetails}
+            disabled={updateDetailsMutation.isPending || checklist.status === 'pending'}
+            className="bg-blue-600 hover:bg-blue-700"
           >
-            {markVisitedMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Salvando...
-              </>
+            {updateDetailsMutation.isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>
             ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Registrar Visita
-              </>
+              <><CheckCircle2 className="mr-2 h-4 w-4" />Salvar checklist</>
             )}
           </Button>
         </div>

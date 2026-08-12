@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Download, Loader2, Calendar, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AdminHeader } from "@/components/AdminHeader";
 
 export default function ReportExport() {
   const { user, logout } = useAuth();
@@ -28,7 +29,7 @@ export default function ReportExport() {
     setIsExporting(true);
     try {
       // Create CSV content
-      const headers = ["Posto", "Rota", "Chegada", "Saída", "Duração", "Data", "Observações"];
+      const headers = ["Posto", "Rota", "Supervisor", "Chegada", "Saída", "Duração", "Data", "Observações"];
       const rows = reports.map((r: any) => {
         const arrival = r.arrivalTime ? new Date(r.arrivalTime).toLocaleTimeString('pt-BR') : '-';
         const departure = r.departureTime ? new Date(r.departureTime).toLocaleTimeString('pt-BR') : '-';
@@ -38,8 +39,9 @@ export default function ReportExport() {
         const date = new Date(r.visitedAt).toLocaleDateString('pt-BR');
         
         return [
-          `Posto #${r.postId}`,
-          `Rota #${r.supervisorRouteId}`,
+          r.postName || `Posto #${r.postId}`,
+          r.routeName || `Rota #${r.routeId}`,
+          r.supervisorName || 'Supervisor não informado',
           arrival,
           departure,
           duration,
@@ -84,18 +86,12 @@ export default function ReportExport() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Exportar Relatórios</h1>
-            <p className="text-gray-600 mt-1">Gere relatórios em CSV/PDF</p>
-          </div>
-          <Button onClick={() => logout()} variant="outline" className="text-gray-700">
-            Sair
-          </Button>
-        </div>
-      </div>
+      <AdminHeader
+        title="Exportar relatórios"
+        subtitle="Gere arquivos operacionais para análise e compartilhamento"
+        userName={user?.name}
+        onLogout={() => logout()}
+      />
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -220,7 +216,7 @@ export default function ReportExport() {
                 <li>Compatível com Excel</li>
                 <li>Fácil de compartilhar</li>
                 <li>Pronto para análise</li>
-                <li>Pode ser convertido para PDF</li>
+                <li>Linhas com nomes reais dos registros</li>
               </ul>
             </CardContent>
           </Card>

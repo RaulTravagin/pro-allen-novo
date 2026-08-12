@@ -6,63 +6,70 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import Login from "./pages/Login";
-import SupervisorDashboard from "./pages/SupervisorDashboard";
-import RouteDetails from "./pages/RouteDetails";
-import ChecklistPage from "./pages/ChecklistPage";
-import AdminDashboard from "./pages/AdminDashboard";
-import MetricsDashboard from "./pages/MetricsDashboard";
-import ReportExport from "./pages/ReportExport";
+import { lazy, Suspense } from "react";
 
+const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
+const RouteDetails = lazy(() => import("./pages/RouteDetails"));
+const ChecklistPage = lazy(() => import("./pages/ChecklistPage"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const MetricsDashboard = lazy(() => import("./pages/MetricsDashboard"));
+const ReportExport = lazy(() => import("./pages/ReportExport"));
+
+function LoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50" role="status" aria-live="polite">
+      <span className="text-sm text-slate-600">Carregando tela...</span>
+    </div>
+  );
+}
 
 function Router() {
   const { user, loading, isAuthenticated } = useAuth();
 
-  if (loading) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><span>Carregando...</span></div>;
-  }
+  if (loading) return <LoadingScreen />;
 
   if (!isAuthenticated) {
     return (
       <Switch>
-        <Route path={"/"} component={Login} />
+        <Route path="/" component={Login} />
         <Route component={Login} />
       </Switch>
     );
   }
 
-  // Admin routes
-  if (user?.role === 'admin') {
+  if (user?.role === "admin") {
     return (
-      <Switch>
-        <Route path={"/admin"} component={AdminDashboard} />
-        <Route path={"/admin/metrics"} component={MetricsDashboard} />
-        <Route path={"/admin/export"} component={ReportExport} />
-        <Route path={"/"} component={AdminDashboard} />
-        <Route path={"/404"} component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<LoadingScreen />}>
+        <Switch>
+          <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/metrics" component={MetricsDashboard} />
+          <Route path="/admin/export" component={ReportExport} />
+          <Route path="/" component={AdminDashboard} />
+          <Route path="/404" component={NotFound} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     );
   }
 
-  // Supervisor routes
   return (
-    <Switch>
-      <Route path={"/supervisor"} component={SupervisorDashboard} />
-      <Route path={"/supervisor/route/:supervisorRouteId"} component={RouteDetails} />
-      <Route path={"/supervisor/checklist/:checklistId"} component={ChecklistPage} />
-      <Route path={"/"} component={SupervisorDashboard} />
-      <Route path={"/404"} component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<LoadingScreen />}>
+      <Switch>
+        <Route path="/supervisor" component={SupervisorDashboard} />
+        <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
+        <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
+        <Route path="/" component={SupervisorDashboard} />
+        <Route path="/404" component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-      >
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
           <Router />

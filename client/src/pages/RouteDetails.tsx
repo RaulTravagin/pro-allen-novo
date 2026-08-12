@@ -19,17 +19,26 @@ interface RouteDetailsProps {
 export default function RouteDetails({ params }: RouteDetailsProps) {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const supervisorRouteId = parseInt(params.supervisorRouteId);
   
   const [kmInitial, setKmInitial] = useState<string>("");
   const [kmFinal, setKmFinal] = useState<string>("");
-  const [showKmInitial, setShowKmInitial] = useState(true);
+  const [showKmInitial, setShowKmInitial] = useState(false);
   const [showKmFinal, setShowKmFinal] = useState(false);
   const [gpsError, setGpsError] = useState<string>("");
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
   const { data: checklists, isLoading: checklistsLoading } = trpc.checklists.getByRoute.useQuery({ supervisorRouteId });
+  const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
+
+  useEffect(() => {
+    if (!route) return;
+    setShowKmInitial(route.status === 'pending');
+    if (route.status === 'completed') setShowKmFinal(false);
+  }, [route?.status]);
+
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: route?.routeId || 0 },
     { enabled: !!route?.routeId }
@@ -71,7 +80,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   }, [route?.status, supervisorRouteId, recordLocationMutation]);
 
   const handleStartRoute = async () => {
-    if (!kmInitial) {
+    const initialKm = Number(kmInitial);
+    if (!Number.isFinite(initialKm) || initialKm < 0) {
       toast.error("Por favor, informe o KM inicial");
       return;
     }
@@ -79,7 +89,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     try {
       await updateKmMutation.mutateAsync({
         id: supervisorRouteId,
-        kmInitial: parseFloat(kmInitial),
+        kmInitial: initialKm,
       });
       setShowKmInitial(false);
       toast.success("Rota iniciada com sucesso!");
@@ -90,15 +100,22 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   };
 
   const handleEndRoute = async () => {
-    if (!kmFinal) {
+    const finalKm = Number(kmFinal);
+    const initialKm = Number(kmInitial || route?.kmInitial);
+    if (!Number.isFinite(finalKm) || finalKm < 0) {
       toast.error("Por favor, informe o KM final");
       return;
     }
     
+    if (Number.isFinite(initialKm) && finalKm < initialKm) {
+      toast.error("O KM final não pode ser menor que o KM inicial");
+      return;
+    }
+
     try {
       await updateKmMutation.mutateAsync({
         id: supervisorRouteId,
-        kmFinal: parseFloat(kmFinal),
+        kmFinal: finalKm,
       });
       setShowKmFinal(false);
       toast.success("Rota encerrada com sucesso!");
@@ -249,21 +266,21 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                             longitude: position.coords.longitude,
                           });
                           // Invalidate to refresh the list
-                          await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                          await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                           toast.success("Chegada registrada com sucesso!");
                         },
                         (error) => {
                           console.warn("Geolocation error:", error);
                           // Continue without geolocation
                           checkInMutation.mutateAsync({ checklistId }).then(() => {
-                            trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                            utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                             toast.success("Chegada registrada com sucesso!");
                           });
                         }
                       );
                     } else {
                       await checkInMutation.mutateAsync({ checklistId });
-                      await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                       toast.success("Chegada registrada com sucesso!");
                     }
                   } catch (error) {
@@ -282,21 +299,21 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                             longitude: position.coords.longitude,
                           });
                           // Invalidate to refresh the list
-                          await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                          await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                           toast.success("Saída registrada com sucesso!");
                         },
                         (error) => {
                           console.warn("Geolocation error:", error);
                           // Continue without geolocation
                           checkOutMutation.mutateAsync({ checklistId }).then(() => {
-                            trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                            utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                             toast.success("Saída registrada com sucesso!");
                           });
                         }
                       );
                     } else {
                       await checkOutMutation.mutateAsync({ checklistId });
-                      await trpc.useUtils().checklists.getByRoute.invalidate({ supervisorRouteId });
+                      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
                       toast.success("Saída registrada com sucesso!");
                     }
                   } catch (error) {
@@ -306,6 +323,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 onOpenChecklist={(checklistId) => {
                   window.location.href = `/supervisor/checklist/${checklistId}`;
                 }}
+                hasActiveVisit={Boolean(activeChecklist && activeChecklist.id !== checklist.id)}
+                isActiveVisit={activeChecklist?.id === checklist.id}
                 isLoading={checkInMutation.isPending || checkOutMutation.isPending}
               />
             );
@@ -347,10 +366,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   className="text-lg"
                 />
               </div>
-              {kmInitial && kmFinal && (
+              {(kmInitial || route.kmInitial) && kmFinal && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <p className="text-sm text-blue-900">
-                    <strong>KM Percorrido:</strong> {(parseFloat(kmFinal) - parseFloat(kmInitial)).toFixed(2)} km
+                    <strong>KM Percorrido:</strong> {(Number(kmFinal) - Number(kmInitial || route.kmInitial)).toFixed(2)} km
                   </p>
                 </div>
               )}

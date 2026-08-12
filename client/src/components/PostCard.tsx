@@ -20,6 +20,8 @@ interface PostCardProps {
   onCheckOut: (checklistId: number) => Promise<void>;
   onOpenChecklist: (checklistId: number) => void;
   isLoading?: boolean;
+  hasActiveVisit?: boolean;
+  isActiveVisit?: boolean;
 }
 
 const PostCard = memo(function PostCard({
@@ -39,6 +41,8 @@ const PostCard = memo(function PostCard({
   onCheckOut,
   onOpenChecklist,
   isLoading = false,
+  hasActiveVisit = false,
+  isActiveVisit = status === 'in_progress',
 }: PostCardProps) {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
@@ -72,7 +76,7 @@ const PostCard = memo(function PostCard({
   };
 
   const formatCoordinates = (lat?: number | null, lng?: number | null) => {
-    if (!lat || !lng) return null;
+    if (lat === null || lat === undefined || lng === null || lng === undefined) return null;
     return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   };
 
@@ -81,7 +85,7 @@ const PostCard = memo(function PostCard({
       return 'bg-green-50 border-green-200 border-l-4 border-l-green-500';
     }
     if (status === 'in_progress') {
-      return 'bg-blue-50 border-blue-200 border-l-4 border-l-blue-500';
+      return 'bg-emerald-50 border-emerald-200 border-l-4 border-l-emerald-500 shadow-sm shadow-emerald-100';
     }
     return 'bg-white border-gray-200';
   };
@@ -91,7 +95,7 @@ const PostCard = memo(function PostCard({
       return <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />;
     }
     if (status === 'in_progress') {
-      return <Clock className="w-5 h-5 text-blue-600 flex-shrink-0" />;
+      return <Clock className="w-5 h-5 text-emerald-600 flex-shrink-0" />;
     }
     return <MapPin className="w-5 h-5 text-gray-600 flex-shrink-0" />;
   };
@@ -122,7 +126,7 @@ const PostCard = memo(function PostCard({
                 {postAddress && <span className="block text-sm">{postAddress}</span>}
                 <span className={`inline-block font-semibold text-xs mt-1 px-2 py-1 rounded ${
                   status === 'visited' ? 'bg-green-100 text-green-800' :
-                  status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                  status === 'in_progress' ? 'bg-emerald-100 text-emerald-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
                   {statusLabel}
@@ -136,10 +140,11 @@ const PostCard = memo(function PostCard({
             {status === 'pending' && (
               <Button
                 onClick={memoizedCheckIn}
-                disabled={isCheckingIn || isLoading}
+                disabled={isCheckingIn || isLoading || hasActiveVisit}
+                aria-label={`Registrar chegada em ${postName}`}
                 className="bg-green-600 hover:bg-green-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                 size="sm"
-                title="Clique para registrar sua chegada no condomínio"
+                title={hasActiveVisit ? "Finalize a visita ativa antes de registrar outra chegada" : "Clique para registrar sua chegada no posto"}
               >
                 {isCheckingIn ? (
                   <>
@@ -159,12 +164,14 @@ const PostCard = memo(function PostCard({
 
             {status === 'in_progress' && (
               <>
+                {isActiveVisit ? (
                 <Button
                   onClick={memoizedCheckOut}
                   disabled={isCheckingOut || isLoading}
+                  aria-label={`Registrar saída de ${postName}`}
                   className="bg-red-600 hover:bg-red-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                   size="sm"
-                  title="Clique para registrar sua saída do condomínio"
+                  title="Clique para registrar sua saída do posto"
                 >
                   {isCheckingOut ? (
                     <>
@@ -180,6 +187,11 @@ const PostCard = memo(function PostCard({
                     </>
                   )}
                 </Button>
+                ) : (
+                  <span className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-800" role="status">
+                    Outra visita está ativa
+                  </span>
+                )}
                 <Button
                   onClick={memoizedOpenChecklist}
                   disabled={isLoading}
@@ -194,10 +206,11 @@ const PostCard = memo(function PostCard({
             )}
 
             {status === 'visited' && (
-              <Button
-                onClick={() => onOpenChecklist(id)}
-                disabled={isLoading}
-                variant="outline"
+                <Button
+                  onClick={() => onOpenChecklist(id)}
+                  disabled={isLoading}
+                  aria-label={`Ver detalhes de ${postName}`}
+                  variant="outline"
                 className="text-gray-600 border-gray-300 flex-1 md:flex-none"
                 size="sm"
               >

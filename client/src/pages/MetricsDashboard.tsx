@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Clock, CheckCircle2, AlertCircle, Loader2, Calendar } from "lucide-react";
+import { TrendingUp, Clock, CheckCircle2, AlertCircle, Loader2, Calendar, Route as RouteIcon } from "lucide-react";
 import { useState } from "react";
+import { AdminHeader } from "@/components/AdminHeader";
 
 export default function MetricsDashboard() {
   const { user, logout } = useAuth();
@@ -13,6 +14,10 @@ export default function MetricsDashboard() {
 
   // Queries
   const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
+    startDate: dateRange.start,
+    endDate: dateRange.end,
+  });
+  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.conformanceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -58,16 +63,17 @@ export default function MetricsDashboard() {
     });
     const visitsByRouteData = Object.entries(visitsByRoute).map(([route, count]) => ({ route: `Rota ${route}`, visits: count }));
 
-    // Conformance data (simplified - assuming all visited = compliant)
-    const conformanceData = [
-      { name: 'Conforme', value: totalVisits, fill: '#10b981' },
-      { name: 'Não Conforme', value: 0, fill: '#ef4444' },
-    ];
+    const conformanceTotal = conformance?.total ?? 0;
+    const conformanceData = conformanceTotal > 0 ? [
+      { name: 'Conforme', value: conformance?.compliant ?? 0, fill: '#10b981' },
+      { name: 'Não Conforme', value: conformance?.nonCompliant ?? 0, fill: '#ef4444' },
+      { name: 'Sem resposta', value: conformance?.unanswered ?? 0, fill: '#f59e0b' },
+    ].filter((item) => item.value > 0) : [];
 
     return {
       totalVisits,
       avgVisitTime,
-      avgConformance: 100,
+      avgConformance: conformanceTotal > 0 ? Math.round(((conformance?.compliant ?? 0) / conformanceTotal) * 100) : 0,
       visitsByDay: visitsByDayData,
       visitsByRoute: visitsByRouteData,
       conformanceData,
@@ -75,22 +81,17 @@ export default function MetricsDashboard() {
   };
 
   const metrics = calculateMetrics();
+  const isLoading = reportsLoading || conformanceLoading;
   const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6'];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard de Métricas</h1>
-            <p className="text-gray-600 mt-1">Análise de desempenho e conformidade</p>
-          </div>
-          <Button onClick={() => logout()} variant="outline" className="text-gray-700">
-            Sair
-          </Button>
-        </div>
-      </div>
+      <AdminHeader
+        title="Dashboard de métricas"
+        subtitle="Análise de desempenho e conformidade"
+        userName={user?.name}
+        onLogout={() => logout()}
+      />
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -162,7 +163,7 @@ export default function MetricsDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">{metrics.avgConformance}%</div>
+              <p className="text-3xl font-bold text-gray-900">{conformance?.total ? `${metrics.avgConformance}%` : '—'}</p>
               <p className="text-xs text-gray-600 mt-2">Visitas conformes</p>
             </CardContent>
           </Card>
@@ -184,9 +185,15 @@ export default function MetricsDashboard() {
                 <CardDescription>Distribuição de visitas ao longo do período</CardDescription>
               </CardHeader>
               <CardContent>
-                {reportsLoading ? (
+                {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  </div>
+                ) : metrics.visitsByDay.length === 0 ? (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 text-center">
+                    <TrendingUp className="mb-3 h-8 w-8 text-gray-400" />
+                    <p className="font-medium text-gray-800">Ainda não há visitas neste período</p>
+                    <p className="mt-1 max-w-md text-sm text-gray-500">Conclua um check-out no painel do supervisor para alimentar este gráfico.</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -212,9 +219,15 @@ export default function MetricsDashboard() {
                 <CardDescription>Distribuição de visitas entre as rotas</CardDescription>
               </CardHeader>
               <CardContent>
-                {reportsLoading ? (
+                {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  </div>
+                ) : metrics.visitsByRoute.length === 0 ? (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 text-center">
+                    <RouteIcon className="mb-3 h-8 w-8 text-gray-400" />
+                    <p className="font-medium text-gray-800">Nenhuma rota concluída no período</p>
+                    <p className="mt-1 max-w-md text-sm text-gray-500">O comparativo aparecerá quando houver visitas concluídas.</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -240,9 +253,15 @@ export default function MetricsDashboard() {
                 <CardDescription>Proporção de visitas conformes vs não conformes</CardDescription>
               </CardHeader>
               <CardContent>
-                {reportsLoading ? (
+                {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  </div>
+                ) : metrics.conformanceData.length === 0 ? (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 text-center">
+                    <CheckCircle2 className="mb-3 h-8 w-8 text-gray-400" />
+                    <p className="font-medium text-gray-800">Conformidade ainda não disponível</p>
+                    <p className="mt-1 max-w-md text-sm text-gray-500">Preencha os itens do checklist e finalize a visita para gerar esta análise.</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -290,7 +309,7 @@ export default function MetricsDashboard() {
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-gray-600">
-                  <strong>Conformidade:</strong> {metrics.avgConformance}%
+                  <strong>Conformidade:</strong> {conformance?.total ? `${metrics.avgConformance}%` : 'Sem dados'}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Rotas Ativas:</strong> {metrics.visitsByRoute.length}

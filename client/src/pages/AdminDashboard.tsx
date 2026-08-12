@@ -6,16 +6,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, AlertCircle, Loader2, Calendar, Clock } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { PostPriorityCard } from "@/components/PostPriorityCard";
+import { AdminHeader } from "@/components/AdminHeader";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
+  const [, navigate] = useLocation();
   const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), end: new Date() });
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
 
   // Queries
   const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
   const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
+    startDate: dateRange.start,
+    endDate: dateRange.end,
+  });
+  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.conformanceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -51,35 +58,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Painel Administrativo</h1>
-              <p className="text-gray-600 mt-1">Bem-vindo, {user?.name}</p>
-            </div>
-            <Button
-              onClick={() => logout()}
-              variant="outline"
-              className="text-gray-700"
-            >
-              Sair
-            </Button>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin'}>
-              Relatórios
-            </Button>
-            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin/metrics'}>
-              Métricas
-            </Button>
-            <Button variant="outline" size="sm" className="text-blue-600 border-blue-600" onClick={() => window.location.href = '/admin/export'}>
-              Exportar
-            </Button>
-          </div>
-        </div>
-      </div>
+      <AdminHeader
+        title="Painel administrativo"
+        subtitle="Acompanhe prioridades, visitas e conformidade"
+        userName={user?.name}
+        onLogout={() => logout()}
+      />
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -106,8 +90,8 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-gray-900">95%</div>
-              <p className="text-xs text-gray-600 mt-2">Média geral</p>
+              <div className="text-3xl font-bold text-gray-900">{conformanceLoading ? '...' : conformance?.total ? `${Math.round((conformance.compliant / conformance.total) * 100)}%` : '—'}</div>
+              <p className="text-xs text-gray-600 mt-2">Itens de checklist no período</p>
             </CardContent>
           </Card>
         </div>
@@ -252,8 +236,9 @@ export default function AdminDashboard() {
                 <CardContent>
                   <div className="flex gap-4 items-end flex-wrap">
                     <div className="flex-1 min-w-[200px]">
-                      <label className="text-sm font-medium text-gray-700">Data Inicial</label>
+                        <label htmlFor="admin-start-date" className="text-sm font-medium text-gray-700">Data Inicial</label>
                       <input
+                        id="admin-start-date"
                         type="date"
                         value={dateRange.start.toISOString().split('T')[0]}
                         onChange={(e) => setDateRange({ ...dateRange, start: new Date(e.target.value) })}
@@ -261,8 +246,9 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="flex-1 min-w-[200px]">
-                      <label className="text-sm font-medium text-gray-700">Data Final</label>
+                        <label htmlFor="admin-end-date" className="text-sm font-medium text-gray-700">Data Final</label>
                       <input
+                        id="admin-end-date"
                         type="date"
                         value={dateRange.end.toISOString().split('T')[0]}
                         onChange={(e) => setDateRange({ ...dateRange, end: new Date(e.target.value) })}
@@ -306,8 +292,8 @@ export default function AdminDashboard() {
                         <tbody>
                           {reports?.map((report: any) => (
                             <tr key={report.id} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-3 px-4 text-gray-900 font-medium">Posto #{report.postId}</td>
-                              <td className="py-3 px-4 text-gray-900">Rota #{report.supervisorRouteId}</td>
+                              <td className="py-3 px-4 font-medium text-gray-900">{report.postName || `Posto #${report.postId}`}</td>
+                              <td className="py-3 px-4 text-gray-900">{report.supervisorName || 'Supervisor não informado'}<span className="block text-xs text-gray-500">{report.routeName || `Rota #${report.routeId}`}</span></td>
                               <td className="py-3 px-4 text-gray-600">
                                 {formatTime(report.arrivalTime)}
                               </td>
@@ -326,8 +312,9 @@ export default function AdminDashboard() {
                         </tbody>
                       </table>
                       {reports?.length === 0 && (
-                        <div className="text-center py-8 text-gray-600">
-                          Nenhuma visita registrada neste período
+                        <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-gray-600">
+                          <p className="font-medium text-gray-800">Nenhuma visita registrada neste período</p>
+                          <p className="mt-1 text-sm">Altere o período ou aguarde o primeiro check-out concluído.</p>
                         </div>
                       )}
                     </div>

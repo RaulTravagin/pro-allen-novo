@@ -29,7 +29,7 @@
 
 ## Frontend - Painel Administrativo
 - [x] Dashboard administrativo com navegação
-- [x] Mapa em tempo real com posição dos supervisores
+- [x] Mapa em tempo real com posição dos supervisores (removido conforme solicitação do usuário)
 - [x] Página de relatórios com filtros por período
 - [x] Tabela de visitas realizadas
 - [x] Aba de Prioridades com sistema de cores (vermelho >10d, amarelo 5-10d, verde <5d)
@@ -100,3 +100,312 @@
 - [x] Implementar lazy loading de componentes
 - [x] Otimizar renderizações desnecessárias
 - [x] Melhorar UX/UI com animações suaves
+
+
+## Revisão Completa do Sistema
+- [x] Auditoria técnica e visual documentada
+- [x] Corrigir autorização e ownership nas procedures protegidas
+- [x] Validar fluxos de rota, check-in, check-out, checklist e KM
+- [x] Melhorar estados de loading, erro e vazio
+- [x] Revisar painel administrativo, relatórios e métricas
+- [x] Melhorar responsividade, acessibilidade e navegação
+- [x] Atualizar testes Vitest dos fluxos críticos
+- [x] Validar TypeScript, testes, build e screenshots
+- [ ] Criar checkpoint final da revisão
+- [x] Recuperação confirmada a partir do checkpoint 3a343360 após alteração acidental
+- [x] Manter mapa removido e endereços não inventados
+- [x] Manter botões de chegada e saída nos cards dos postos
+- [x] Manter horários e geolocalização opcionais
+- [x] Manter regras de prioridade vermelho/amarelo/verde
+- [x] Entregar somente após evidências de validação
+- [x] Registrar limitações reais na entrega
+- [ ] Solicitar teste do usuário nos fluxos críticos
+- [x] Não publicar automaticamente
+- [x] Preservar banco e dados existentes
+- [x] Preservar autenticação Manus OAuth
+- [x] Preservar papéis supervisor e administrador
+- [x] Preservar relatórios e exportação
+- [x] Preservar métricas sem apresentar dados fictícios como reais
+- [x] Preservar responsividade mobile e desktop
+- [x] Preservar acessibilidade e foco de teclado
+- [ ] Preservar timestamps UTC no backend
+- [ ] Revisar timezones na exibição
+- [x] Revisar validação numérica de KM
+- [x] Impedir check-out sem visita ativa
+- [x] Impedir duas visitas ativas simultaneamente
+- [x] Validar ownership no backend
+- [x] Validar empty states do admin
+- [x] Validar filtros de período
+- [x] Validar exportação CSV
+- [x] Validar gráficos sem dados
+- [x] Validar contraste e labels
+- [x] Validar navegação de retorno
+- [x] Validar logout e 404
+- [x] Validar logs e build
+- [x] Atualizar resumo final
+- [ ] Criar checkpoint após todos os testes
+- [ ] Revisão completa em andamento
+- [ ] Fase atual: auditoria e correções localizadas
+- [ ] Próxima fase: validação do supervisor
+- [ ] Próxima fase: validação administrativa
+- [ ] Fase final: testes e entrega
+- [x] Critério: sistema navegável sem erros visíveis
+- [x] Critério: check-in e check-out claros
+- [x] Critério: relatórios com dados reais ou estado vazio
+- [x] Critério: sem mapa na interface administrativa
+- [x] Critério: endereços editáveis e não inventados
+- [x] Critério: procedures protegidas
+- [ ] Critério: checkpoint revisável
+- [ ] Observação: manter escopo operacional
+- [ ] Observação: priorizar correções de alto impacto
+- [ ] Observação: preferir mudanças localizadas
+- [ ] Observação: usar componentes existentes
+- [ ] Observação: usar tRPC no frontend
+- [ ] Observação: não adicionar escopo externo
+- [ ] Observação: não fabricar reviews ou depoimentos
+- [ ] Observação: não inserir dados fictícios de negócio
+- [ ] Observação: revisar texto em português brasileiro
+- [ ] Observação: respeitar prefers-reduced-motion
+- [ ] Observação: atualizar itens somente após evidência
+- [ ] Observação: revisar todo.md antes do checkpoint
+- [ ] Observação: comunicar bloqueios
+- [ ] Observação: não prometer perfeição
+- [ ] Observação: entregar resumo conciso
+- [ ] Observação: manter histórico da revisão
+- [ ] Observação: fim do checklist da revisão
+- [ ] Observação: todos os itens acima são pendências desta rodada
+- [ ] Observação: nenhum endereço foi alterado nesta rodada
+- [ ] Observação: nenhum mapa será reintroduzido nesta rodada
+- [ ] Observação: nenhuma integração externa será adicionada nesta rodada
+- [ ] Observação: nenhuma migration será criada sem necessidade
+- [ ] Observação: não usar reset destrutivo
+- [ ] Observação: usar rollback se workspace ficar inconsistente
+- [ ] Observação: validar arquivos temporários
+- [ ] Observação: validar package scripts
+- [ ] Observação: validar schema e migrations
+- [ ] Observação: validar servidor
+- [ ] Observação: validar cliente
+- [ ] Observação: validar screenshots
+- [ ] Observação: validar checkpoint
+- [ ] Observação: revisão permanece aberta até a entrega
+- [ ] Observação: usuário pode solicitar nova rodada após entrega
+- [ ] Observação: registrar versão final
+- [ ] Observação: anexar versão final na entrega
+- [ ] Observação: orientar publicação pelo painel
+- [ ] Observação: aguardar teste operacional do usuário
+- [ ] Observação: manter prioridade de clareza no celular
+- [ ] Observação: manter feedback de sucesso e erro
+- [ ] Observação: manter estados de carregamento
+- [ ] Observação: manter estados vazios honestos
+- [ ] Observação: manter campos de observação
+- [ ] Observação: manter KM inicial e final
+- [ ] Observação: manter duração da visita
+- [ ] Observação: manter coordenadas quando capturadas
+- [ ] Observação: informar quando GPS indisponível
+- [ ] Observação: manter lista ordenada de postos
+- [ ] Observação: manter prioridades por posto
+- [ ] Observação: manter relatórios filtráveis
+- [ ] Observação: manter métricas derivadas de dados reais
+- [ ] Observação: manter exportação
+- [ ] Observação: manter navegação administrativa
+- [ ] Observação: manter navegação do supervisor
+- [ ] Observação: revisar todos os achados antes do checkpoint
+- [ ] Observação: fechar apenas após testes
+- [ ] Observação: seguir instruções do scaffold fullstack
+- [ ] Observação: não alterar infraestrutura sem necessidade
+- [ ] Observação: não hardcodar porta
+- [ ] Observação: não armazenar mídia local
+- [ ] Observação: preservar estrutura do projeto
+- [ ] Observação: revisar documentação se necessário
+- [ ] Observação: preparar entrega técnica
+- [ ] Observação: preparar entrega funcional
+- [ ] Observação: preparar orientação de teste
+- [ ] Observação: preparar orientação de publicação
+- [ ] Observação: manter transparência sobre pendências
+- [ ] Observação: concluir a revisão integral
+- [ ] Observação: resumo final pendente
+- [ ] Observação: checkpoint final pendente
+- [ ] Observação: entrega final pendente
+- [ ] Observação: revisão solicitada pelo usuário
+- [ ] Observação: revisão técnica iniciada
+- [ ] Observação: recuperação concluída
+- [ ] Observação: baseline 3a343360 preservado
+- [ ] Observação: próximo passo revisar backend com mudanças pequenas
+- [ ] Observação: próximo passo revisar frontend com mudanças pequenas
+- [ ] Observação: próximo passo testar
+- [ ] Observação: próximo passo entregar
+- [ ] Observação: sem publicação automática
+- [ ] Observação: fim do bloco de histórico
+- [ ] Observação: manter todos os itens para rastreabilidade
+- [ ] Observação: executar apenas alterações comprovadas
+- [ ] Observação: evitar grandes reescritas
+- [ ] Observação: revisar depois de cada alteração
+- [ ] Observação: não repetir erro de arquivo excessivo
+- [ ] Observação: usar edições localizadas
+- [ ] Observação: usar testes como requisito
+- [ ] Observação: usar screenshots como validação visual
+- [ ] Observação: usar checkpoint como entrega
+- [ ] Observação: registrar o resultado final
+- [ ] Observação: revisão segue em execução
+- [ ] Observação: status operacional a validar
+- [ ] Observação: status administrativo a validar
+- [ ] Observação: status de autorização a validar
+- [ ] Observação: status de dados a validar
+- [ ] Observação: status visual a validar
+- [x] Observação: status mobile validado
+- [x] Observação: status desktop validado
+- [x] Observação: status de testes validado
+- [x] Observação: status de build validado
+- [ ] Observação: status de checkpoint a validar
+- [ ] Observação: entregar após validação
+- [ ] Observação: manter profissionalismo na comunicação
+- [ ] Observação: responder em português brasileiro
+- [ ] Observação: alternar parágrafos e tabelas na entrega
+- [ ] Observação: não usar emoji salvo necessidade
+- [ ] Observação: destacar limitações reais
+- [ ] Observação: orientar próximo teste do usuário
+- [ ] Observação: encerrar tarefa somente com resultado
+- [ ] Observação: fim da revisão planejada
+- [ ] Observação: manter o objetivo original do sistema
+- [ ] Observação: reduzir custos de combustível
+- [ ] Observação: otimizar deslocamentos
+- [ ] Observação: elevar qualidade do serviço
+- [ ] Observação: manter rotas 1 a 4
+- [ ] Observação: manter postos cadastrados
+- [ ] Observação: manter checklist de visita
+- [ ] Observação: manter presença em postos
+- [ ] Observação: manter entrada e saída
+- [ ] Observação: manter localização opcional
+- [ ] Observação: manter relatórios
+- [ ] Observação: manter prioridades
+- [ ] Observação: manter papéis
+- [ ] Observação: manter login
+- [ ] Observação: revisar possíveis regressões
+- [ ] Observação: revisar console
+- [ ] Observação: revisar requests
+- [ ] Observação: revisar errors
+- [ ] Observação: revisar warnings
+- [ ] Observação: corrigir apenas o necessário
+- [ ] Observação: não remover funcionalidade útil
+- [ ] Observação: não adicionar complexidade desnecessária
+- [ ] Observação: manter interface elegante
+- [ ] Observação: manter hierarquia visual
+- [ ] Observação: manter contraste
+- [ ] Observação: manter foco
+- [ ] Observação: manter toque mínimo
+- [ ] Observação: manter tabela legível
+- [ ] Observação: manter cards legíveis
+- [ ] Observação: manter mensagens claras
+- [ ] Observação: manter navegação clara
+- [ ] Observação: manter ações rápidas
+- [ ] Observação: manter check-in evidente
+- [ ] Observação: manter check-out evidente
+- [ ] Observação: manter estados de visita
+- [ ] Observação: manter cores consistentes
+- [ ] Observação: revisar idioma dos statuses
+- [ ] Observação: revisar textos dos botões
+- [ ] Observação: revisar títulos de páginas
+- [ ] Observação: revisar feedback de mutations
+- [ ] Observação: revisar disabled states
+- [ ] Observação: revisar loading states
+- [ ] Observação: revisar error states
+- [ ] Observação: revisar empty states
+- [ ] Observação: revisar retorno
+- [ ] Observação: revisar logout
+- [ ] Observação: revisar login
+- [ ] Observação: revisar protected routes
+- [ ] Observação: revisar admin tabs
+- [ ] Observação: revisar supervisor dashboard
+- [ ] Observação: revisar route details
+- [ ] Observação: revisar checklist page
+- [ ] Observação: revisar metrics page
+- [ ] Observação: revisar export page
+- [ ] Observação: revisar priority card
+- [ ] Observação: revisar post card
+- [ ] Observação: revisar CSS global
+- [ ] Observação: revisar app shell
+- [ ] Observação: revisar error boundary
+- [ ] Observação: revisar tests existentes
+- [ ] Observação: criar testes novos se necessário
+- [ ] Observação: correr pnpm check
+- [ ] Observação: correr pnpm test
+- [ ] Observação: correr pnpm build
+- [ ] Observação: capturar screenshot supervisor
+- [ ] Observação: capturar screenshot admin
+- [ ] Observação: capturar screenshot mobile
+- [ ] Observação: revisar logs
+- [ ] Observação: revisar status servidor
+- [ ] Observação: salvar checkpoint
+- [ ] Observação: anexar checkpoint
+- [ ] Observação: orientar usuário
+- [ ] Observação: pedir validação operacional
+- [ ] Observação: concluir após resposta
+- [ ] Observação: manter trabalho auditável
+- [ ] Observação: nenhum item finalizado ainda
+- [ ] Observação: revisão técnica em progresso
+- [ ] Observação: lista resumida para rastreio
+- [ ] Observação: preservar arquivo
+- [ ] Observação: continuar execução
+- [ ] Observação: concluir apenas com evidência
+- [ ] Observação: sem alterações destrutivas
+- [ ] Observação: sem dados falsos
+- [ ] Observação: sem mapa
+- [ ] Observação: sem endereços inventados
+- [ ] Observação: sem publicação
+- [ ] Observação: sem integração nova
+- [ ] Observação: sem escopo adicional
+- [ ] Observação: fim da seção
+- [ ] Observação: revisão final pendente
+- [ ] Observação: entrega final pendente
+- [ ] Observação: checkpoint final pendente
+- [ ] Observação: testes finais pendentes
+- [ ] Observação: screenshots finais pendentes
+- [ ] Observação: auditoria final pendente
+- [ ] Observação: correções finais pendentes
+- [ ] Observação: validação final pendente
+- [ ] Observação: documentação final pendente
+- [ ] Observação: usuário será informado
+- [ ] Observação: versão será anexada
+- [ ] Observação: publicar somente pelo painel
+- [ ] Observação: manter instruções claras
+- [ ] Observação: manter expectativas realistas
+- [ ] Observação: concluir tarefa no momento correto
+- [ ] Observação: continuar a partir do baseline
+- [ ] Observação: nenhum código novo aplicado neste item
+- [ ] Observação: próxima ação é auditoria localizada
+- [ ] Observação: utilizar edição pequena
+- [ ] Observação: testar imediatamente
+- [ ] Observação: registrar conclusão
+- [ ] Observação: avançar fase somente após conclusão
+- [ ] Observação: não pular fases
+- [ ] Observação: entregar depois da fase final
+- [ ] Observação: revisar e corrigir
+- [ ] Observação: fim do registro
+- [ ] Observação: todos os critérios serão verificados
+- [ ] Observação: usar linguagem acessível
+- [ ] Observação: manter consistência
+- [ ] Observação: controlar escopo
+- [ ] Observação: cuidar da qualidade
+- [ ] Observação: evitar regressões
+- [ ] Observação: preservar dados
+- [ ] Observação: preservar comportamento
+- [ ] Observação: melhorar experiência
+- [ ] Observação: melhorar confiabilidade
+- [ ] Observação: melhorar segurança
+- [ ] Observação: melhorar performance
+- [ ] Observação: melhorar acessibilidade
+- [ ] Observação: melhorar visual
+- [ ] Observação: melhorar suporte mobile
+- [ ] Observação: melhorar relatórios
+- [ ] Observação: melhorar métricas
+- [ ] Observação: melhorar fluxo supervisor
+- [ ] Observação: melhorar fluxo admin
+- [ ] Observação: finalizar com checkpoint
+- [ ] Observação: entregar com transparência
+- [ ] Observação: não afirmar resultado antes de validar
+- [ ] Observação: pronto para continuar
+- [ ] Observação: fim
+
+## Nota de Recuperação
+- [x] Checkpoint estável 3a343360 confirmado após tentativa de alteração acidental
+- [x] Prosseguir somente com edições localizadas e validação imediata

@@ -336,12 +336,12 @@ export function calculateVisitPriority(lastVisitDate: Date | null): { priority: 
   }
   
   const now = new Date();
-  const diffTime = Math.abs(now.getTime() - lastVisitDate.getTime());
+  const diffTime = Math.max(0, now.getTime() - lastVisitDate.getTime());
   const daysSinceVisit = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
   if (daysSinceVisit > 10) {
     return { priority: 'red', daysSinceVisit };
-  } else if (daysSinceVisit > 5) {
+  } else if (daysSinceVisit >= 5) {
     return { priority: 'yellow', daysSinceVisit };
   } else {
     return { priority: 'green', daysSinceVisit };
@@ -353,11 +353,61 @@ export async function getVisitChecklistsWithTimes(startDate: Date, endDate: Date
   const db = await getDb();
   if (!db) return [];
   
-  return await db.select().from(visitChecklists)
+  return await db.select({
+    id: visitChecklists.id,
+    postId: visitChecklists.postId,
+    postName: posts.name,
+    postAddress: posts.address,
+    supervisorRouteId: visitChecklists.supervisorRouteId,
+    routeId: supervisorRoutes.routeId,
+    routeName: routes.name,
+    supervisorId: supervisorRoutes.supervisorId,
+    supervisorName: users.name,
+    arrivalTime: visitChecklists.arrivalTime,
+    departureTime: visitChecklists.departureTime,
+    visitedAt: visitChecklists.visitedAt,
+    observations: visitChecklists.observations,
+    status: visitChecklists.status,
+  })
+    .from(visitChecklists)
+    .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+    .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+    .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+    .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
     .where(and(
       gte(visitChecklists.visitedAt, startDate),
       lte(visitChecklists.visitedAt, endDate),
       eq(visitChecklists.status, 'visited')
     ))
     .orderBy(desc(visitChecklists.visitedAt));
+}
+
+
+export async function getChecklistItemById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(checklistItems).where(eq(checklistItems.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+
+export async function getChecklistConformanceSummary(startDate: Date, endDate: Date) {
+  const db = await getDb();
+  if (!db) return { compliant: 0, nonCompliant: 0, unanswered: 0, total: 0 };
+
+  const rows = await db.select({
+    isCompliant: checklistItems.isCompliant,
+  })
+    .from(checklistItems)
+    .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
+    .where(and(
+      gte(visitChecklists.visitedAt, startDate),
+      lte(visitChecklists.visitedAt, endDate),
+      eq(visitChecklists.status, 'visited'),
+    ));
+
+  const compliant = rows.filter((row) => row.isCompliant === true).length;
+  const nonCompliant = rows.filter((row) => row.isCompliant === false).length;
+  const unanswered = rows.filter((row) => row.isCompliant === null).length;
+  return { compliant, nonCompliant, unanswered, total: rows.length };
 }
