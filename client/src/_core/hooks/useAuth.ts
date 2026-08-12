@@ -26,10 +26,14 @@ export function useAuth(options?: UseAuthOptions) {
       utils.auth.me.setData(undefined, null);
     },
   });
+  const localLogoutMutation = trpc.localAuth.logout.useMutation();
 
   const logout = useCallback(async () => {
     try {
-      await logoutMutation.mutateAsync();
+      await Promise.all([
+        logoutMutation.mutateAsync(),
+        localLogoutMutation.mutateAsync(),
+      ]);
     } catch (error: unknown) {
       if (
         error instanceof TRPCClientError &&
@@ -48,7 +52,7 @@ export function useAuth(options?: UseAuthOptions) {
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
-  }, [logoutMutation, utils]);
+  }, [localLogoutMutation, logoutMutation, utils]);
 
   const state = useMemo(() => {
     localStorage.setItem(
@@ -57,8 +61,8 @@ export function useAuth(options?: UseAuthOptions) {
     );
     return {
       user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
+      loading: meQuery.isLoading || logoutMutation.isPending || localLogoutMutation.isPending,
+      error: meQuery.error ?? logoutMutation.error ?? localLogoutMutation.error ?? null,
       isAuthenticated: Boolean(meQuery.data),
     };
   }, [
@@ -67,11 +71,13 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.isLoading,
     logoutMutation.error,
     logoutMutation.isPending,
+    localLogoutMutation.error,
+    localLogoutMutation.isPending,
   ]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
+    if (meQuery.isLoading || logoutMutation.isPending || localLogoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
     if (redirectPath && window.location.pathname === redirectPath) return;
@@ -86,6 +92,7 @@ export function useAuth(options?: UseAuthOptions) {
     redirectOnUnauthenticated,
     redirectPath,
     logoutMutation.isPending,
+    localLogoutMutation.isPending,
     meQuery.isLoading,
     state.user,
   ]);

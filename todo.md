@@ -82,3 +82,15 @@
 - [x] Impedir qualquer consulta ao painel antes da sessão do Gestor estar autenticada
 - [x] Adicionar teste de regressão para acesso sem sessão
 - [x] Validar o preview da tela de acesso sem erro, salvar checkpoint e disponibilizar a correção
+
+## Próxima Etapa: Google Maps
+- [x] Retomar a integração do Google Maps em 15 de agosto de 2026, às 06h, após o levantamento dos endereços dos postos
+
+## Acessos Individuais dos Supervisores
+- [x] Criar autenticação local por usuário e senha com hash seguro
+- [x] Criar conta de Paulo Murashita
+- [x] Criar conta de Rodrigo Ramos
+- [x] Criar conta de Aparecido Quirino
+- [x] Criar conta de Raul Travagin
+- [x] Garantir que cada supervisor acesse apenas suas próprias rotas e visitas
+- [x] Testar os quatro logins, validar o preview e salvar checkpoint

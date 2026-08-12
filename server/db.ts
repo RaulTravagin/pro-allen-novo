@@ -89,6 +89,48 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function provisionLocalSupervisor(input: { username: string; name: string; passwordHash: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await getUserByUsername(input.username);
+
+  if (existing) {
+    await db.update(users).set({
+      username: input.username,
+      passwordHash: input.passwordHash,
+      mustChangePassword: true,
+    }).where(eq(users.id, existing.id));
+    return (await getUserById(existing.id))!;
+  }
+
+  const result = await db.insert(users).values({
+    openId: `local:${input.username}`,
+    name: input.name,
+    loginMethod: "local",
+    username: input.username,
+    passwordHash: input.passwordHash,
+    mustChangePassword: true,
+    role: "user",
+    lastSignedIn: new Date(),
+  });
+  return (await getUserById(Number((result as unknown as { insertId: number }).insertId)))!;
+}
+
 // Routes queries
 export async function getAllRoutes() {
   const db = await getDb();

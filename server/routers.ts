@@ -12,6 +12,12 @@ import {
   hasGestorSession,
   isGestorPasswordValid,
 } from "./gestor-access";
+import {
+  createSupervisorSession,
+  LOCAL_SUPERVISOR_COOKIE_NAME,
+  LOCAL_SUPERVISOR_SESSION_MAX_AGE_SECONDS,
+  verifySupervisorPassword,
+} from "./local-supervisor-auth";
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -60,6 +66,28 @@ export const appRouter = router({
       return {
         success: true,
       } as const;
+    }),
+  }),
+
+  localAuth: router({
+    login: publicProcedure
+      .input(z.object({ username: z.string().trim().min(3).max(64), password: z.string().min(1).max(200) }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await db.getUserByUsername(input.username.toLowerCase());
+        const passwordValid = user ? await verifySupervisorPassword(input.password, user.passwordHash) : false;
+        if (!user || !passwordValid || user.role !== "user") {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos" });
+        }
+        const token = await createSupervisorSession(user.id);
+        ctx.res.cookie(LOCAL_SUPERVISOR_COOKIE_NAME, token, {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: LOCAL_SUPERVISOR_SESSION_MAX_AGE_SECONDS * 1000,
+        });
+        return { success: true, user: { id: user.id, name: user.name, username: user.username } };
+      }),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      ctx.res.clearCookie(LOCAL_SUPERVISOR_COOKIE_NAME, { ...getSessionCookieOptions(ctx.req), maxAge: -1 });
+      return { success: true } as const;
     }),
   }),
 
