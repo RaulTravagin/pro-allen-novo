@@ -24,7 +24,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   
   const [kmInitial, setKmInitial] = useState<string>("");
   const [kmFinal, setKmFinal] = useState<string>("");
-  const [showKmInitial, setShowKmInitial] = useState(false);
   const [showKmFinal, setShowKmFinal] = useState(false);
   const [gpsError, setGpsError] = useState<string>("");
 
@@ -34,9 +33,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
 
   useEffect(() => {
-    if (!route) return;
-    setShowKmInitial(route.status === 'pending');
-    if (route.status === 'completed') setShowKmFinal(false);
+    if (route?.status === 'completed') setShowKmFinal(false);
   }, [route?.status]);
 
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
@@ -47,8 +44,22 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
   const recordLocationMutation = trpc.locations.record.useMutation();
+  const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
+
+  useEffect(() => {
+    if (!route || checklistsLoading || !posts?.length || (checklists?.length ?? 0) > 0 || createChecklistsMutation.isPending) {
+      return;
+    }
+
+    void createChecklistsMutation.mutateAsync({ supervisorRouteId })
+      .then(() => utils.checklists.getByRoute.invalidate({ supervisorRouteId }))
+      .catch((error) => {
+        console.error("Checklist creation error:", error);
+        toast.error("Não foi possível preparar os postos da rota");
+      });
+  }, [route?.id, posts?.length, checklists?.length, checklistsLoading, supervisorRouteId, createChecklistsMutation, utils]);
 
   const captureCoordinates = () => new Promise<{ latitude?: number; longitude?: number }>((resolve) => {
     if (!navigator.geolocation) {
@@ -119,7 +130,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         id: supervisorRouteId,
         kmInitial: initialKm,
       });
-      setShowKmInitial(false);
       toast.success("Rota iniciada com sucesso!");
     } catch (error) {
       toast.error("Erro ao iniciar rota");
@@ -216,45 +226,78 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         )}
 
-        {/* KM Registration */}
-        {showKmInitial && (
-          <Card className="mb-8 border-l-4 border-l-yellow-500 bg-gradient-to-r from-yellow-50 to-transparent">
+        <section className="mb-8" aria-labelledby="vehicle-control-title">
+          <Card className="border-blue-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Fuel className="w-5 h-5 text-yellow-600" />
-                Registrar KM Inicial
+              <CardTitle id="vehicle-control-title" className="flex items-center gap-2">
+                <Fuel className="h-5 w-5 text-blue-600" />
+                Controle da viatura
               </CardTitle>
-              <CardDescription>Informe o KM inicial da viatura</CardDescription>
+              <CardDescription>
+                Registre aqui a quilometragem da viatura. Esta informação é independente dos postos visitados.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="kmInitial">KM Inicial</Label>
-                <Input
-                  id="kmInitial"
-                  type="number"
-                  placeholder="Ex: 15000"
-                  value={kmInitial}
-                  onChange={(e) => setKmInitial(e.target.value)}
-                  className="text-lg"
-                />
-              </div>
-              <Button
-                onClick={handleStartRoute}
-                disabled={!kmInitial || updateKmMutation.isPending}
-                className="w-full bg-yellow-600 hover:bg-yellow-700"
-              >
-                {updateKmMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Iniciando...
-                  </>
+            <CardContent className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">KM inicial</p>
+                {route.kmInitial == null ? (
+                  <div className="mt-3 space-y-3">
+                    <Label htmlFor="kmInitial">Leitura ao retirar a viatura</Label>
+                    <Input
+                      id="kmInitial"
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Ex.: 15000"
+                      value={kmInitial}
+                      onChange={(e) => setKmInitial(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleStartRoute}
+                      disabled={!kmInitial || updateKmMutation.isPending}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                    >
+                      {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Registrar KM inicial"}
+                    </Button>
+                  </div>
                 ) : (
-                  "Iniciar Rota"
+                  <p className="mt-3 text-3xl font-bold text-slate-900">{Number(route.kmInitial).toLocaleString("pt-BR")} km</p>
                 )}
-              </Button>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">KM final</p>
+                {route.kmFinal != null ? (
+                  <div className="mt-3 space-y-1">
+                    <p className="text-3xl font-bold text-slate-900">{Number(route.kmFinal).toLocaleString("pt-BR")} km</p>
+                    <p className="text-sm text-slate-600">Total percorrido: {(Number(route.kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>
+                  </div>
+                ) : route.status === "in_progress" ? (
+                  showKmFinal ? (
+                    <div className="mt-3 space-y-3">
+                      <Label htmlFor="kmFinal">Leitura ao devolver a viatura</Label>
+                      <Input
+                        id="kmFinal"
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="Ex.: 15050"
+                        value={kmFinal}
+                        onChange={(e) => setKmFinal(e.target.value)}
+                      />
+                      {kmFinal && <p className="text-sm text-slate-600">Total estimado: {(Number(kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>}
+                      <Button onClick={handleEndRoute} disabled={!kmFinal || updateKmMutation.isPending} className="w-full bg-slate-900 hover:bg-slate-800">
+                        {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Registrar KM final"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button onClick={() => setShowKmFinal(true)} variant="outline" className="mt-3 w-full">Informar KM final</Button>
+                  )
+                ) : (
+                  <p className="mt-3 text-sm text-slate-600">Disponível depois do registro do KM inicial.</p>
+                )}
+              </div>
             </CardContent>
           </Card>
-        )}
+        </section>
 
         {/* Posts List */}
         <div className="space-y-4">
@@ -264,6 +307,34 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               {postCards.filter(({ checklist }) => checklist.status === 'visited').length} / {postCards.length} postos concluídos
             </span>
           </div>
+
+          {createChecklistsMutation.isPending && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="flex items-center gap-3 py-5 text-sm text-blue-900">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                Preparando os cards dos postos da rota...
+              </CardContent>
+            </Card>
+          )}
+
+          {!createChecklistsMutation.isPending && postCards.length === 0 && (
+            <Card className="border-amber-200 bg-amber-50">
+              <CardContent className="flex flex-col gap-3 py-5 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                <span>Os postos ainda estão sendo preparados. Atualize a tela em alguns segundos.</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => createChecklistsMutation.mutate({ supervisorRouteId }, {
+                    onSuccess: () => utils.checklists.getByRoute.invalidate({ supervisorRouteId }),
+                    onError: () => toast.error("Não foi possível preparar os postos da rota"),
+                  })}
+                >
+                  Tentar novamente
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {postCards.map(({ checklist, post }) => {
             return (
@@ -314,65 +385,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           })}
         </div>
 
-        {/* End Route */}
-        {route.status === 'in_progress' && !showKmFinal && (
-          <div className="mt-8 flex justify-end">
-            <Button
-              onClick={() => setShowKmFinal(true)}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              Encerrar Rota
-            </Button>
-          </div>
-        )}
-
-        {/* KM Final Registration */}
-        {showKmFinal && (
-          <Card className="mt-8 border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Fuel className="w-5 h-5 text-red-600" />
-                Registrar KM Final
-              </CardTitle>
-              <CardDescription>Informe o KM final da viatura</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="kmFinal">KM Final</Label>
-                <Input
-                  id="kmFinal"
-                  type="number"
-                  placeholder="Ex: 15050"
-                  value={kmFinal}
-                  onChange={(e) => setKmFinal(e.target.value)}
-                  className="text-lg"
-                />
-              </div>
-              {(kmInitial || route.kmInitial) && kmFinal && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-900">
-                    <strong>KM Percorrido:</strong> {(Number(kmFinal) - Number(kmInitial || route.kmInitial)).toFixed(2)} km
-                  </p>
-                </div>
-              )}
-              <Button
-                onClick={handleEndRoute}
-                disabled={!kmFinal || updateKmMutation.isPending}
-                className="w-full bg-red-600 hover:bg-red-700"
-              >
-                {updateKmMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Encerrando...
-                  </>
-                ) : (
-                  "Encerrar Rota"
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );

@@ -39,5 +39,29 @@
 - [x] Corrigir a divergência encontrada: a chegada reaparecida agora executa o check-in diretamente
 - [x] Registrar evidência por teste de interação: chegada → saída → visita concluída → chegada reaparecida
 
+## Correção do Preview dos Cards
+- [x] Encontrar por que a rota real não exibe os cards de postos no preview
+- [x] Renderizar “Registrar chegada” de forma visível em cada card pendente
+- [x] Confirmar a troca visual para “Registrar saída” após o clique no mesmo card
+- [x] Reiniciar o preview e validar o acesso à operação de campo na rota real
+- [x] Validar TypeScript, teste de interação do card, testes de backend e build
+- [x] Salvar checkpoint somente após a validação visual
+
+## Correção de Preparação de Rota
+- [x] Reproduzir e diagnosticar a rota aberta que não aparece no painel
+- [x] Reutilizar a rota aberta do dia em vez de tentar criar outra
+- [x] Corrigir a navegação que está gerando NOT_FOUND
+- [x] Exibir uma mensagem clara quando houver uma rota já aberta
+- [x] Testar criação, reutilização e abertura da rota no preview
+- [x] Confirmar visualmente a rota real com painel da viatura e quatro cards de postos
+
+## Controle Independente da Viatura
+- [x] Criar área própria para KM inicial e final da viatura
+- [x] Exibir status de quilometragem e total percorrido fora da lista de postos
+- [x] Remover dependência visual e funcional entre registro de KM e cards dos postos
+- [x] Manter cards de postos focados somente em chegada, saída, checklist e observações
+- [x] Validar TypeScript, 9 testes automatizados, build e reinício do preview
+- [x] Salvar checkpoint da atualização do controle da viatura
+
 ## Nota de Histórico
 - [x] O checklist anterior continha observações repetidas e não acionáveis geradas durante uma recuperação de workspace. Ele foi normalizado nesta versão para manter apenas entregas verificáveis e o histórico relevante.

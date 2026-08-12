@@ -110,4 +110,20 @@ describe("checklists.checkIn e checkOut", () => {
     await expect(caller.checklists.checkIn({ checklistId: 22 })).rejects.toMatchObject({ code: "CONFLICT" });
     expect(db.createVisitChecklist).not.toHaveBeenCalled();
   });
+
+  it("permite registrar chegada mesmo sem a quilometragem da viatura ter sido informada", async () => {
+    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({
+      id: 11,
+      supervisorId: 7,
+      routeId: 1,
+      status: "pending",
+    } as never);
+    const caller = appRouter.createCaller(ownerContext);
+
+    await expect(caller.checklists.checkIn({ checklistId: 22 })).resolves.toMatchObject({
+      success: true,
+      checklistId: 22,
+    });
+    expect(db.updateVisitChecklist).toHaveBeenCalledWith(22, expect.objectContaining({ status: "in_progress" }));
+  });
 });

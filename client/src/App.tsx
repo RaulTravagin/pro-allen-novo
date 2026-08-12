@@ -44,6 +44,9 @@ function Router() {
           <Route path="/admin" component={AdminDashboard} />
           <Route path="/admin/metrics" component={MetricsDashboard} />
           <Route path="/admin/export" component={ReportExport} />
+          <Route path="/supervisor" component={SupervisorDashboard} />
+          <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
+          <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
           <Route path="/" component={AdminDashboard} />
           <Route path="/404" component={NotFound} />
           <Route component={NotFound} />

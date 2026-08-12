@@ -92,8 +92,10 @@ export const appRouter = router({
         const route = await db.getRouteById(input.routeId);
         if (!route) throw new TRPCError({ code: 'NOT_FOUND', message: 'Rota não encontrada' });
         const todayRoutes = await db.getSupervisorRoutesToday(ctx.user.id);
-        if (todayRoutes.some((item) => item.status === 'pending' || item.status === 'in_progress')) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Já existe uma rota aberta para hoje' });
+        const openRoute = todayRoutes.find((item) => item.status === 'in_progress')
+          ?? todayRoutes.find((item) => item.status === 'pending');
+        if (openRoute) {
+          return openRoute.id;
         }
         return await db.createSupervisorRoute(ctx.user.id, input.routeId, input.date);
       }),
@@ -272,9 +274,6 @@ export const appRouter = router({
         if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
         const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (route.status !== 'in_progress') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'A rota precisa estar em andamento para registrar chegada' });
-        }
         if (checklist.status !== 'pending' && checklist.status !== 'visited') {
           throw new TRPCError({ code: 'CONFLICT', message: 'Esta visita já está em andamento' });
         }

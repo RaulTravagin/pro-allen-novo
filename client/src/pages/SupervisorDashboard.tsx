@@ -25,6 +25,18 @@ export default function SupervisorDashboard() {
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
 
   const handleStartRoute = async () => {
+    if (todayRoute) {
+      try {
+        await createChecklistsMutation.mutateAsync({ supervisorRouteId: todayRoute.id });
+        await utils.checklists.getByRoute.invalidate({ supervisorRouteId: todayRoute.id });
+        navigate(`/supervisor/route/${todayRoute.id}`);
+      } catch (error) {
+        console.error("Open route error:", error);
+        toast.error("Não foi possível abrir a rota existente");
+      }
+      return;
+    }
+
     const routeId = Number(selectedRouteId);
     if (!Number.isInteger(routeId) || routeId <= 0) {
       toast.error("Selecione uma rota antes de continuar");
@@ -65,7 +77,12 @@ export default function SupervisorDashboard() {
             <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Dashboard do Supervisor</h1>
             <p className="mt-1 text-sm text-slate-600">Organize sua visita de hoje.</p>
           </div>
-          <Button onClick={() => logout()} variant="outline" className="self-start sm:self-auto">Sair</Button>
+          <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+            {user?.role === "admin" && (
+              <Button onClick={() => navigate("/admin")} variant="outline">Painel administrativo</Button>
+            )}
+            <Button onClick={() => logout()} variant="outline">Sair</Button>
+          </div>
         </div>
       </header>
 
