@@ -137,3 +137,12 @@
 - [x] Normalizar coordenadas numéricas e textuais antes da exibição
 - [x] Criar teste de regressão para coordenadas retornadas como texto
 - [x] Validar a rota do supervisor, salvar checkpoint e disponibilizar a correção
+
+## Cobertura Fora da Rota
+- [x] Exibir postos disponíveis para cobertura fora da rota planejada
+- [x] Exigir justificativa do supervisor antes de registrar a cobertura
+- [x] Registrar cobertura vinculada à rota diária e ao supervisor responsável
+- [x] Permitir chegada, saída e checklist na cobertura com GPS e horários
+- [x] Exibir a cobertura e a justificativa na central do Gestor
+- [x] Criar testes de autorização, justificativa obrigatória e registro da cobertura
+- [x] Validar desktop e celular, salvar checkpoint e disponibilizar o fluxo

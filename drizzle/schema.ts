@@ -101,6 +101,8 @@ export const visitChecklists = mysqlTable("visitChecklists", {
   departureTime: timestamp("departureTime"),
   visitedAt: timestamp("visitedAt"),
   observations: text("observations"),
+  isCoverage: boolean("isCoverage").default(false).notNull(),
+  coverageReason: text("coverageReason"),
   status: mysqlEnum("status", ["pending", "in_progress", "visited", "skipped"]).default("pending").notNull(),
   arrivalLatitude: decimal("arrivalLatitude", { precision: 10, scale: 8 }),
   arrivalLongitude: decimal("arrivalLongitude", { precision: 11, scale: 8 }),

@@ -48,8 +48,14 @@ const DEFAULT_CHECKLIST_ITEMS = [
   { category: 'Ação', description: 'Plano de ação (quando necessário)' },
 ] as const;
 
-async function createChecklistWithDefaultItems(supervisorRouteId: number, postId: number) {
-  const checklistId = await db.createVisitChecklist(supervisorRouteId, postId);
+async function createChecklistWithDefaultItems(
+  supervisorRouteId: number,
+  postId: number,
+  options: { isCoverage?: boolean; coverageReason?: string | null } = {},
+) {
+  const checklistId = options.isCoverage || options.coverageReason
+    ? await db.createVisitChecklist(supervisorRouteId, postId, options)
+    : await db.createVisitChecklist(supervisorRouteId, postId);
   for (const item of DEFAULT_CHECKLIST_ITEMS) {
     await db.createChecklistItem(checklistId, item.category, item.description);
   }
@@ -225,7 +231,8 @@ export const appRouter = router({
         const route = await db.getSupervisorRouteById(input.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
         const existing = await db.getVisitChecklistsByRoute(input.supervisorRouteId);
-        if (existing.length > 0) return existing.map((item) => item.id);
+        const hasPlannedChecklists = existing.some((item) => !item.isCoverage);
+        if (hasPlannedChecklists) return existing.map((item) => item.id);
         
         const posts = await db.getPostsByRouteId(route.routeId);
         const checklistIds = [];
@@ -257,7 +264,10 @@ export const appRouter = router({
           throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
         }
 
-        const newChecklistId = await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId);
+        const newChecklistId = await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId, {
+          isCoverage: checklist.isCoverage,
+          coverageReason: checklist.coverageReason,
+        });
         return { checklistId: newChecklistId };
       }),
     
@@ -268,6 +278,44 @@ export const appRouter = router({
         const route = await db.getSupervisorRouteById(input.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
         return await db.getVisitChecklistsByRoute(input.supervisorRouteId);
+      }),
+
+    getCoveragePosts: protectedProcedure
+      .input(z.object({ supervisorRouteId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        return await db.getCoveragePostsBySupervisorRoute(input.supervisorRouteId);
+      }),
+
+    createCoverage: protectedProcedure
+      .input(z.object({
+        supervisorRouteId: z.number(),
+        postId: z.number(),
+        coverageReason: z.string().trim().min(8, 'Informe uma justificativa com pelo menos 8 caracteres').max(2000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (route.status !== 'in_progress') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Inicie a rota pelo KM inicial antes de registrar uma cobertura' });
+        }
+        const post = await db.getPostById(input.postId);
+        if (!post) throw new TRPCError({ code: 'NOT_FOUND', message: 'Posto não encontrado' });
+        if (post.routeId === route.routeId) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este posto já faz parte da rota planejada' });
+        }
+        const routeChecklists = await db.getVisitChecklistsByRoute(input.supervisorRouteId);
+        if (routeChecklists.some((item) => item.status === 'in_progress')) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de registrar uma cobertura' });
+        }
+        const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, input.postId, {
+          isCoverage: true,
+          coverageReason: input.coverageReason,
+        });
+        return { checklistId };
       }),
     
     getById: protectedProcedure
@@ -354,7 +402,10 @@ export const appRouter = router({
         }
 
         const targetChecklistId = checklist.status === 'visited'
-          ? await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId)
+          ? await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId, {
+              isCoverage: checklist.isCoverage,
+              coverageReason: checklist.coverageReason,
+            })
           : checklist.id;
         const arrivalTime = new Date();
         
@@ -387,8 +438,8 @@ export const appRouter = router({
           status: 'visited',
           departureTime: new Date(),
           visitedAt: new Date(),
-          departureLatitude: input.latitude || null,
-          departureLongitude: input.longitude || null,
+          departureLatitude: input.latitude ?? null,
+          departureLongitude: input.longitude ?? null,
         });
         
         await db.recordPostVisit(checklist.postId, ctx.user.id);

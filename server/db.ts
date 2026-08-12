@@ -220,7 +220,11 @@ export async function updateSupervisorRoute(id: number, updates: any) {
 }
 
 // Visit Checklists queries
-export async function createVisitChecklist(supervisorRouteId: number, postId: number) {
+export async function createVisitChecklist(
+  supervisorRouteId: number,
+  postId: number,
+  options: { isCoverage?: boolean; coverageReason?: string | null } = {},
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -228,6 +232,8 @@ export async function createVisitChecklist(supervisorRouteId: number, postId: nu
     supervisorRouteId,
     postId,
     status: 'pending',
+    isCoverage: options.isCoverage ?? false,
+    coverageReason: options.coverageReason ?? null,
   });
 
   return getInsertedId(result);
@@ -239,6 +245,27 @@ export async function getVisitChecklistsByRoute(supervisorRouteId: number) {
   
   return await db.select().from(visitChecklists)
     .where(eq(visitChecklists.supervisorRouteId, supervisorRouteId));
+}
+
+/** Lista postos de outras rotas, elegíveis para cobertura excepcional. */
+export async function getCoveragePostsBySupervisorRoute(supervisorRouteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const supervisorRoute = await getSupervisorRouteById(supervisorRouteId);
+  if (!supervisorRoute) return [];
+
+  return await db.select({
+    id: posts.id,
+    name: posts.name,
+    address: posts.address,
+    region: posts.region,
+    routeId: posts.routeId,
+    routeName: routes.name,
+  })
+    .from(posts)
+    .innerJoin(routes, eq(routes.id, posts.routeId))
+    .where(sql`${posts.routeId} <> ${supervisorRoute.routeId}`)
+    .orderBy(routes.name, posts.order);
 }
 
 export async function getVisitChecklistById(id: number) {
@@ -557,6 +584,8 @@ export async function getGestorOperationalSnapshot() {
       departureTime: visitChecklists.departureTime,
       visitedAt: visitChecklists.visitedAt,
       observations: visitChecklists.observations,
+      isCoverage: visitChecklists.isCoverage,
+      coverageReason: visitChecklists.coverageReason,
       arrivalLatitude: visitChecklists.arrivalLatitude,
       arrivalLongitude: visitChecklists.arrivalLongitude,
       departureLatitude: visitChecklists.departureLatitude,

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, Fuel, Clock, AlertCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, ArrowLeft, Fuel, Clock, AlertCircle, Route } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -26,6 +27,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [kmFinal, setKmFinal] = useState<string>("");
   const [showKmFinal, setShowKmFinal] = useState(false);
   const [gpsError, setGpsError] = useState<string>("");
+  const [coveragePostId, setCoveragePostId] = useState("");
+  const [coverageReason, setCoverageReason] = useState("");
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
@@ -40,6 +43,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     { routeId: route?.routeId || 0 },
     { enabled: !!route?.routeId }
   );
+  const { data: coveragePosts } = trpc.checklists.getCoveragePosts.useQuery(
+    { supervisorRouteId },
+    { enabled: route?.status === "in_progress" },
+  );
 
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
@@ -47,6 +54,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
+  const createCoverageMutation = trpc.checklists.createCoverage.useMutation();
 
   useEffect(() => {
     if (!route || checklistsLoading || !posts?.length || (checklists?.length ?? 0) > 0 || createChecklistsMutation.isPending) {
@@ -82,12 +90,39 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     );
   });
 
-  const postCards = (posts ?? []).flatMap((post) => {
+  const plannedPostCards = (posts ?? []).flatMap((post) => {
     const latestChecklist = (checklists ?? [])
-      .filter((checklist) => checklist.postId === post.id)
+      .filter((checklist) => checklist.postId === post.id && !checklist.isCoverage)
       .sort((a, b) => b.id - a.id)[0];
     return latestChecklist ? [{ post, checklist: latestChecklist }] : [];
   });
+  const coveragePostById = new Map((coveragePosts ?? []).map((post) => [post.id, post]));
+  const coveragePostCards = (checklists ?? [])
+    .filter((checklist) => checklist.isCoverage)
+    .map((checklist) => ({ post: coveragePostById.get(checklist.postId), checklist }));
+  const postCards = [...plannedPostCards, ...coveragePostCards];
+
+  const handleCreateCoverage = async () => {
+    const postId = Number(coveragePostId);
+    const reason = coverageReason.trim();
+    if (!Number.isSafeInteger(postId) || postId <= 0) {
+      toast.error("Selecione o posto que receberá a cobertura");
+      return;
+    }
+    if (reason.length < 8) {
+      toast.error("Justifique a cobertura com pelo menos 8 caracteres");
+      return;
+    }
+    try {
+      await createCoverageMutation.mutateAsync({ supervisorRouteId, postId, coverageReason: reason });
+      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+      setCoveragePostId("");
+      setCoverageReason("");
+      toast.success("Cobertura adicionada. Registre a chegada no novo card.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível registrar a cobertura");
+    }
+  };
 
   useEffect(() => {
     // Start recording GPS location periodically
@@ -299,6 +334,56 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         </section>
 
+        <section className="mb-8" aria-labelledby="coverage-title">
+          <Card className="border-violet-200 bg-violet-50/40 shadow-sm">
+            <CardHeader>
+              <CardTitle id="coverage-title" className="flex items-center gap-2 text-violet-950">
+                <Route className="h-5 w-5 text-violet-700" />
+                Cobertura fora da rota
+              </CardTitle>
+              <CardDescription>
+                Use somente quando for necessário atender um posto não previsto nesta rota. A justificativa ficará disponível para o Gestor.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="coverage-post">Posto para cobertura</Label>
+                <select
+                  id="coverage-post"
+                  value={coveragePostId}
+                  onChange={(event) => setCoveragePostId(event.target.value)}
+                  disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Selecione um posto fora da rota</option>
+                  {(coveragePosts ?? []).map((post) => <option key={post.id} value={post.id}>{post.name} · {post.region} ({post.routeName})</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="coverage-reason">Motivo da cobertura</Label>
+                <Textarea
+                  id="coverage-reason"
+                  value={coverageReason}
+                  onChange={(event) => setCoverageReason(event.target.value)}
+                  placeholder="Ex.: Cobertura emergencial por ausência no posto"
+                  disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  className="min-h-10 resize-none"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={handleCreateCoverage}
+                disabled={route.status !== "in_progress" || !coveragePostId || coverageReason.trim().length < 8 || createCoverageMutation.isPending || Boolean(activeChecklist)}
+                className="bg-violet-700 hover:bg-violet-800"
+              >
+                {createCoverageMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Adicionar cobertura"}
+              </Button>
+            </CardContent>
+            {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar coberturas.</CardContent>}
+            {activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de iniciar uma cobertura.</CardContent>}
+          </Card>
+        </section>
+
         {/* Posts List */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -346,6 +431,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 postAddress={post?.address}
                 status={checklist.status as 'pending' | 'in_progress' | 'visited'}
                 observations={checklist.observations || undefined}
+                isCoverage={checklist.isCoverage}
+                coverageReason={checklist.coverageReason}
                 arrivalTime={checklist.arrivalTime}
                 departureTime={checklist.departureTime}
                 arrivalLatitude={checklist.arrivalLatitude as number | null | undefined}

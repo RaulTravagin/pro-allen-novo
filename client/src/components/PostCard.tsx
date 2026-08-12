@@ -11,6 +11,8 @@ interface PostCardProps {
   postAddress?: string;
   status: 'pending' | 'in_progress' | 'visited';
   observations?: string;
+  isCoverage?: boolean;
+  coverageReason?: string | null;
   arrivalTime?: Date | null;
   departureTime?: Date | null;
   arrivalLatitude?: number | string | null;
@@ -32,6 +34,8 @@ const PostCard = memo(function PostCard({
   postAddress,
   status,
   observations,
+  isCoverage = false,
+  coverageReason,
   arrivalTime,
   departureTime,
   arrivalLatitude,
@@ -137,6 +141,11 @@ const PostCard = memo(function PostCard({
                 }`}>
                   {statusLabel}
                 </span>
+                {isCoverage && (
+                  <span className="ml-2 inline-block rounded bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-800">
+                    Cobertura fora da rota
+                  </span>
+                )}
                 {arrivalTime && (
                   <span className="ml-2 inline-block rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">
                     Entrada: {formatTime(arrivalTime)}
@@ -322,6 +331,14 @@ const PostCard = memo(function PostCard({
       )}
 
       {/* Observations */}
+      {isCoverage && coverageReason && (
+        <CardContent className="pt-0">
+          <p className="rounded border border-violet-100 bg-violet-50 p-2 text-sm text-violet-950">
+            <strong>Justificativa da cobertura:</strong> {coverageReason}
+          </p>
+        </CardContent>
+      )}
+
       {observations && (
         <CardContent className="pt-0">
           <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
