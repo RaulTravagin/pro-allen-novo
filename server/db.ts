@@ -411,3 +411,100 @@ export async function getChecklistConformanceSummary(startDate: Date, endDate: D
   const unanswered = rows.filter((row) => row.isCompliant === null).length;
   return { compliant, nonCompliant, unanswered, total: rows.length };
 }
+
+/** Dados consolidados usados pelo painel protegido do Gestor. */
+export async function getGestorOperationalSnapshot() {
+  const db = await getDb();
+  if (!db) {
+    return {
+      activeRoutes: [],
+      recentVisits: [],
+      metrics: { supervisorsOnRoute: 0, activeRoutes: 0, visitsInProgress: 0, completedVisits: 0, totalKm: 0 },
+      lastUpdatedAt: new Date(),
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const [todayRoutes, todayChecklists, latestLocations] = await Promise.all([
+    db.select({
+      id: supervisorRoutes.id,
+      supervisorId: supervisorRoutes.supervisorId,
+      routeName: routes.name,
+      routeRegion: routes.region,
+      status: supervisorRoutes.status,
+      kmInitial: supervisorRoutes.kmInitial,
+      kmFinal: supervisorRoutes.kmFinal,
+      startedAt: supervisorRoutes.startedAt,
+      completedAt: supervisorRoutes.completedAt,
+      updatedAt: supervisorRoutes.updatedAt,
+    })
+      .from(supervisorRoutes)
+      .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+      .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow)))
+      .orderBy(desc(supervisorRoutes.updatedAt)),
+    db.select({
+      id: visitChecklists.id,
+      supervisorRouteId: visitChecklists.supervisorRouteId,
+      postName: posts.name,
+      postRegion: posts.region,
+      status: visitChecklists.status,
+      arrivalTime: visitChecklists.arrivalTime,
+      departureTime: visitChecklists.departureTime,
+      visitedAt: visitChecklists.visitedAt,
+    })
+      .from(visitChecklists)
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+      .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow))),
+    getAllSupervisorsLatestLocations(),
+  ]);
+
+  const locationBySupervisor = new Map<number, (typeof latestLocations)[number]>();
+  for (const location of latestLocations) locationBySupervisor.set(location.supervisorId, location);
+
+  const activeRoutes = todayRoutes.map((route) => {
+    const routeChecklists = todayChecklists.filter((checklist) => checklist.supervisorRouteId === route.id);
+    const activeVisit = routeChecklists.find((checklist) => checklist.status === "in_progress") ?? null;
+    const completedVisits = routeChecklists.filter((checklist) => checklist.status === "visited").length;
+    const location = locationBySupervisor.get(route.supervisorId) ?? null;
+
+    return {
+      ...route,
+      totalPosts: routeChecklists.length,
+      completedVisits,
+      activeVisit,
+      latestLocation: location,
+    };
+  });
+
+  const recentVisits = todayChecklists
+    .filter((checklist) => checklist.status === "visited" || checklist.status === "in_progress")
+    .sort((a, b) => {
+      const aTime = (a.departureTime ?? a.arrivalTime ?? a.visitedAt)?.getTime() ?? 0;
+      const bTime = (b.departureTime ?? b.arrivalTime ?? b.visitedAt)?.getTime() ?? 0;
+      return bTime - aTime;
+    })
+    .slice(0, 8);
+
+  const totalKm = activeRoutes.reduce((total, route) => {
+    if (route.kmInitial === null || route.kmFinal === null) return total;
+    return total + Math.max(0, Number(route.kmFinal) - Number(route.kmInitial));
+  }, 0);
+
+  return {
+    activeRoutes,
+    recentVisits,
+    metrics: {
+      supervisorsOnRoute: new Set(activeRoutes.filter((route) => route.status === "pending" || route.status === "in_progress").map((route) => route.supervisorId)).size,
+      activeRoutes: activeRoutes.filter((route) => route.status === "in_progress").length,
+      visitsInProgress: todayChecklists.filter((checklist) => checklist.status === "in_progress").length,
+      completedVisits: todayChecklists.filter((checklist) => checklist.status === "visited").length,
+      totalKm: Number(totalKm.toFixed(2)),
+    },
+    lastUpdatedAt: new Date(),
+  };
+}

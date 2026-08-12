@@ -5,6 +5,13 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
+import {
+  createGestorSession,
+  GESTOR_COOKIE_NAME,
+  GESTOR_SESSION_MAX_AGE_SECONDS,
+  hasGestorSession,
+  isGestorPasswordValid,
+} from "./gestor-access";
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -12,6 +19,15 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
   }
   return next({ ctx });
+});
+
+// O Gestor entra somente com a senha exclusiva, em uma sessão separada do login operacional.
+const gestorProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const hasPasswordAccess = await hasGestorSession(ctx.req);
+  if (!hasPasswordAccess) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Acesso do Gestor necessário" });
+  }
+  return next();
 });
 
 const DEFAULT_CHECKLIST_ITEMS = [
@@ -45,6 +61,33 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+  }),
+
+  gestorAccess: router({
+    session: publicProcedure.query(async ({ ctx }) => ({
+      authenticated: await hasGestorSession(ctx.req),
+    })),
+    login: publicProcedure
+      .input(z.object({ password: z.string().min(1).max(200) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isGestorPasswordValid(input.password)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Senha do Gestor inválida" });
+        }
+        const token = await createGestorSession();
+        ctx.res.cookie(GESTOR_COOKIE_NAME, token, {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: GESTOR_SESSION_MAX_AGE_SECONDS * 1000,
+        });
+        return { success: true } as const;
+      }),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      ctx.res.clearCookie(GESTOR_COOKIE_NAME, { ...getSessionCookieOptions(ctx.req), maxAge: -1 });
+      return { success: true } as const;
+    }),
+  }),
+
+  gestor: router({
+    dashboard: gestorProcedure.query(async () => db.getGestorOperationalSnapshot()),
   }),
 
   // Routes and Posts

@@ -2,6 +2,7 @@ import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MapPin, CheckCircle2, Zap } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Login() {
   return (
@@ -60,6 +61,10 @@ export default function Login() {
               <Zap className="w-4 h-4 mr-2" />
               Entrar no Sistema
             </Button>
+
+            <Link href="/gestor/acesso" className="block text-center text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
+              Acesso exclusivo do Gestor
+            </Link>
 
             <p className="text-xs text-center text-gray-600 mt-4">
               Ao fazer login, você concorda com nossos termos de serviço

@@ -65,3 +65,14 @@
 
 ## Nota de Histórico
 - [x] O checklist anterior continha observações repetidas e não acionáveis geradas durante uma recuperação de workspace. Ele foi normalizado nesta versão para manter apenas entregas verificáveis e o histórico relevante.
+
+## Painel do Gestor
+- [x] Definir senha única para o único gestor autorizado
+- [x] Solicitar e armazenar a senha única do Gestor como segredo de ambiente
+- [x] Criar uma sessão com perfil Gestor e proteger as APIs exclusivas do painel
+- [x] Criar um acesso exclusivo com autenticação do gestor sem expor a senha no código
+- [x] Implementar painel consolidado com rotas, visitas, supervisores e KM em tempo real
+- [x] Incluir atualização automática a cada 15 segundos e indicação de última atualização dos dados
+- [x] Adicionar navegação do Gestor e botão de entrada na tela inicial
+- [x] Criar testes de permissão do Gestor e de carregamento dos dados operacionais
+- [x] Validar desktop e celular, salvar checkpoint e disponibilizar a versão

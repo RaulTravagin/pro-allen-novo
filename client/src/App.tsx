@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import Login from "./pages/Login";
 import { lazy, Suspense } from "react";
+import { useLocation } from "wouter";
 
 const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
 const RouteDetails = lazy(() => import("./pages/RouteDetails"));
@@ -14,6 +15,8 @@ const ChecklistPage = lazy(() => import("./pages/ChecklistPage"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const MetricsDashboard = lazy(() => import("./pages/MetricsDashboard"));
 const ReportExport = lazy(() => import("./pages/ReportExport"));
+const GestorLogin = lazy(() => import("./pages/GestorLogin"));
+const GestorDashboard = lazy(() => import("./pages/GestorDashboard"));
 
 function LoadingScreen() {
   return (
@@ -24,7 +27,20 @@ function LoadingScreen() {
 }
 
 function Router() {
+  const [location] = useLocation();
   const { user, loading, isAuthenticated } = useAuth();
+
+  if (location.startsWith("/gestor")) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <Switch>
+          <Route path="/gestor/acesso" component={GestorLogin} />
+          <Route path="/gestor" component={GestorDashboard} />
+          <Route component={GestorLogin} />
+        </Switch>
+      </Suspense>
+    );
+  }
 
   if (loading) return <LoadingScreen />;
 
