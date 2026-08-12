@@ -63,6 +63,12 @@ export default function Login() {
           <p className="text-sm text-gray-600">
             © 2026 Plano de Rotas Pro Allen. Todos os direitos reservados.
           </p>
+          <a
+            href="/gestor/acesso"
+            className="mt-2 inline-block text-[11px] font-medium text-slate-400 transition-colors hover:text-slate-600 focus-visible:text-slate-700 focus-visible:outline-none"
+          >
+            Acesso do Gestor
+          </a>
         </div>
       </div>
     </div>

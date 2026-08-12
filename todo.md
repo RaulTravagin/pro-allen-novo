@@ -105,3 +105,7 @@
 - [x] Remover o botão administrativo “Entrar no Sistema”
 - [x] Manter somente os campos de usuário e senha dos supervisores
 - [x] Validar o preview e salvar checkpoint da tela simplificada
+
+## Atalho Discreto do Gestor
+- [x] Adicionar link discreto para `/gestor/acesso` no rodapé da tela inicial
+- [x] Validar o atalho em sessão sem login e salvar checkpoint

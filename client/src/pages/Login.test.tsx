@@ -31,6 +31,6 @@ describe("Login", () => {
     expect(screen.getByLabelText("Senha")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Entrar como supervisor" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Entrar no Sistema" })).toBeNull();
-    expect(screen.queryByText("Acesso exclusivo do Gestor")).toBeNull();
+    expect(screen.getByRole("link", { name: "Acesso do Gestor" })).toHaveProperty("href", "http://localhost:3000/gestor/acesso");
   });
 });
