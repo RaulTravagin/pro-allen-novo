@@ -131,3 +131,9 @@
 - [x] Impedir a consulta do painel antes da sessão do Gestor estar autenticada
 - [x] Criar teste de regressão e validar o preview sem sessão
 - [x] Salvar checkpoint e disponibilizar a correção
+
+## Correção de Coordenadas GPS nos Postos
+- [x] Identificar a conversão de latitude e longitude que causa falha no card
+- [x] Normalizar coordenadas numéricas e textuais antes da exibição
+- [x] Criar teste de regressão para coordenadas retornadas como texto
+- [x] Validar a rota do supervisor, salvar checkpoint e disponibilizar a correção

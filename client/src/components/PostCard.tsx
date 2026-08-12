@@ -13,10 +13,10 @@ interface PostCardProps {
   observations?: string;
   arrivalTime?: Date | null;
   departureTime?: Date | null;
-  arrivalLatitude?: number | null;
-  arrivalLongitude?: number | null;
-  departureLatitude?: number | null;
-  departureLongitude?: number | null;
+  arrivalLatitude?: number | string | null;
+  arrivalLongitude?: number | string | null;
+  departureLatitude?: number | string | null;
+  departureLongitude?: number | string | null;
   onCheckIn: (checklistId: number) => Promise<void>;
   onCheckOut: (checklistId: number) => Promise<void>;
   onOpenChecklist: (checklistId: number) => void;
@@ -76,9 +76,12 @@ const PostCard = memo(function PostCard({
     }
   };
 
-  const formatCoordinates = (lat?: number | null, lng?: number | null) => {
+  const formatCoordinates = (lat?: number | string | null, lng?: number | string | null) => {
     if (lat === null || lat === undefined || lng === null || lng === undefined) return null;
-    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    const latitude = typeof lat === 'number' ? lat : Number.parseFloat(lat);
+    const longitude = typeof lng === 'number' ? lng : Number.parseFloat(lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
   };
 
   const getCardStyles = () => {
@@ -110,6 +113,8 @@ const PostCard = memo(function PostCard({
   const cardStyles = useMemo(() => getCardStyles(), [status]);
   const statusIcon = useMemo(() => getStatusIcon(), [status]);
   const statusLabel = useMemo(() => getStatusLabel(), [status]);
+  const arrivalCoordinates = useMemo(() => formatCoordinates(arrivalLatitude, arrivalLongitude), [arrivalLatitude, arrivalLongitude]);
+  const departureCoordinates = useMemo(() => formatCoordinates(departureLatitude, departureLongitude), [departureLatitude, departureLongitude]);
   
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
@@ -260,7 +265,7 @@ const PostCard = memo(function PostCard({
       </CardHeader>
 
       {/* Time and Location Info */}
-      {(arrivalTime || departureTime || arrivalLatitude || departureLatitude) && (
+      {(arrivalTime || departureTime || arrivalCoordinates || departureCoordinates) && (
         <CardContent className="pt-0 space-y-3">
           {/* Arrival Info */}
           {arrivalTime && (
@@ -269,10 +274,10 @@ const PostCard = memo(function PostCard({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-blue-900">Chegada Registrada</p>
                 <p className="text-sm text-blue-800 font-mono">{formatTime(arrivalTime)}</p>
-                {arrivalLatitude && arrivalLongitude && (
+                {arrivalCoordinates && (
                   <div className="flex items-start gap-2 mt-1">
                     <Navigation className="w-3 h-3 text-blue-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-blue-700 font-mono break-all">{formatCoordinates(arrivalLatitude, arrivalLongitude)}</p>
+                    <p className="text-xs text-blue-700 font-mono break-all">{arrivalCoordinates}</p>
                   </div>
                 )}
               </div>
@@ -286,10 +291,10 @@ const PostCard = memo(function PostCard({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-green-900">Saída Registrada</p>
                 <p className="text-sm text-green-800 font-mono">{formatTime(departureTime)}</p>
-                {departureLatitude && departureLongitude && (
+                {departureCoordinates && (
                   <div className="flex items-start gap-2 mt-1">
                     <Navigation className="w-3 h-3 text-green-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-green-700 font-mono break-all">{formatCoordinates(departureLatitude, departureLongitude)}</p>
+                    <p className="text-xs text-green-700 font-mono break-all">{departureCoordinates}</p>
                   </div>
                 )}
               </div>

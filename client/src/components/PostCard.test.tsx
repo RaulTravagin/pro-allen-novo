@@ -50,4 +50,27 @@ describe("PostCard", () => {
     await user.click(screen.getByRole("button", { name: "Registrar chegada em Posto de teste" }));
     expect(await screen.findByRole("button", { name: "Registrar saída de Posto de teste" })).toBeTruthy();
   });
+
+  it("normaliza coordenadas GPS textuais sem quebrar a renderização", () => {
+    render(
+      <PostCard
+        id={23}
+        postId={4}
+        postName="Posto com GPS"
+        status="visited"
+        arrivalTime={new Date("2026-08-12T11:00:00.000Z")}
+        departureTime={new Date("2026-08-12T11:30:00.000Z")}
+        arrivalLatitude="-23.12345678"
+        arrivalLongitude="-46.98765432"
+        departureLatitude="-23.12340000"
+        departureLongitude="-46.98760000"
+        onCheckIn={async () => undefined}
+        onCheckOut={async () => undefined}
+        onOpenChecklist={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("-23.123457, -46.987654")).toBeTruthy();
+    expect(screen.getByText("-23.123400, -46.987600")).toBeTruthy();
+  });
 });
