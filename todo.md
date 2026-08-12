@@ -152,3 +152,14 @@
 - [x] Exibir diretamente os acessos locais de Supervisor e Gestor na rota inicial
 - [x] Preservar o acesso administrativo existente sem oferecê-lo como entrada padrão
 - [x] Testar a abertura em sessão limpa, validar desktop e celular e salvar checkpoint
+
+## Compartilhamento Externo do Site
+- [x] Confirmar o endereço de produção correto para compartilhar com clientes
+- [x] Verificar que a visibilidade atual exige autenticação externa do Manus
+- [x] Alterar a visibilidade do site para pública para abrir diretamente a tela local
+- [x] Validar o link público e entregar o endereço final de compartilhamento
+
+## Nova Conta Operacional
+- [x] Armazenar de forma protegida a senha inicial de raultravagin
+- [x] Criar e ativar a conta local raultravagin como supervisor operacional
+- [x] Validar o login da nova conta e confirmar a criação

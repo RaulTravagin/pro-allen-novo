@@ -3,6 +3,7 @@ import type { TrpcContext } from "./_core/context";
 import { appRouter } from "./routers";
 
 const initialPassword = process.env.INITIAL_SUPERVISOR_PASSWORD;
+const raultravaginInitialPassword = process.env.RAULTRAVAGIN_INITIAL_PASSWORD;
 const activeSupervisorUsernames = [
   "paulo.murashita",
   "rodrigo.ramos",
@@ -42,5 +43,18 @@ describe("contas locais de supervisores", () => {
       username: "raul.travagin",
       password: initialPassword!,
     })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("autentica a nova conta operacional raultravagin com sua senha protegida", async () => {
+    expect(raultravaginInitialPassword).toBeTruthy();
+    const { context, cookies } = createContext();
+
+    const result = await appRouter.createCaller(context).localAuth.login({
+      username: "raultravagin",
+      password: raultravaginInitialPassword!,
+    });
+
+    expect(result).toMatchObject({ success: true, user: { username: "raultravagin" } });
+    expect(cookies[0]?.name).toBe("supervisor_access");
   });
 });

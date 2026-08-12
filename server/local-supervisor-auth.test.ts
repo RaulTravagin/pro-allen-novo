@@ -10,6 +10,7 @@ import { hashSupervisorPassword } from "./local-supervisor-auth";
 import { appRouter } from "./routers";
 
 const configuredInitialPassword = process.env.INITIAL_SUPERVISOR_PASSWORD;
+const raultravaginInitialPassword = process.env.RAULTRAVAGIN_INITIAL_PASSWORD;
 
 function createContext() {
   const cookies: Array<{ name: string; value: string; options: Record<string, unknown> }> = [];
@@ -58,6 +59,35 @@ describe("localAuth.login", () => {
       name: "supervisor_access",
       options: expect.objectContaining({ httpOnly: true, maxAge: 43_200_000 }),
     });
+  });
+
+  it("valida a senha protegida configurada para a conta raultravagin", async () => {
+    expect(raultravaginInitialPassword).toBeTruthy();
+    const passwordHash = await hashSupervisorPassword(raultravaginInitialPassword!);
+    vi.mocked(db.getUserByUsername).mockResolvedValue({
+      id: 68,
+      openId: "local:raultravagin",
+      name: "Raul Travagin",
+      email: null,
+      loginMethod: "local",
+      username: "raultravagin",
+      passwordHash,
+      mustChangePassword: true,
+      isOperational: true,
+      role: "user",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    } as never);
+
+    const { context, cookies } = createContext();
+    const result = await appRouter.createCaller(context).localAuth.login({
+      username: "raultravagin",
+      password: raultravaginInitialPassword!,
+    });
+
+    expect(result).toMatchObject({ success: true, user: { id: 68, username: "raultravagin" } });
+    expect(cookies[0]?.name).toBe("supervisor_access");
   });
 
   it("recusa senha incorreta", async () => {
