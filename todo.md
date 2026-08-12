@@ -94,3 +94,9 @@
 - [x] Criar conta de Raul Travagin
 - [x] Garantir que cada supervisor acesse apenas suas próprias rotas e visitas
 - [x] Testar os quatro logins, validar o preview e salvar checkpoint
+
+## Correção de Rotas para Contas Locais
+- [x] Identificar a origem do NOT_FOUND durante a preparação da rota
+- [x] Corrigir a criação e a abertura da rota pelo supervisor local
+- [x] Criar teste de regressão para preparação de rota em conta local
+- [x] Validar o fluxo, salvar checkpoint e disponibilizar a correção

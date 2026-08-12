@@ -5,6 +5,16 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+/** Normaliza o retorno do driver MySQL para obter o identificador da linha inserida. */
+export function getInsertedId(result: unknown) {
+  const header = Array.isArray(result) ? result[0] : result;
+  const insertId = Number((header as { insertId?: unknown } | undefined)?.insertId);
+  if (!Number.isSafeInteger(insertId) || insertId <= 0) {
+    throw new Error("Não foi possível obter o identificador do registro criado");
+  }
+  return insertId;
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
@@ -128,7 +138,7 @@ export async function provisionLocalSupervisor(input: { username: string; name: 
     role: "user",
     lastSignedIn: new Date(),
   });
-  return (await getUserById(Number((result as unknown as { insertId: number }).insertId)))!;
+  return (await getUserById(getInsertedId(result)))!;
 }
 
 // Routes queries
@@ -170,8 +180,8 @@ export async function createSupervisorRoute(supervisorId: number, routeId: numbe
     date,
     status: 'pending',
   });
-  
-  return (result as any).insertId || 0;
+
+  return getInsertedId(result);
 }
 
 export async function getSupervisorRouteById(id: number) {
@@ -217,8 +227,8 @@ export async function createVisitChecklist(supervisorRouteId: number, postId: nu
     postId,
     status: 'pending',
   });
-  
-  return (result as any).insertId || 0;
+
+  return getInsertedId(result);
 }
 
 export async function getVisitChecklistsByRoute(supervisorRouteId: number) {
@@ -255,8 +265,8 @@ export async function createChecklistItem(visitChecklistId: number, category: st
     category,
     description,
   });
-  
-  return (result as any).insertId || 0;
+
+  return getInsertedId(result);
 }
 
 export async function getChecklistItemsByVisit(visitChecklistId: number) {
