@@ -8,6 +8,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import Login from "./pages/Login";
 import { lazy, Suspense } from "react";
 import { useLocation } from "wouter";
+import { getGestorRouteMode } from "./lib/gestor-routing";
 
 const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
 const RouteDetails = lazy(() => import("./pages/RouteDetails"));
@@ -29,15 +30,20 @@ function LoadingScreen() {
 function Router() {
   const [location] = useLocation();
   const { user, loading, isAuthenticated } = useAuth();
+  const gestorRouteMode = getGestorRouteMode(location);
 
-  if (location.startsWith("/gestor")) {
+  if (gestorRouteMode === "login") {
     return (
       <Suspense fallback={<LoadingScreen />}>
-        <Switch>
-          <Route path="/gestor/acesso" component={GestorLogin} />
-          <Route path="/gestor" component={GestorDashboard} />
-          <Route component={GestorLogin} />
-        </Switch>
+        <GestorLogin />
+      </Suspense>
+    );
+  }
+
+  if (gestorRouteMode === "dashboard") {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <GestorDashboard />
       </Suspense>
     );
   }

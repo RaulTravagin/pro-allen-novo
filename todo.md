@@ -76,3 +76,9 @@
 - [x] Adicionar navegação do Gestor e botão de entrada na tela inicial
 - [x] Criar testes de permissão do Gestor e de carregamento dos dados operacionais
 - [x] Validar desktop e celular, salvar checkpoint e disponibilizar a versão
+
+## Correção do Acesso do Gestor
+- [x] Identificar por que o painel protegido é consultado na tela de senha
+- [x] Impedir qualquer consulta ao painel antes da sessão do Gestor estar autenticada
+- [x] Adicionar teste de regressão para acesso sem sessão
+- [x] Validar o preview da tela de acesso sem erro, salvar checkpoint e disponibilizar a correção
