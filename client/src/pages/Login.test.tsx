@@ -23,7 +23,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import Login from "./Login";
 
 describe("Login", () => {
-  it("exibe somente o formulário de login dos supervisores", () => {
+  it("exibe o login local do supervisor e o atalho local do Gestor", () => {
     render(<Login />);
 
     expect(screen.getByText("Acesso do Supervisor")).toBeTruthy();

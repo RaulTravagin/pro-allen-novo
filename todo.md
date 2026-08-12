@@ -146,3 +146,9 @@
 - [x] Exibir a cobertura e a justificativa na central do Gestor
 - [x] Criar testes de autorização, justificativa obrigatória e registro da cobertura
 - [x] Validar desktop e celular, salvar checkpoint e disponibilizar o fluxo
+
+## Entrada Direta do Sistema
+- [x] Identificar e remover o redirecionamento automático para o Manus OAuth
+- [x] Exibir diretamente os acessos locais de Supervisor e Gestor na rota inicial
+- [x] Preservar o acesso administrativo existente sem oferecê-lo como entrada padrão
+- [x] Testar a abertura em sessão limpa, validar desktop e celular e salvar checkpoint
