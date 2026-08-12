@@ -1,12 +1,10 @@
-import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, CheckCircle2, Zap } from "lucide-react";
-import { Link } from "wouter";
+import { MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -45,62 +43,18 @@ export default function Login() {
 
         {/* Login Card */}
         <Card className="border-0 shadow-lg">
-          <CardHeader className="space-y-2 pb-6">
-            <CardTitle className="text-2xl">Bem-vindo</CardTitle>
+          <CardHeader className="space-y-2 pb-4">
+            <CardTitle className="text-2xl">Acesso do Supervisor</CardTitle>
             <CardDescription>
-              Acesse o sistema para gerenciar suas rotas e checklists
+              Informe seu usuário e senha para acessar as rotas e checklists.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Features */}
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-gray-900">Rastreamento em Tempo Real</p>
-                  <p className="text-sm text-gray-600">Monitore a localização dos supervisores</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-gray-900">Checklists Inteligentes</p>
-                  <p className="text-sm text-gray-600">Verifique conformidade em cada visita</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-gray-900">Relatórios Detalhados</p>
-                  <p className="text-sm text-gray-600">Análise completa de rotas e visitas</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Login Button */}
-            <Button
-              onClick={() => startLogin()}
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all duration-200"
-            >
-              <Zap className="w-4 h-4 mr-2" />
-              Entrar no Sistema
-            </Button>
-
-            <div className="relative py-1"><div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div><div className="relative flex justify-center"><span className="bg-white px-2 text-xs text-slate-500">ou entre como supervisor</span></div></div>
-
+          <CardContent>
             <form className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4" onSubmit={handleSupervisorLogin}>
               <div className="space-y-1.5"><Label htmlFor="supervisor-username">Usuário</Label><Input id="supervisor-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="ex.: paulo.murashita" autoComplete="username" disabled={supervisorLogin.isPending} required /></div>
               <div className="space-y-1.5"><Label htmlFor="supervisor-password">Senha</Label><Input id="supervisor-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" disabled={supervisorLogin.isPending} required /></div>
               <Button type="submit" className="h-10 w-full bg-slate-900 text-white hover:bg-slate-800" disabled={supervisorLogin.isPending || !username || !password}>{supervisorLogin.isPending ? "Verificando acesso..." : "Entrar como supervisor"}</Button>
             </form>
-
-            <Link href="/gestor/acesso" className="block text-center text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
-              Acesso exclusivo do Gestor
-            </Link>
-
-            <p className="text-xs text-center text-gray-600 mt-4">
-              Ao fazer login, você concorda com nossos termos de serviço
-            </p>
           </CardContent>
         </Card>
 

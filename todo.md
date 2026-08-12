@@ -100,3 +100,8 @@
 - [x] Corrigir a criação e a abertura da rota pelo supervisor local
 - [x] Criar teste de regressão para preparação de rota em conta local
 - [x] Validar o fluxo, salvar checkpoint e disponibilizar a correção
+
+## Simplificação da Tela Inicial
+- [x] Remover o botão administrativo “Entrar no Sistema”
+- [x] Manter somente os campos de usuário e senha dos supervisores
+- [x] Validar o preview e salvar checkpoint da tela simplificada
