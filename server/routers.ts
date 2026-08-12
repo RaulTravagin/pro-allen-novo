@@ -75,7 +75,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const user = await db.getUserByUsername(input.username.toLowerCase());
         const passwordValid = user ? await verifySupervisorPassword(input.password, user.passwordHash) : false;
-        if (!user || !passwordValid || user.role !== "user") {
+        if (!user || !passwordValid || user.role !== "user" || user.isOperational === false) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos" });
         }
         const token = await createSupervisorSession(user.id);

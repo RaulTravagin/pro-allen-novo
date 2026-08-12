@@ -19,4 +19,13 @@ describe("snapshot operacional do Gestor", () => {
       }),
     });
   });
+
+  it("não inclui contas desativadas na lista operacional", async () => {
+    const snapshot = await getGestorOperationalSnapshot();
+    const names = snapshot.operationalSupervisors.map((supervisor) => supervisor.supervisorName);
+    const usernames = snapshot.operationalSupervisors.map((supervisor) => supervisor.supervisorUsername);
+
+    expect(names).not.toContain("João Supervisor");
+    expect(usernames).not.toContain("raul.travagin");
+  });
 });

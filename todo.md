@@ -120,3 +120,8 @@
 - [x] Atualizar automaticamente a central e mostrar a hora da última atualização
 - [x] Cobrir permissões, cálculos e estados da central com testes
 - [x] Validar desktop e celular, salvar checkpoint e disponibilizar a central
+
+## Ajuste de Entradas Operacionais
+- [x] Identificar os registros de Raul Travagin e João Supervisor exibidos na central
+- [x] Excluir os dois nomes da lista operacional sem apagar o histórico de campo
+- [x] Validar a central atualizada e salvar checkpoint

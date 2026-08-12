@@ -20,6 +20,7 @@ export const users = mysqlTable("users", {
   username: varchar("username", { length: 64 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
   mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
+  isOperational: boolean("isOperational").default(true).notNull(),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

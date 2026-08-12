@@ -124,6 +124,7 @@ export async function provisionLocalSupervisor(input: { username: string; name: 
       username: input.username,
       passwordHash: input.passwordHash,
       mustChangePassword: true,
+      isOperational: true,
     }).where(eq(users.id, existing.id));
     return (await getUserById(existing.id))!;
   }
@@ -135,6 +136,7 @@ export async function provisionLocalSupervisor(input: { username: string; name: 
     username: input.username,
     passwordHash: input.passwordHash,
     mustChangePassword: true,
+    isOperational: true,
     role: "user",
     lastSignedIn: new Date(),
   });
@@ -574,7 +576,7 @@ export async function getGestorOperationalSnapshot() {
       .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
       .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
       .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow))),
-    db.select({ id: users.id, name: users.name, username: users.username, role: users.role }).from(users),
+    db.select({ id: users.id, name: users.name, username: users.username, role: users.role, isOperational: users.isOperational }).from(users),
   ]);
 
   const locationBySupervisor = new Map<number, (typeof latestLocations)[number]>();
@@ -634,12 +636,11 @@ export async function getGestorOperationalSnapshot() {
     };
   });
 
-  const routeBySupervisor = new Map(routeViews.map((route) => [route.supervisorId, route]));
+  const activeOperationalUserIds = new Set(allUsers.filter((user) => user.role === "user" && user.isOperational).map((user) => user.id));
+  const operationalRouteViews = routeViews.filter((route) => activeOperationalUserIds.has(route.supervisorId));
+  const routeBySupervisor = new Map(operationalRouteViews.map((route) => [route.supervisorId, route]));
   const supervisorsById = new Map(allUsers.map((user) => [user.id, user]));
-  const supervisorIds = new Set<number>([
-    ...allUsers.filter((user) => user.role === "user").map((user) => user.id),
-    ...routeViews.map((route) => route.supervisorId),
-  ]);
+  const supervisorIds = new Set<number>(activeOperationalUserIds);
 
   const operationalSupervisors = Array.from(supervisorIds).map((supervisorId) => {
     const route = routeBySupervisor.get(supervisorId) ?? null;
@@ -656,7 +657,7 @@ export async function getGestorOperationalSnapshot() {
   }).sort((a, b) => (a.supervisorName ?? "").localeCompare(b.supervisorName ?? "", "pt-BR"));
 
   const alerts = operationalSupervisors.flatMap((supervisor) => supervisor.alerts.map((alert) => ({ ...alert, supervisorId: supervisor.supervisorId, supervisorName: supervisor.supervisorName, routeId: supervisor.route?.id ?? null })));
-  const recentVisits = routeViews.flatMap((route) => route.checklistVisits
+  const recentVisits = operationalRouteViews.flatMap((route) => route.checklistVisits
     .filter((checklist) => checklist.status === "visited" || checklist.status === "in_progress")
     .map((checklist) => ({ ...checklist, routeName: route.routeName, supervisorId: route.supervisorId, supervisorName: route.supervisorName ?? `Supervisor #${route.supervisorId}` })))
     .sort((a, b) => {
@@ -665,19 +666,19 @@ export async function getGestorOperationalSnapshot() {
       return bTime - aTime;
     })
     .slice(0, 12);
-  const totalKm = routeViews.reduce((total, route) => total + (route.kmCovered ?? 0), 0);
+  const totalKm = operationalRouteViews.reduce((total, route) => total + (route.kmCovered ?? 0), 0);
 
   return {
-    activeRoutes: routeViews,
+    activeRoutes: operationalRouteViews,
     operationalSupervisors,
     alerts,
     recentVisits,
     metrics: {
-      supervisorsOnRoute: new Set(routeViews.filter((route) => route.status === "pending" || route.status === "in_progress").map((route) => route.supervisorId)).size,
-      activeRoutes: routeViews.filter((route) => route.status === "in_progress").length,
-      visitsInProgress: todayChecklists.filter((checklist) => checklist.status === "in_progress").length,
-      completedVisits: todayChecklists.filter((checklist) => checklist.status === "visited").length,
-      pendingVisits: todayChecklists.filter((checklist) => checklist.status === "pending").length,
+      supervisorsOnRoute: new Set(operationalRouteViews.filter((route) => route.status === "pending" || route.status === "in_progress").map((route) => route.supervisorId)).size,
+      activeRoutes: operationalRouteViews.filter((route) => route.status === "in_progress").length,
+      visitsInProgress: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "in_progress").length, 0),
+      completedVisits: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "visited").length, 0),
+      pendingVisits: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "pending").length, 0),
       totalKm: Number(totalKm.toFixed(2)),
       gpsStale: alerts.filter((alert) => alert.code === "gps_stale" || alert.code === "gps_missing").length,
       alerts: alerts.length,

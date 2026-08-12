@@ -29,6 +29,10 @@ export async function createContext(
     }
   }
 
+  if (user?.isOperational === false) {
+    user = null;
+  }
+
   return {
     req: opts.req,
     res: opts.res,

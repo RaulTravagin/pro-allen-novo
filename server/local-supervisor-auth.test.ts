@@ -40,6 +40,7 @@ describe("localAuth.login", () => {
       username: "paulo.murashita",
       passwordHash,
       mustChangePassword: true,
+      isOperational: true,
       role: "user",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -64,6 +65,30 @@ describe("localAuth.login", () => {
     await expect(appRouter.createCaller(createContext().context).localAuth.login({
       username: "paulo.murashita",
       password: "senha-incorreta",
+    })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("recusa uma conta desativada na operação mesmo com senha válida", async () => {
+    const passwordHash = await hashSupervisorPassword(configuredInitialPassword!);
+    vi.mocked(db.getUserByUsername).mockResolvedValue({
+      id: 52,
+      openId: "local:raul.travagin",
+      name: "Raul Travagin",
+      email: null,
+      loginMethod: "local",
+      username: "raul.travagin",
+      passwordHash,
+      mustChangePassword: true,
+      isOperational: false,
+      role: "user",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    } as never);
+
+    await expect(appRouter.createCaller(createContext().context).localAuth.login({
+      username: "raul.travagin",
+      password: configuredInitialPassword!,
     })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 

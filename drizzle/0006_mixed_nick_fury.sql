@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `isOperational` boolean DEFAULT true NOT NULL;
