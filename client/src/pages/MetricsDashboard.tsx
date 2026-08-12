@@ -89,7 +89,6 @@ export default function MetricsDashboard() {
       <AdminHeader
         title="Dashboard de métricas"
         subtitle="Análise de desempenho e conformidade"
-        userName={user?.name}
         onLogout={() => logout()}
       />
 

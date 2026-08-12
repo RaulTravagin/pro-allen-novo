@@ -5,11 +5,10 @@ import { Button } from "@/components/ui/button";
 interface AdminHeaderProps {
   title: string;
   subtitle: string;
-  userName?: string | null;
   onLogout: () => void;
 }
 
-export function AdminHeader({ title, subtitle, userName, onLogout }: AdminHeaderProps) {
+export function AdminHeader({ title, subtitle, onLogout }: AdminHeaderProps) {
   const [location, navigate] = useLocation();
   const navItems = [
     { label: "Relatórios", path: "/admin", icon: LayoutDashboard },
@@ -26,7 +25,7 @@ export function AdminHeader({ title, subtitle, userName, onLogout }: AdminHeader
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Plano de Rotas Pro Allen</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
-              <p className="mt-1 text-sm text-slate-600">{subtitle}{userName ? ` · ${userName}` : ""}</p>
+              <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

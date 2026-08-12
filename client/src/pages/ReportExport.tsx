@@ -89,7 +89,6 @@ export default function ReportExport() {
       <AdminHeader
         title="Exportar relatórios"
         subtitle="Gere arquivos operacionais para análise e compartilhamento"
-        userName={user?.name}
         onLogout={() => logout()}
       />
 

@@ -14,6 +14,26 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const DEFAULT_CHECKLIST_ITEMS = [
+  { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
+  { category: 'Pontualidade', description: 'Pontualidade e escala' },
+  { category: 'Documentação', description: 'Livro de ocorrências' },
+  { category: 'Procedimentos', description: 'Procedimentos operacionais' },
+  { category: 'Equipamentos', description: 'Equipamentos e materiais' },
+  { category: 'Limpeza', description: 'Limpeza e organização' },
+  { category: 'Contato', description: 'Contato com o cliente' },
+  { category: 'Fotografia', description: 'Registro fotográfico' },
+  { category: 'Ação', description: 'Plano de ação (quando necessário)' },
+] as const;
+
+async function createChecklistWithDefaultItems(supervisorRouteId: number, postId: number) {
+  const checklistId = await db.createVisitChecklist(supervisorRouteId, postId);
+  for (const item of DEFAULT_CHECKLIST_ITEMS) {
+    await db.createChecklistItem(checklistId, item.category, item.description);
+  }
+  return checklistId;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -138,29 +158,34 @@ export const appRouter = router({
         const checklistIds = [];
         
         for (const post of posts) {
-          const checklistId = await db.createVisitChecklist(input.supervisorRouteId, post.id);
-          
-          // Create predefined checklist items
-          const items = [
-            { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
-            { category: 'Pontualidade', description: 'Pontualidade e escala' },
-            { category: 'Documentação', description: 'Livro de ocorrências' },
-            { category: 'Procedimentos', description: 'Procedimentos operacionais' },
-            { category: 'Equipamentos', description: 'Equipamentos e materiais' },
-            { category: 'Limpeza', description: 'Limpeza e organização' },
-            { category: 'Contato', description: 'Contato com o cliente' },
-            { category: 'Fotografia', description: 'Registro fotográfico' },
-            { category: 'Ação', description: 'Plano de ação (quando necessário)' },
-          ];
-          
-          for (const item of items) {
-            await db.createChecklistItem(checklistId, item.category, item.description);
-          }
-          
+          const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, post.id);
           checklistIds.push(checklistId);
         }
         
         return checklistIds;
+      }),
+
+    startNewVisit: protectedProcedure
+      .input(z.object({ checklistId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const checklist = await db.getVisitChecklistById(input.checklistId);
+        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
+        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (route.status !== 'in_progress') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'A rota precisa estar em andamento para iniciar uma nova visita' });
+        }
+        if (checklist.status !== 'visited') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma visita concluída pode ser reiniciada' });
+        }
+        const routeChecklists = await db.getVisitChecklistsByRoute(checklist.supervisorRouteId);
+        if (routeChecklists.some((item) => item.status === 'in_progress')) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
+        }
+
+        const newChecklistId = await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId);
+        return { checklistId: newChecklistId };
       }),
     
     getByRoute: protectedProcedure

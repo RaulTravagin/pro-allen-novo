@@ -61,7 +61,6 @@ export default function AdminDashboard() {
       <AdminHeader
         title="Painel administrativo"
         subtitle="Acompanhe prioridades, visitas e conformidade"
-        userName={user?.name}
         onLogout={() => logout()}
       />
 

@@ -63,7 +63,7 @@ export default function SupervisorDashboard() {
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Operação em campo</p>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Dashboard do Supervisor</h1>
-            <p className="mt-1 text-sm text-slate-600">Olá, {user?.name || "supervisor"}. Organize sua visita de hoje.</p>
+            <p className="mt-1 text-sm text-slate-600">Organize sua visita de hoje.</p>
           </div>
           <Button onClick={() => logout()} variant="outline" className="self-start sm:self-auto">Sair</Button>
         </div>

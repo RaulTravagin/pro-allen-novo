@@ -18,6 +18,7 @@ interface PostCardProps {
   departureLongitude?: number | null;
   onCheckIn: (checklistId: number) => Promise<void>;
   onCheckOut: (checklistId: number) => Promise<void>;
+  onStartNewVisit: (checklistId: number) => Promise<void>;
   onOpenChecklist: (checklistId: number) => void;
   isLoading?: boolean;
   hasActiveVisit?: boolean;
@@ -39,6 +40,7 @@ const PostCard = memo(function PostCard({
   departureLongitude,
   onCheckIn,
   onCheckOut,
+  onStartNewVisit,
   onOpenChecklist,
   isLoading = false,
   hasActiveVisit = false,
@@ -46,6 +48,7 @@ const PostCard = memo(function PostCard({
 }: PostCardProps) {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isStartingNewVisit, setIsStartingNewVisit] = useState(false);
 
   const handleCheckIn = async () => {
     setIsCheckingIn(true);
@@ -62,6 +65,15 @@ const PostCard = memo(function PostCard({
       await onCheckOut(id);
     } finally {
       setIsCheckingOut(false);
+    }
+  };
+
+  const handleStartNewVisit = async () => {
+    setIsStartingNewVisit(true);
+    try {
+      await onStartNewVisit(id);
+    } finally {
+      setIsStartingNewVisit(false);
     }
   };
 
@@ -112,6 +124,7 @@ const PostCard = memo(function PostCard({
   
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
+  const memoizedStartNewVisit = useCallback(handleStartNewVisit, [id, onStartNewVisit]);
   const memoizedOpenChecklist = useCallback(() => onOpenChecklist(id), [id, onOpenChecklist]);
 
   return (
@@ -131,6 +144,16 @@ const PostCard = memo(function PostCard({
                 }`}>
                   {statusLabel}
                 </span>
+                {arrivalTime && (
+                  <span className="ml-2 inline-block rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">
+                    Entrada: {formatTime(arrivalTime)}
+                  </span>
+                )}
+                {departureTime && (
+                  <span className="ml-2 mt-1 inline-block rounded bg-green-100 px-2 py-1 text-xs font-semibold text-green-800">
+                    Saída: {formatTime(departureTime)}
+                  </span>
+                )}
               </CardDescription>
             </div>
           </div>
@@ -155,8 +178,7 @@ const PostCard = memo(function PostCard({
                 ) : (
                   <>
                     <LogIn className="w-4 h-4 mr-1" />
-                    <span className="hidden sm:inline">Chegada</span>
-                    <span className="sm:hidden">Chegar</span>
+                    Registrar chegada
                   </>
                 )}
               </Button>
@@ -182,8 +204,7 @@ const PostCard = memo(function PostCard({
                   ) : (
                     <>
                       <LogOut className="w-4 h-4 mr-1" />
-                      <span className="hidden sm:inline">Saída</span>
-                      <span className="sm:hidden">Sair</span>
+                      Registrar saída
                     </>
                   )}
                 </Button>
@@ -206,17 +227,45 @@ const PostCard = memo(function PostCard({
             )}
 
             {status === 'visited' && (
+              <>
                 <Button
-                  onClick={() => onOpenChecklist(id)}
+                  type="button"
+                  disabled
+                  aria-label={`Visita concluída em ${postName}`}
+                  variant="secondary"
+                  className="flex-1 bg-green-100 text-green-800 opacity-100 md:flex-none"
+                  size="sm"
+                >
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                  Visita concluída
+                </Button>
+                <Button
+                  type="button"
+                  onClick={memoizedStartNewVisit}
+                  disabled={isStartingNewVisit || isLoading || hasActiveVisit}
+                  aria-label={`Registrar nova chegada em ${postName}`}
+                  className="flex-1 bg-blue-600 text-white shadow-lg transition-all hover:bg-blue-700 hover:shadow-xl md:flex-none"
+                  size="sm"
+                  title={hasActiveVisit ? "Finalize a visita ativa antes de iniciar uma nova" : "Iniciar uma nova visita neste posto"}
+                >
+                  {isStartingNewVisit ? (
+                    <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Preparando...</>
+                  ) : (
+                    <><LogIn className="mr-1 h-4 w-4" />Registrar nova chegada</>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={memoizedOpenChecklist}
                   disabled={isLoading}
                   aria-label={`Ver detalhes de ${postName}`}
                   variant="outline"
-                className="text-gray-600 border-gray-300 flex-1 md:flex-none"
-                size="sm"
-              >
-                <span className="hidden sm:inline">Ver Detalhes</span>
-                <span className="sm:hidden">Detalhes</span>
-              </Button>
+                  className="flex-1 border-gray-300 text-gray-600 md:flex-none"
+                  size="sm"
+                >
+                  Ver detalhes
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -227,7 +276,7 @@ const PostCard = memo(function PostCard({
         <CardContent className="pt-0 space-y-3">
           {/* Arrival Info */}
           {arrivalTime && (
-            <div className="flex items-start gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <div className="flex items-start gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100" aria-live="polite">
               <LogIn className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-blue-900">Chegada Registrada</p>

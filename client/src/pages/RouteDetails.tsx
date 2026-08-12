@@ -49,6 +49,35 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const recordLocationMutation = trpc.locations.record.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
+  const startNewVisitMutation = trpc.checklists.startNewVisit.useMutation();
+
+  const captureCoordinates = () => new Promise<{ latitude?: number; longitude?: number }>((resolve) => {
+    if (!navigator.geolocation) {
+      setGpsError("Geolocalização não disponível neste navegador. A presença será registrada sem coordenadas.");
+      resolve({});
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsError("");
+        resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      },
+      (error) => {
+        setGpsError("Não foi possível capturar a localização. A presença foi registrada sem coordenadas.");
+        console.warn("Geolocation error:", error);
+        resolve({});
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+
+  const postCards = (posts ?? []).flatMap((post) => {
+    const latestChecklist = (checklists ?? [])
+      .filter((checklist) => checklist.postId === post.id)
+      .sort((a, b) => b.id - a.id)[0];
+    return latestChecklist ? [{ post, checklist: latestChecklist }] : [];
+  });
 
   useEffect(() => {
     // Start recording GPS location periodically
@@ -233,12 +262,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900">Postos a Visitar</h2>
             <span className="text-sm text-gray-600">
-              {checklists?.filter(c => c.status === 'visited').length || 0} / {checklists?.length || 0} visitados
+              {postCards.filter(({ checklist }) => checklist.status === 'visited').length} / {postCards.length} postos concluídos
             </span>
           </div>
 
-          {checklists?.map((checklist) => {
-            const post = posts?.find(p => p.id === checklist.postId);
+          {postCards.map(({ checklist, post }) => {
             return (
               <PostCard
                 key={checklist.id}
@@ -256,68 +284,34 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 departureLongitude={checklist.departureLongitude as number | null | undefined}
                 onCheckIn={async (checklistId) => {
                   try {
-                    // Capture geolocation if available
-                    if (navigator.geolocation) {
-                      navigator.geolocation.getCurrentPosition(
-                        async (position) => {
-                          await checkInMutation.mutateAsync({ 
-                            checklistId,
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                          });
-                          // Invalidate to refresh the list
-                          await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                          toast.success("Chegada registrada com sucesso!");
-                        },
-                        (error) => {
-                          console.warn("Geolocation error:", error);
-                          // Continue without geolocation
-                          checkInMutation.mutateAsync({ checklistId }).then(() => {
-                            utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                            toast.success("Chegada registrada com sucesso!");
-                          });
-                        }
-                      );
-                    } else {
-                      await checkInMutation.mutateAsync({ checklistId });
-                      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                      toast.success("Chegada registrada com sucesso!");
-                    }
+                    const coordinates = await captureCoordinates();
+                    await checkInMutation.mutateAsync({ checklistId, ...coordinates });
+                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+                    toast.success("Chegada registrada com sucesso!");
                   } catch (error) {
                     toast.error("Erro ao registrar chegada");
+                    console.error("Check-in error:", error);
                   }
                 }}
                 onCheckOut={async (checklistId) => {
                   try {
-                    // Capture geolocation if available
-                    if (navigator.geolocation) {
-                      navigator.geolocation.getCurrentPosition(
-                        async (position) => {
-                          await checkOutMutation.mutateAsync({ 
-                            checklistId,
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                          });
-                          // Invalidate to refresh the list
-                          await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                          toast.success("Saída registrada com sucesso!");
-                        },
-                        (error) => {
-                          console.warn("Geolocation error:", error);
-                          // Continue without geolocation
-                          checkOutMutation.mutateAsync({ checklistId }).then(() => {
-                            utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                            toast.success("Saída registrada com sucesso!");
-                          });
-                        }
-                      );
-                    } else {
-                      await checkOutMutation.mutateAsync({ checklistId });
-                      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
-                      toast.success("Saída registrada com sucesso!");
-                    }
+                    const coordinates = await captureCoordinates();
+                    await checkOutMutation.mutateAsync({ checklistId, ...coordinates });
+                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+                    toast.success("Saída registrada com sucesso!");
                   } catch (error) {
                     toast.error("Erro ao registrar saída");
+                    console.error("Check-out error:", error);
+                  }
+                }}
+                onStartNewVisit={async (checklistId) => {
+                  try {
+                    await startNewVisitMutation.mutateAsync({ checklistId });
+                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+                    toast.success("Nova visita preparada. Registre a chegada quando estiver no posto.");
+                  } catch (error) {
+                    toast.error("Não foi possível preparar uma nova visita");
+                    console.error("New visit error:", error);
                   }
                 }}
                 onOpenChecklist={(checklistId) => {
@@ -325,7 +319,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 }}
                 hasActiveVisit={Boolean(activeChecklist && activeChecklist.id !== checklist.id)}
                 isActiveVisit={activeChecklist?.id === checklist.id}
-                isLoading={checkInMutation.isPending || checkOutMutation.isPending}
+                isLoading={checkInMutation.isPending || checkOutMutation.isPending || startNewVisitMutation.isPending}
               />
             );
           })}

@@ -409,3 +409,14 @@
 ## Nota de Recuperação
 - [x] Checkpoint estável 3a343360 confirmado após tentativa de alteração acidental
 - [x] Prosseguir somente com edições localizadas e validação imediata
+
+## Ajuste de Presença por Posto
+- [x] Remover a exibição do nome pessoal do usuário nos cabeçalhos
+- [x] Exibir texto completo “Registrar chegada” no estado inicial de cada card
+- [x] Trocar a ação do card ativo para “Registrar saída” após o check-in
+- [x] Exibir a hora de entrada no estado de atendimento
+- [x] Exibir tag desabilitada “Visita concluída” com entrada e saída após o check-out
+- [x] Disponibilizar uma nova chegada depois da saída sem perder o histórico da visita concluída
+- [x] Capturar automaticamente horário e geolocalização em chegada e saída quando permitida
+- [x] Tratar indisponibilidade ou recusa de GPS sem impedir o registro de presença
+- [x] Testar a transição de nova visita, TypeScript, Vitest e build; checkpoint pendente
