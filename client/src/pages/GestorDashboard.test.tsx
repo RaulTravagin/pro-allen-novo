@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const now = new Date("2026-08-12T15:00:00.000Z");
+const wordExport = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const route = {
   id: 30001,
   routeName: "Rota 1",
@@ -89,6 +90,10 @@ vi.mock("@/lib/trpc", () => ({
   },
 }));
 
+vi.mock("@/lib/dailyReportDocx", () => ({
+  downloadDailyReportWord: wordExport,
+}));
+
 vi.mock("wouter", () => ({ useLocation: () => ["/gestor", vi.fn()] }));
 
 import GestorDashboard from "./GestorDashboard";
@@ -108,13 +113,16 @@ describe("GestorDashboard", () => {
     expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
   });
 
-  it("gera a visualização clara do relatório diário", () => {
+  it("gera a visualização clara do relatório diário e disponibiliza a exportação Word", async () => {
     render(<GestorDashboard />);
     fireEvent.click(screen.getByRole("button", { name: "Relatório do dia" }));
 
     expect(screen.getByText("Relatório operacional diário")).toBeTruthy();
     expect(screen.getByText("Acompanhamento completo dos supervisores")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Exportar CSV" })).toBeTruthy();
+    const exportButton = screen.getByRole("button", { name: "Baixar Word" });
+    expect(exportButton).toBeTruthy();
+    fireEvent.click(exportButton);
+    expect(wordExport).toHaveBeenCalled();
     expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(1);
     expect(screen.getByText("Checklist conforme")).toBeTruthy();
   });

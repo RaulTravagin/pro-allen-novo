@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
+import { downloadDailyReportWord } from "@/lib/dailyReportDocx";
 import { Activity, AlertTriangle, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Navigation, Radio, Route, ShieldCheck, TimerReset, UsersRound, XCircle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useLocation } from "wouter";
@@ -81,6 +82,7 @@ function downloadDailyReportCsv(report: any) {
 export default function GestorDashboard() {
   const [, navigate] = useLocation();
   const [showDailyReport, setShowDailyReport] = useState(false);
+  const [isExportingWord, setIsExportingWord] = useState(false);
   const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnMount: "always" });
   const { data: session, isLoading: isCheckingSession } = sessionQuery;
   const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
@@ -117,7 +119,7 @@ export default function GestorDashboard() {
         </section>
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Situação da rota, postos, horários, checklist, cobertura, KM, GPS e alertas registrados no dia.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button onClick={() => dailyReport.data && downloadDailyReportCsv(dailyReport.data)} disabled={!dailyReport.data} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> Exportar CSV</Button></div></div>
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Situação da rota, postos, horários, checklist, cobertura, KM, GPS e alertas registrados no dia.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
           {dailyReport.isLoading ? <LoadingRows /> : dailyReport.data ? <DailyOperationalReport report={dailyReport.data} /> : <EmptyState title="Relatório indisponível" description="Tente atualizar os dados do relatório diário." />}
         </section>}
 

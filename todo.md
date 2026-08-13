@@ -172,3 +172,10 @@
 - [x] Criar testes de cálculo, conteúdo e proteção do relatório
 - [x] Validar visualmente o relatório e a exportação CSV com sessão real do Gestor
 - [x] Salvar checkpoint e disponibilizar o recurso
+
+## Relatório Word do Gestor
+- [x] Estruturar o documento Word com título, resumo executivo, indicadores e seções por supervisor
+- [x] Gerar arquivo `.docx` com rotas, postos, horários, checklist, KM, GPS, coberturas e alertas
+- [x] Substituir a exportação principal de CSV pela exportação organizada em Word
+- [x] Testar a abertura e o conteúdo interno do documento Word gerado
+- [x] Validar a interface, salvar checkpoint e disponibilizar o novo formato
