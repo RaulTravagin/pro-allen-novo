@@ -18,6 +18,7 @@ import {
   LOCAL_SUPERVISOR_SESSION_MAX_AGE_SECONDS,
   verifySupervisorPassword,
 } from "./local-supervisor-auth";
+import { buildDailyOperationalReport } from "./daily-operational-report";
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -122,6 +123,7 @@ export const appRouter = router({
 
   gestor: router({
     dashboard: gestorProcedure.query(async () => db.getGestorOperationalSnapshot()),
+    dailyReport: gestorProcedure.query(async () => buildDailyOperationalReport(await db.getGestorOperationalSnapshot())),
   }),
 
   // Routes and Posts

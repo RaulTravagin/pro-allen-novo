@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const now = new Date("2026-08-12T15:00:00.000Z");
 const route = {
@@ -62,6 +62,29 @@ vi.mock("@/lib/trpc", () => ({
           },
         }),
       },
+      dailyReport: {
+        useQuery: () => ({
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
+          data: {
+            reportDate: now,
+            generatedAt: now,
+            summary: { supervisors: 1, supervisorsOnRoute: 1, completedVisits: 1, pendingVisits: 2, visitsInProgress: 1, coverages: 0, kmCovered: 0, nonCompliantItems: 1, unansweredItems: 4, alerts: 1 },
+            supervisors: [{
+              supervisorId: 41,
+              supervisorName: "Paulo Murashita",
+              operationalStatus: "em_atendimento",
+              operationalStatusLabel: "Em atendimento",
+              latestLocation: { latitude: "-23.1", longitude: "-46.5", recordedAt: now },
+              alerts: [{ title: "Atendimento prolongado" }],
+              checklistTotals: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
+              coverageCount: 0,
+              route: { name: "Rota 1", region: "Jundiaí", totalPosts: 4, completedVisits: 1, kmInitial: "1250", kmCovered: 0, activeVisit: { postName: "Kelvion", arrivalTime: now, durationMinutes: 30 }, visits: [{ postName: "Kelvion", region: "Jordanésia", status: "in_progress", arrivalTime: now, departureTime: null, durationMinutes: 30, observations: "Verificar troca de uniforme.", isCoverage: false, checklist: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 } }] },
+            }],
+          },
+        }),
+      },
     },
   },
 }));
@@ -71,6 +94,8 @@ vi.mock("wouter", () => ({ useLocation: () => ["/gestor", vi.fn()] }));
 import GestorDashboard from "./GestorDashboard";
 
 describe("GestorDashboard", () => {
+  afterEach(() => cleanup());
+
   it("mostra a central detalhada de operação por supervisor", () => {
     render(<GestorDashboard />);
 
@@ -81,5 +106,16 @@ describe("GestorDashboard", () => {
     expect(screen.getByText("Verificar troca de uniforme.")).toBeTruthy();
     expect(screen.getByText("Atendimento prolongado · Paulo Murashita")).toBeTruthy();
     expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
+  });
+
+  it("gera a visualização clara do relatório diário", () => {
+    render(<GestorDashboard />);
+    fireEvent.click(screen.getByRole("button", { name: "Relatório do dia" }));
+
+    expect(screen.getByText("Relatório operacional diário")).toBeTruthy();
+    expect(screen.getByText("Acompanhamento completo dos supervisores")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Exportar CSV" })).toBeTruthy();
+    expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(1);
+    expect(screen.getByText("Checklist conforme")).toBeTruthy();
   });
 });

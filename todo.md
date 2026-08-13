@@ -163,3 +163,12 @@
 - [x] Armazenar de forma protegida a senha inicial de raultravagin
 - [x] Criar e ativar a conta local raultravagin como supervisor operacional
 - [x] Validar o login da nova conta e confirmar a criação
+
+## Relatório Diário do Gestor
+- [x] Consolidar por supervisor a rota, status, postos, horários, checklist, KM, GPS e alertas do dia
+- [x] Criar a consulta protegida do relatório diário para o Gestor
+- [x] Adicionar controle de geração e visualização clara no Painel do Gestor
+- [x] Permitir exportação do relatório diário em formato CSV
+- [x] Criar testes de cálculo, conteúdo e proteção do relatório
+- [x] Validar visualmente o relatório e a exportação CSV com sessão real do Gestor
+- [x] Salvar checkpoint e disponibilizar o recurso

@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { Activity, AlertTriangle, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Gauge, Loader2, LogOut, MapPin, Navigation, Radio, Route, ShieldCheck, TimerReset, UsersRound, XCircle } from "lucide-react";
-import React, { useEffect } from "react";
+import { Activity, AlertTriangle, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Navigation, Radio, Route, ShieldCheck, TimerReset, UsersRound, XCircle } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 
 const REFRESH_INTERVAL = 15_000;
@@ -55,12 +55,37 @@ function alertAppearance(severity: string) {
   return severity === "critical" ? "border-rose-200 bg-rose-50 text-rose-950" : severity === "warning" ? "border-amber-200 bg-amber-50 text-amber-950" : "border-blue-200 bg-blue-50 text-blue-950";
 }
 
+function downloadDailyReportCsv(report: any) {
+  const rows: Array<Array<string | number>> = [["Relatório diário", new Date(report.reportDate).toLocaleDateString("pt-BR")], [], ["Supervisor", "Situação", "Rota", "Posto", "Atendimento", "Chegada", "Saída", "Duração (min)", "Cobertura", "Motivo da cobertura", "Checklist conforme", "Não conformidades", "Sem resposta", "Observações", "KM percorridos", "GPS", "Alertas"]];
+  for (const supervisor of report.supervisors ?? []) {
+    const visits = supervisor.route?.visits?.length ? supervisor.route.visits : [null];
+    for (const visit of visits) {
+      rows.push([
+        supervisor.supervisorName, supervisor.operationalStatusLabel, supervisor.route?.name ?? "Sem rota", visit?.postName ?? "—", visit ? checklistStatus(visit.status).label : "—",
+        visit?.arrivalTime ? new Date(visit.arrivalTime).toLocaleString("pt-BR") : "—", visit?.departureTime ? new Date(visit.departureTime).toLocaleString("pt-BR") : "—", visit?.durationMinutes ?? "—",
+        visit?.isCoverage ? "Sim" : "Não", visit?.coverageReason ?? "—", visit?.checklist?.compliant ?? 0, visit?.checklist?.nonCompliant ?? 0, visit?.checklist?.unanswered ?? 0,
+        visit?.observations ?? "—", supervisor.route?.kmCovered ?? "—", supervisor.latestLocation ? formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude) : "Sem GPS",
+        (supervisor.alerts ?? []).map((alert: any) => alert.title).join(" | ") || "Sem alertas",
+      ]);
+    }
+  }
+  const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
+  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `relatorio-diario-${new Date(report.reportDate).toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function GestorDashboard() {
   const [, navigate] = useLocation();
+  const [showDailyReport, setShowDailyReport] = useState(false);
   const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnMount: "always" });
   const { data: session, isLoading: isCheckingSession } = sessionQuery;
   const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
   const dashboard = trpc.gestor.dashboard.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
+  const dailyReport = trpc.gestor.dailyReport.useQuery(undefined, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false });
   const logout = trpc.gestorAccess.logout.useMutation({ onSuccess: () => navigate("/gestor/acesso") });
 
   useEffect(() => {
@@ -82,7 +107,7 @@ export default function GestorDashboard() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">PR</div><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Central operacional</p><h1 className="text-2xl font-bold tracking-tight">Painel do Gestor</h1></div></div>
-          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
+          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><Button variant="outline" onClick={() => setShowDailyReport(true)} className="gap-2"><FileText className="h-4 w-4" /> Relatório do dia</Button><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
         </div>
       </header>
 
@@ -90,6 +115,11 @@ export default function GestorDashboard() {
         <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl shadow-slate-950/10 sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
+
+        {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Situação da rota, postos, horários, checklist, cobertura, KM, GPS e alertas registrados no dia.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button onClick={() => dailyReport.data && downloadDailyReportCsv(dailyReport.data)} disabled={!dailyReport.data} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> Exportar CSV</Button></div></div>
+          {dailyReport.isLoading ? <LoadingRows /> : dailyReport.data ? <DailyOperationalReport report={dailyReport.data} /> : <EmptyState title="Relatório indisponível" description="Tente atualizar os dados do relatório diário." />}
+        </section>}
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Supervisores em rota" value={metrics?.supervisorsOnRoute ?? 0} icon={UsersRound} tone="blue" />
@@ -121,6 +151,27 @@ export default function GestorDashboard() {
       </div>
     </main>
   );
+}
+
+function DailyOperationalReport({ report }: { report: any }) {
+  const summary = report.summary;
+  return <div className="space-y-6 p-6">
+    <div className="flex flex-col gap-2 rounded-2xl bg-blue-50 p-4 text-sm text-blue-950 sm:flex-row sm:items-center sm:justify-between"><p><strong>Data:</strong> {new Date(report.reportDate).toLocaleDateString("pt-BR")}</p><p><strong>Gerado às:</strong> {new Date(report.generatedAt).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p></div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><ReportMetric label="Supervisores em rota" value={`${summary.supervisorsOnRoute}/${summary.supervisors}`} /><ReportMetric label="Visitas concluídas" value={summary.completedVisits} /><ReportMetric label="Postos pendentes" value={summary.pendingVisits} /><ReportMetric label="Em atendimento" value={summary.visitsInProgress} /><ReportMetric label="Coberturas" value={summary.coverages} /><ReportMetric label="KM percorridos" value={`${Number(summary.kmCovered).toLocaleString("pt-BR")} km`} /><ReportMetric label="Não conformidades" value={summary.nonCompliantItems} alert={summary.nonCompliantItems > 0} /><ReportMetric label="Alertas abertos" value={summary.alerts} alert={summary.alerts > 0} /></div>
+    <div className="space-y-3">{report.supervisors.map((supervisor: any) => <details key={supervisor.supervisorId} className="rounded-2xl border border-slate-200 bg-slate-50" open={supervisor.operationalStatus === "em_atendimento"}>
+      <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-1 text-sm text-slate-600">{supervisor.route ? `${supervisor.route.name} · ${supervisor.route.region}` : "Nenhuma rota preparada"}</p></div><div className="flex flex-wrap gap-2"><Badge className={operationStatus(supervisor.operationalStatus).className}>{supervisor.operationalStatusLabel}</Badge>{supervisor.route && <Badge variant="outline">{supervisor.route.completedVisits}/{supervisor.route.totalPosts} postos</Badge>}</div></summary>
+      <div className="space-y-4 border-t border-slate-200 bg-white p-5">
+        <div className="grid gap-3 md:grid-cols-3"><InfoBlock icon={Activity} label="Atendimento" value={supervisor.route?.activeVisit?.postName ?? "Sem atendimento ativo"} detail={supervisor.route?.activeVisit ? `Desde ${formatTime(supervisor.route.activeVisit.arrivalTime)} · ${formatDuration(supervisor.route.activeVisit.durationMinutes)}` : "Sem posto em atendimento"} /><InfoBlock icon={Car} label="Quilometragem" value={supervisor.route?.kmInitial != null ? `${Number(supervisor.route.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM não informado"} detail={supervisor.route?.kmCovered != null ? `${Number(supervisor.route.kmCovered).toLocaleString("pt-BR")} km percorridos` : "KM final pendente"} /><InfoBlock icon={Crosshair} label="Último GPS" value={supervisor.latestLocation ? formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude) : "Sem GPS"} detail={supervisor.latestLocation?.recordedAt ? formatDateTime(supervisor.latestLocation.recordedAt) : "Localização não recebida"} /></div>
+        <div className="grid gap-3 sm:grid-cols-4"><ReportMetric label="Checklist conforme" value={`${supervisor.checklistTotals.compliant}/${supervisor.checklistTotals.total}`} /><ReportMetric label="Não conforme" value={supervisor.checklistTotals.nonCompliant} alert={supervisor.checklistTotals.nonCompliant > 0} /><ReportMetric label="Sem resposta" value={supervisor.checklistTotals.unanswered} /><ReportMetric label="Coberturas" value={supervisor.coverageCount} /></div>
+        {supervisor.alerts.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><strong>Alertas:</strong> {supervisor.alerts.map((alert: any) => alert.title).join(" · ")}</div>}
+        <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[960px] w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-3 py-3">Posto</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Horários</th><th className="px-3 py-3">Checklist</th><th className="px-3 py-3">Cobertura / observações</th></tr></thead><tbody className="divide-y divide-slate-100">{(supervisor.route?.visits ?? []).map((visit: any, index: number) => <tr key={`${visit.postName}-${index}`} className="align-top"><td className="px-3 py-3 font-semibold text-slate-900">{visit.postName}<p className="mt-1 font-normal text-slate-500">{visit.region}</p></td><td className="px-3 py-3"><Badge className={checklistStatus(visit.status).className}>{checklistStatus(visit.status).label}</Badge></td><td className="px-3 py-3 text-slate-600">Chegada: {formatTime(visit.arrivalTime)}<br />Saída: {formatTime(visit.departureTime)}{visit.durationMinutes != null && <><br />Duração: {formatDuration(visit.durationMinutes)}</>}</td><td className="px-3 py-3 text-slate-600">{visit.checklist.compliant}/{visit.checklist.total} conforme<br /><span className={visit.checklist.nonCompliant ? "font-semibold text-rose-700" : ""}>{visit.checklist.nonCompliant} não conforme</span></td><td className="max-w-[260px] px-3 py-3 text-slate-600">{visit.isCoverage && <p className="mb-2 rounded bg-violet-50 p-2 text-violet-950"><strong>Cobertura:</strong> {visit.coverageReason}</p>}{visit.observations || "Sem observações"}</td></tr>)}</tbody></table></div>
+      </div>
+    </details>)}</div>
+  </div>;
+}
+
+function ReportMetric({ label, value, alert = false }: { label: string; value: string | number; alert?: boolean }) {
+  return <div className={`rounded-xl border p-4 ${alert ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}><p className="text-lg font-bold text-slate-950">{value}</p><p className="mt-1 text-xs font-medium text-slate-600">{label}</p></div>;
 }
 
 function SupervisorOperationalCard({ supervisor }: { supervisor: any }) {

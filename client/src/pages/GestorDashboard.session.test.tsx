@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   dashboardQuery: vi.fn(),
+  dailyReportQuery: vi.fn(),
 }));
 
 vi.mock("@/lib/trpc", () => ({
@@ -15,7 +16,7 @@ vi.mock("@/lib/trpc", () => ({
       },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    gestor: { dashboard: { useQuery: mocks.dashboardQuery } },
+    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery } },
   },
 }));
 
@@ -27,6 +28,8 @@ describe("GestorDashboard com sessão em validação", () => {
   beforeEach(() => {
     mocks.dashboardQuery.mockReset();
     mocks.dashboardQuery.mockReturnValue({ data: undefined, isLoading: false });
+    mocks.dailyReportQuery.mockReset();
+    mocks.dailyReportQuery.mockReturnValue({ data: undefined, isLoading: false, isFetching: false, refetch: vi.fn() });
   });
 
   it("não habilita a consulta protegida até confirmar a sessão nesta navegação", () => {
@@ -34,5 +37,6 @@ describe("GestorDashboard com sessão em validação", () => {
 
     expect(screen.getByText("Conferindo acesso do Gestor...")).toBeTruthy();
     expect(mocks.dashboardQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
+    expect(mocks.dailyReportQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
   });
 });

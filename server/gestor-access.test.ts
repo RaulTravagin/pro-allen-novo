@@ -50,6 +50,7 @@ describe("gestorAccess", () => {
     const invalid = createContext();
     await expect(appRouter.createCaller(invalid.context).gestorAccess.login({ password: "senha-incorreta" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(appRouter.createCaller(invalid.context).gestor.dashboard()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.dailyReport()).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const login = createContext();
     await appRouter.createCaller(login.context).gestorAccess.login({ password: configuredGestorPassword! });
@@ -59,5 +60,6 @@ describe("gestorAccess", () => {
     const authorizedCaller = appRouter.createCaller(createContext(sessionCookie).context);
     await expect(authorizedCaller.gestorAccess.session()).resolves.toEqual({ authenticated: true });
     await expect(authorizedCaller.gestor.dashboard()).resolves.toMatchObject({ activeRoutes: [] });
+    await expect(authorizedCaller.gestor.dailyReport()).resolves.toMatchObject({ summary: { supervisors: 0 } });
   });
 });
