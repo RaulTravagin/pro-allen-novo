@@ -199,3 +199,10 @@
 - [x] Verificar erros de console e principais telas em desktop e celular
 - [x] Carregar o gerador de Word somente ao exportar o relatório diário
 - [x] Corrigir problemas encontrados, salvar checkpoint e disponibilizar a versão de testes
+
+## Tela de Acesso Pro Allen
+- [x] Aplicar amarelo e preto como identidade principal no acesso de Supervisor
+- [x] Exibir Pro Allen como marca principal e remover CT3 do cabeçalho
+- [x] Manter CT3 Chults Travagin apenas como crédito discreto no rodapé
+- [x] Ajustar a entrada do Gestor para a mesma identidade visual
+- [x] Validar desktop e celular, salvar checkpoint e disponibilizar a nova tela

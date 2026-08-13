@@ -28,44 +28,41 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo/Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-              <MapPin className="w-6 h-6 text-white" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b0b0b] p-4 text-white">
+      <div aria-hidden="true" className="absolute -left-24 top-0 h-72 w-72 rounded-full bg-yellow-400/15 blur-3xl" />
+      <div aria-hidden="true" className="absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-amber-500/10 blur-3xl" />
+      <div className="relative w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mb-4 flex items-center justify-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f6c915] shadow-lg shadow-yellow-400/20">
+              <MapPin className="h-7 w-7 text-black" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">CT3</h1>
+            <div className="text-left"><p className="text-[11px] font-bold uppercase tracking-[0.3em] text-[#f6c915]">Operação em campo</p><h1 className="text-3xl font-black tracking-tight text-white">Pro Allen</h1></div>
           </div>
-          <p className="text-gray-600">Chults Travagin · Sistema de Gestão de Supervisores</p>
+          <p className="text-sm text-zinc-400">Sistema de Gestão de Supervisores</p>
         </div>
 
-        {/* Login Card */}
-        <Card className="border-0 shadow-lg">
+        <Card className="border border-white/10 bg-white shadow-2xl shadow-black/30">
           <CardHeader className="space-y-2 pb-4">
-            <CardTitle className="text-2xl">Acesso do Supervisor</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-2xl text-zinc-950">Acesso do Supervisor</CardTitle>
+            <CardDescription className="text-zinc-600">
               Informe seu usuário e senha para acessar as rotas e checklists.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4" onSubmit={handleSupervisorLogin}>
-              <div className="space-y-1.5"><Label htmlFor="supervisor-username">Usuário</Label><Input id="supervisor-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="ex.: paulo.murashita" autoComplete="username" disabled={supervisorLogin.isPending} required /></div>
-              <div className="space-y-1.5"><Label htmlFor="supervisor-password">Senha</Label><Input id="supervisor-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" disabled={supervisorLogin.isPending} required /></div>
-              <Button type="submit" className="h-10 w-full bg-slate-900 text-white hover:bg-slate-800" disabled={supervisorLogin.isPending || !username || !password}>{supervisorLogin.isPending ? "Verificando acesso..." : "Entrar como supervisor"}</Button>
+            <form className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4" onSubmit={handleSupervisorLogin}>
+              <div className="space-y-1.5"><Label htmlFor="supervisor-username" className="text-zinc-800">Usuário</Label><Input id="supervisor-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="ex.: paulo.murashita" autoComplete="username" disabled={supervisorLogin.isPending} required className="border-zinc-300 bg-white focus-visible:ring-yellow-400" /></div>
+              <div className="space-y-1.5"><Label htmlFor="supervisor-password" className="text-zinc-800">Senha</Label><Input id="supervisor-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" disabled={supervisorLogin.isPending} required className="border-zinc-300 bg-white focus-visible:ring-yellow-400" /></div>
+              <Button type="submit" className="h-11 w-full bg-[#f6c915] font-bold text-black hover:bg-[#e5b900]" disabled={supervisorLogin.isPending || !username || !password}>{supervisorLogin.isPending ? "Verificando acesso..." : "Entrar como supervisor"}</Button>
             </form>
           </CardContent>
         </Card>
 
-        {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-sm text-gray-600">
-            © 2026 CT3 Chults Travagin. Todos os direitos reservados.
-          </p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">CT3 Chults Travagin</p>
           <a
             href="/gestor/acesso"
-            className="mt-2 inline-block text-[11px] font-medium text-slate-400 transition-colors hover:text-slate-600 focus-visible:text-slate-700 focus-visible:outline-none"
+            className="mt-2 inline-block text-[11px] font-semibold text-[#f6c915] transition-colors hover:text-yellow-300 focus-visible:text-yellow-200 focus-visible:outline-none"
           >
             Acesso do Gestor
           </a>

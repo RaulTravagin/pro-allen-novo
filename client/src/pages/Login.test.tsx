@@ -26,6 +26,8 @@ describe("Login", () => {
   it("exibe o login local do supervisor e o atalho local do Gestor", () => {
     render(<Login />);
 
+    expect(screen.getByText("Pro Allen")).toBeTruthy();
+    expect(screen.getByText("CT3 Chults Travagin")).toBeTruthy();
     expect(screen.getByText("Acesso do Supervisor")).toBeTruthy();
     expect(screen.getByLabelText("Usuário")).toBeTruthy();
     expect(screen.getByLabelText("Senha")).toBeTruthy();

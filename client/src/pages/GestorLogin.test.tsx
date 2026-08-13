@@ -28,6 +28,8 @@ describe("GestorLogin", () => {
   it("cancela queries protegidas antigas antes de exibir a tela de senha", async () => {
     render(<GestorLogin />);
 
+    expect(screen.getByText("Pro Allen")).toBeTruthy();
+    expect(screen.getByText("CT3 Chults Travagin")).toBeTruthy();
     expect(screen.getByText("Acesso do Gestor")).toBeTruthy();
     await waitFor(() => {
       expect(mocks.cancelDashboard).toHaveBeenCalledTimes(1);
