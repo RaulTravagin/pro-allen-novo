@@ -22,9 +22,9 @@ export function AdminHeader({ title, subtitle, onLogout }: AdminHeaderProps) {
       <div className="mx-auto max-w-7xl px-4 py-5 sm:py-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white shadow-sm">PR</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white shadow-sm">CT3</div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Plano de Rotas Pro Allen</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">CT3 · Chults Travagin</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
               <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
             </div>

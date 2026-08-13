@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const now = new Date("2026-08-12T15:00:00.000Z");
@@ -122,7 +122,7 @@ describe("GestorDashboard", () => {
     const exportButton = screen.getByRole("button", { name: "Baixar Word" });
     expect(exportButton).toBeTruthy();
     fireEvent.click(exportButton);
-    expect(wordExport).toHaveBeenCalled();
+    await waitFor(() => expect(wordExport).toHaveBeenCalled());
     expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(1);
     expect(screen.getByText("Checklist conforme")).toBeTruthy();
   });

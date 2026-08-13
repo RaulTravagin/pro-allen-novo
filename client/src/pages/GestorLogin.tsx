@@ -44,7 +44,7 @@ export default function GestorLogin() {
           <div className="bg-slate-950 p-8 text-white sm:p-12">
             <div className="mb-14 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400 text-slate-950"><Activity className="h-5 w-5" /></div>
-              <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-300">Operação em campo</p><h1 className="text-xl font-bold">Plano de Rotas Pro Allen</h1></div>
+              <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-300">Operação em campo</p><h1 className="text-xl font-bold">CT3 Chults Travagin</h1></div>
             </div>
             <p className="max-w-md text-4xl font-semibold leading-tight sm:text-5xl">Visão integral, decisões no momento certo.</p>
             <p className="mt-6 max-w-md text-base leading-7 text-slate-300">Este acesso é reservado ao Gestor para acompanhar as rotas, os postos, as visitas, a quilometragem e a última atualização de GPS da operação.</p>

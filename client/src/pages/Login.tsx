@@ -36,9 +36,9 @@ export default function Login() {
             <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
               <MapPin className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">Plano de Rotas</h1>
+            <h1 className="text-3xl font-bold text-gray-900">CT3</h1>
           </div>
-          <p className="text-gray-600">Pro Allen - Sistema de Gestão de Supervisores</p>
+          <p className="text-gray-600">Chults Travagin · Sistema de Gestão de Supervisores</p>
         </div>
 
         {/* Login Card */}
@@ -61,7 +61,7 @@ export default function Login() {
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-600">
-            © 2026 Plano de Rotas Pro Allen. Todos os direitos reservados.
+            © 2026 CT3 Chults Travagin. Todos os direitos reservados.
           </p>
           <a
             href="/gestor/acesso"

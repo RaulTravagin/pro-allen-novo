@@ -190,3 +190,12 @@
 - [x] Impedir a montagem ou consulta do dashboard antes da senha do Gestor
 - [x] Criar regressão e validar em sessão limpa
 - [x] Salvar checkpoint e disponibilizar a correção
+
+## Rebranding CT3 Chults Travagin e Revisão de Testes
+- [x] Substituir referências visíveis de Plano de Rotas Pro Allen por CT3 Chults Travagin
+- [x] Atualizar o título público do aplicativo para CT3
+- [x] Revisar login, Gestor, Supervisor, rotas, checklists, coberturas e relatório Word
+- [x] Executar testes automatizados, verificação de tipos e build de produção
+- [x] Verificar erros de console e principais telas em desktop e celular
+- [x] Carregar o gerador de Word somente ao exportar o relatório diário
+- [x] Corrigir problemas encontrados, salvar checkpoint e disponibilizar a versão de testes

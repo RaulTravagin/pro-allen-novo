@@ -95,12 +95,12 @@ function supervisorSection(supervisor: any, index: number) {
 export function createDailyReportWordDocument(report: DailyReport) {
   const executiveSummary = `No dia ${new Date(report.reportDate).toLocaleDateString("pt-BR")}, foram acompanhados ${report.summary.supervisors} supervisor(es), com ${report.summary.completedVisits} visita(s) concluída(s), ${report.summary.pendingVisits} posto(s) pendente(s), ${report.summary.coverages} cobertura(s) e ${report.summary.alerts} alerta(s) operacional(is).`;
   return new Document({
-    creator: "Plano de Rotas Pro Allen",
+    creator: "CT3 Chults Travagin",
     title: `Relatório Diário Operacional - ${new Date(report.reportDate).toLocaleDateString("pt-BR")}`,
     sections: [{
       properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } },
       children: [
-        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: "PLANO DE ROTAS PRO ALLEN", bold: true, color: blue, size: 24, characterSpacing: 30 })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: "CT3 · CHULTS TRAVAGIN", bold: true, color: blue, size: 24, characterSpacing: 30 })] }),
         new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: "RELATÓRIO DIÁRIO OPERACIONAL", bold: true, color: slate, size: 36 })] }),
         new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 360 }, children: [new TextRun({ text: `Data de referência: ${new Date(report.reportDate).toLocaleDateString("pt-BR")}  |  Gerado em: ${new Date(report.generatedAt).toLocaleString("pt-BR")}`, color: muted, size: 18 })] }),
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: "Resumo executivo", color: blue, bold: true })] }),
