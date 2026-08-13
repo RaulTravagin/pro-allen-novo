@@ -4,12 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { Activity, ArrowLeft, LockKeyhole, ShieldCheck } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 
 export default function GestorLogin() {
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const [password, setPassword] = useState("");
   const { data: session, isLoading: isCheckingSession } = trpc.gestorAccess.session.useQuery(undefined, { retry: false });
   const login = trpc.gestorAccess.login.useMutation({
@@ -19,6 +20,13 @@ export default function GestorLogin() {
     },
     onError: (error) => toast.error(error.message || "Não foi possível liberar o acesso."),
   });
+
+  useEffect(() => {
+    // Uma consulta iniciada pelo painel em uma sessão anterior não deve
+    // sobreviver até a rota pública de senha e gerar erro no console.
+    void utils.gestor.dashboard.cancel();
+    void utils.gestor.dailyReport.cancel();
+  }, [utils]);
 
   useEffect(() => {
     if (session?.authenticated) navigate("/gestor");

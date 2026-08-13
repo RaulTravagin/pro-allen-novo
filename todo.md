@@ -184,3 +184,9 @@
 - [x] Remover a coluna de checklist por posto da tabela do Word
 - [x] Redistribuir a largura entre posto, situação, horários e observações
 - [x] Validar o conteúdo do documento gerado e salvar checkpoint
+
+## Regressão de Acesso do Gestor — Agosto
+- [x] Identificar a procedure protegida chamada em `/gestor/acesso`
+- [x] Impedir a montagem ou consulta do dashboard antes da senha do Gestor
+- [x] Criar regressão e validar em sessão limpa
+- [x] Salvar checkpoint e disponibilizar a correção
