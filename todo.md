@@ -179,3 +179,8 @@
 - [x] Substituir a exportação principal de CSV pela exportação organizada em Word
 - [x] Testar a abertura e o conteúdo interno do documento Word gerado
 - [x] Validar a interface, salvar checkpoint e disponibilizar o novo formato
+
+## Simplificação da Tabela do Relatório Word
+- [x] Remover a coluna de checklist por posto da tabela do Word
+- [x] Redistribuir a largura entre posto, situação, horários e observações
+- [x] Validar o conteúdo do documento gerado e salvar checkpoint

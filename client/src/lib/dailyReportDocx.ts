@@ -73,7 +73,6 @@ function supervisorSection(supervisor: any, index: number) {
     `${visit.postName}${visit.isCoverage ? " (Cobertura)" : ""}`,
     visit.status === "visited" ? "Concluído" : visit.status === "in_progress" ? "Em atendimento" : visit.status === "pending" ? "Pendente" : "Não realizado",
     `Chegada: ${time(visit.arrivalTime)}\nSaída: ${time(visit.departureTime)}\nDuração: ${duration(visit.durationMinutes)}`,
-    `${visit.checklist?.compliant ?? 0}/${visit.checklist?.total ?? 0} conforme\n${visit.checklist?.nonCompliant ?? 0} não conforme\n${visit.checklist?.unanswered ?? 0} sem resposta`,
     `${visit.isCoverage ? `Cobertura: ${text(visit.coverageReason)}\n` : ""}${text(visit.observations)}`,
   ]);
   const location = supervisor.latestLocation ? `${Number(supervisor.latestLocation.latitude).toFixed(5)}, ${Number(supervisor.latestLocation.longitude).toFixed(5)} · precisão ${text(supervisor.latestLocation.accuracy)} m · ${time(supervisor.latestLocation.recordedAt)}` : "Sem localização recebida";
@@ -88,8 +87,8 @@ function supervisorSection(supervisor: any, index: number) {
     ),
     new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Checklist consolidado: ${supervisor.checklistTotals.compliant}/${supervisor.checklistTotals.total} conforme · ${supervisor.checklistTotals.nonCompliant} não conformidades · ${supervisor.checklistTotals.unanswered} sem resposta · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
     new Paragraph({ spacing: { before: 140, after: 80 }, children: [new TextRun({ text: `Alertas: ${(supervisor.alerts ?? []).map((alert: any) => alert.title).join(" · ") || "Sem alertas operacionais"}`, bold: true, color: (supervisor.alerts ?? []).length ? "B45309" : "166534" })] }),
-    new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Postos, atendimentos e checklist", color: slate, bold: true })] }),
-    ...(visitRows.length ? [table(["Posto", "Situação", "Horários", "Checklist", "Observações"], visitRows, [18, 14, 22, 20, 26])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto registrado para este supervisor no dia.", color: muted, italics: true })] })]),
+    new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Postos e atendimentos", color: slate, bold: true })] }),
+    ...(visitRows.length ? [table(["Posto", "Situação", "Horários", "Observações"], visitRows, [22, 16, 28, 34])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto registrado para este supervisor no dia.", color: muted, italics: true })] })]),
   ];
 }
 
