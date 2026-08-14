@@ -35,7 +35,7 @@ As senhas iniciais de supervisores podem ser fornecidas por `INITIAL_SUPERVISOR_
 
 ## Portabilidade
 
-O build do Vite utiliza `base: "./"`, portanto os arquivos CSS e JavaScript compilados são referenciados com caminhos relativos. O HTML não carrega mais o script de analytics específico da plataforma de desenvolvimento.
+O build do Vite utiliza `base: "/"`, mantendo os arquivos CSS e JavaScript na raiz do domínio. Essa configuração permite abrir links diretos em rotas profundas, como `/gestor/acesso`, desde que o servidor direcione rotas desconhecidas para `index.html` (SPA fallback). O HTML não carrega mais o script de analytics específico da plataforma de desenvolvimento.
 
 Os fluxos de login local de Supervisor e Gestor funcionam somente com banco de dados e as variáveis obrigatórias. A integração OAuth e os serviços de armazenamento/Google Maps mantêm adaptadores opcionais da plataforma original; para usá-los em outro provedor, configure credenciais compatíveis ou substitua esses adaptadores pelos serviços escolhidos.
 

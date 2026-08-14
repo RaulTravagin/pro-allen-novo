@@ -226,3 +226,10 @@
 - [x] Adicionar um gráfico específico de desempenho por rota
 - [x] Criar teste explícito para estado vazio do painel visual
 - [x] Validar novamente os gráficos completos, salvar checkpoint e entregar a versão final
+
+## Correção de Carregamento do Acesso do Gestor
+- [x] Reproduzir a página de acesso do Gestor em sessão limpa
+- [x] Identificar a falha de carregamento dos assets em rota profunda
+- [x] Corrigir o carregamento de CSS e JavaScript em rotas profundas publicadas
+- [x] Corrigir o fluxo de acesso e adicionar regressão automatizada
+- [x] Validar em desktop e celular, salvar checkpoint e disponibilizar a correção

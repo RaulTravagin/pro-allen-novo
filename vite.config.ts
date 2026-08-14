@@ -158,7 +158,8 @@ function vitePluginManusDebugCollector(): Plugin {
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusDebugCollector()];
 
 export default defineConfig({
-  base: "./",
+  // Caminho na raiz preserva assets em rotas profundas, como /gestor/acesso.
+  base: "/",
   plugins,
   resolve: {
     alias: {
