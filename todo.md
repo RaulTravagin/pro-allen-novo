@@ -206,3 +206,11 @@
 - [x] Manter CT3 Chults Travagin apenas como crédito discreto no rodapé
 - [x] Ajustar a entrada do Gestor para a mesma identidade visual
 - [x] Validar desktop e celular, salvar checkpoint e disponibilizar a nova tela
+
+## Pacote Portátil do Código-Fonte
+- [x] Auditar arquivos do projeto, dependências e referências de caminhos
+- [x] Incluir instruções de ambiente e execução em outro servidor
+- [x] Remover o script de runtime específico da plataforma do build externo
+- [x] Gerar arquivo ZIP sem segredos, dependências instaladas ou artefatos locais
+- [x] Verificar a estrutura e a integridade do pacote compactado
+- [x] Entregar o ZIP completo ao usuário
