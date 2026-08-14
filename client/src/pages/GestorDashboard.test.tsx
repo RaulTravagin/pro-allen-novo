@@ -3,6 +3,14 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+
 const now = new Date("2026-08-12T15:00:00.000Z");
 const wordExport = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const route = {
@@ -105,12 +113,14 @@ describe("GestorDashboard", () => {
     render(<GestorDashboard />);
 
     expect(screen.getByText("Monitoramento de ponta a ponta")).toBeTruthy();
-    expect(screen.getByText("Paulo Murashita")).toBeTruthy();
+    expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Em atendimento").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Kelvion").length).toBeGreaterThan(0);
     expect(screen.getByText("Verificar troca de uniforme.")).toBeTruthy();
     expect(screen.getByText("Atendimento prolongado · Paulo Murashita")).toBeTruthy();
     expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
+    expect(screen.getByText("Progresso da equipe em um olhar")).toBeTruthy();
+    expect(screen.getByText("Progresso por supervisor")).toBeTruthy();
   });
 
   it("gera a visualização clara do relatório diário e disponibiliza a exportação Word", async () => {

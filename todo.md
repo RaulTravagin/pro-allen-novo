@@ -214,3 +214,15 @@
 - [x] Gerar arquivo ZIP sem segredos, dependências instaladas ou artefatos locais
 - [x] Verificar a estrutura e a integridade do pacote compactado
 - [x] Entregar o ZIP completo ao usuário
+
+## Painel Visual de Progresso do Gestor
+- [x] Consolidar progresso, postos atendidos, pendências e conformidade por supervisor
+- [x] Criar gráficos de progresso por supervisor, status operacional e desempenho de rotas
+- [x] Mostrar alertas e situações críticas em leitura visual imediata
+- [x] Adaptar a central do Gestor para desktop e celular
+- [x] Criar testes de cálculos e estados vazios dos gráficos
+- [x] Validar os gráficos com dados reais, salvar checkpoint e disponibilizar o painel
+- [x] Exibir conformidade, não conformidades e itens sem resposta por supervisor
+- [x] Adicionar um gráfico específico de desempenho por rota
+- [x] Criar teste explícito para estado vazio do painel visual
+- [x] Validar novamente os gráficos completos, salvar checkpoint e entregar a versão final

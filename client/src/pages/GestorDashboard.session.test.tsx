@@ -6,13 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   dashboardQuery: vi.fn(),
   dailyReportQuery: vi.fn(),
+  sessionQuery: { data: { authenticated: false }, isLoading: false, isFetchedAfterMount: false, isSuccess: false },
 }));
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     gestorAccess: {
       session: {
-        useQuery: () => ({ data: { authenticated: false }, isLoading: false, isFetchedAfterMount: false, isSuccess: false }),
+        useQuery: () => mocks.sessionQuery,
       },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
@@ -26,6 +27,7 @@ import GestorDashboard from "./GestorDashboard";
 
 describe("GestorDashboard com sessão em validação", () => {
   beforeEach(() => {
+    mocks.sessionQuery = { data: { authenticated: false }, isLoading: false, isFetchedAfterMount: false, isSuccess: false };
     mocks.dashboardQuery.mockReset();
     mocks.dashboardQuery.mockReturnValue({ data: undefined, isLoading: false });
     mocks.dailyReportQuery.mockReset();
@@ -38,5 +40,17 @@ describe("GestorDashboard com sessão em validação", () => {
     expect(screen.getByText("Conferindo acesso do Gestor...")).toBeTruthy();
     expect(mocks.dashboardQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
     expect(mocks.dailyReportQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
+  });
+
+  it("mantém a ordem dos hooks ao passar da sessão em validação para autenticada", () => {
+    const { rerender } = render(<GestorDashboard />);
+    mocks.sessionQuery = { data: { authenticated: true }, isLoading: false, isFetchedAfterMount: true, isSuccess: true };
+    mocks.dashboardQuery.mockReturnValue({ data: { operationalSupervisors: [], metrics: {}, alerts: [], recentVisits: [], lastUpdatedAt: new Date() }, isLoading: false });
+
+    rerender(<GestorDashboard />);
+
+    expect(screen.getByText("Monitoramento de ponta a ponta")).toBeTruthy();
+    expect(screen.getByText("Aguardando supervisores em operação")).toBeTruthy();
+    expect(mocks.dashboardQuery).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ enabled: true }));
   });
 });
