@@ -126,6 +126,29 @@ export const appRouter = router({
     dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional() }).optional()).query(async ({ input }) => {
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true }));
     }),
+    schedule: gestorProcedure.input(z.object({ scheduleDate: z.date().optional() }).optional()).query(async ({ input }) => {
+      return db.getGestorSchedule(input?.scheduleDate);
+    }),
+    updateSchedule: gestorProcedure.input(z.object({
+      scheduleDate: z.date(),
+      entries: z.array(z.object({
+        supervisorId: z.number().int().positive(),
+        assignment: z.enum(["day", "night", "reliever", "off"]),
+        note: z.string().trim().max(1_000).optional().nullable(),
+      })).min(1),
+    })).mutation(async ({ input }) => {
+      const primaryAssignments = ["day", "night", "reliever"] as const;
+      for (const assignment of primaryAssignments) {
+        if (input.entries.filter((entry) => entry.assignment === assignment).length > 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `A escala permite apenas um responsável em ${assignment === "day" ? "Dia" : assignment === "night" ? "Noite" : "Folguista"}` });
+        }
+      }
+      try {
+        return await db.replaceGestorSchedule(input);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível atualizar a escala" });
+      }
+    }),
   }),
 
   // Routes and Posts

@@ -1,6 +1,6 @@
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -141,6 +141,78 @@ export async function provisionLocalSupervisor(input: { username: string; name: 
     lastSignedIn: new Date(),
   });
   return (await getUserById(getInsertedId(result)))!;
+}
+
+export const SCHEDULE_ASSIGNMENTS = ["day", "night", "reliever", "off"] as const;
+export type ScheduleAssignment = (typeof SCHEDULE_ASSIGNMENTS)[number];
+
+function normalizeScheduleDate(date: Date) {
+  const normalized = new Date(date);
+  normalized.setHours(12, 0, 0, 0);
+  return normalized;
+}
+
+export async function getGestorSchedule(scheduleDate = new Date()) {
+  const db = await getDb();
+  if (!db) return { scheduleDate: normalizeScheduleDate(scheduleDate), supervisors: [] };
+  const normalizedDate = normalizeScheduleDate(scheduleDate);
+  const [operationalSupervisors, overrides] = await Promise.all([
+    db.select({ id: users.id, name: users.name, username: users.username, defaultShift: users.defaultShift })
+      .from(users)
+      .where(and(eq(users.role, "user"), eq(users.isOperational, true)))
+      .orderBy(users.name),
+    db.select({ supervisorId: supervisorSchedules.supervisorId, assignment: supervisorSchedules.assignment, note: supervisorSchedules.note, updatedAt: supervisorSchedules.updatedAt, updatedBy: supervisorSchedules.updatedBy })
+      .from(supervisorSchedules)
+      .where(eq(supervisorSchedules.scheduleDate, normalizedDate)),
+  ]);
+  const overridesBySupervisor = new Map(overrides.map((item) => [item.supervisorId, item]));
+  const scheduledSupervisors = operationalSupervisors.filter((supervisor) => supervisor.defaultShift !== null);
+  return {
+    scheduleDate: normalizedDate,
+    supervisors: scheduledSupervisors.map((supervisor) => {
+      const override = overridesBySupervisor.get(supervisor.id);
+      return {
+        supervisorId: supervisor.id,
+        supervisorName: supervisor.name ?? `Supervisor #${supervisor.id}`,
+        username: supervisor.username,
+        defaultShift: supervisor.defaultShift ?? "off",
+        assignment: (override?.assignment ?? supervisor.defaultShift ?? "off") as ScheduleAssignment,
+        note: override?.note ?? null,
+        isOverride: Boolean(override),
+        updatedAt: override?.updatedAt ?? null,
+      };
+    }),
+  };
+}
+
+export async function replaceGestorSchedule(input: { scheduleDate: Date; entries: Array<{ supervisorId: number; assignment: ScheduleAssignment; note?: string | null }>; updatedBy?: number | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const normalizedDate = normalizeScheduleDate(input.scheduleDate);
+  const activeSupervisors = await db.select({ id: users.id, defaultShift: users.defaultShift })
+    .from(users)
+    .where(and(eq(users.role, "user"), eq(users.isOperational, true)));
+  const validSupervisorIds = new Set(activeSupervisors.filter((supervisor) => supervisor.defaultShift !== null).map((supervisor) => supervisor.id));
+  const receivedIds = new Set<number>();
+  for (const entry of input.entries) {
+    if (!validSupervisorIds.has(entry.supervisorId)) throw new Error("Supervisor operacional inválido para a escala");
+    if (receivedIds.has(entry.supervisorId)) throw new Error("Um supervisor não pode receber duas atribuições na mesma data");
+    receivedIds.add(entry.supervisorId);
+  }
+
+  await db.transaction(async (transaction) => {
+    await transaction.delete(supervisorSchedules).where(eq(supervisorSchedules.scheduleDate, normalizedDate));
+    if (input.entries.length) {
+      await transaction.insert(supervisorSchedules).values(input.entries.map((entry) => ({
+        scheduleDate: normalizedDate,
+        supervisorId: entry.supervisorId,
+        assignment: entry.assignment,
+        note: entry.note?.trim() || null,
+        updatedBy: input.updatedBy ?? null,
+      })));
+    }
+  });
+  return getGestorSchedule(normalizedDate);
 }
 
 // Routes queries

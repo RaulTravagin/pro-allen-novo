@@ -13,6 +13,7 @@ vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 
 const now = new Date("2026-08-12T15:00:00.000Z");
 const wordExport = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const scheduleUpdate = vi.hoisted(() => vi.fn());
 const route = {
   id: 30001,
   routeName: "Rota 1",
@@ -42,6 +43,15 @@ const route = {
     checklistSummary: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
     checklistItems: [{ id: 1, category: "Uniforme", description: "Uniforme e apresentação pessoal", isCompliant: true, notes: "Em ordem" }, { id: 2, category: "Limpeza", description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" }],
   }],
+};
+
+const scheduleFixture = {
+  scheduleDate: now,
+  supervisors: [
+    { supervisorId: 41, supervisorName: "Paulo Murashita", username: "paulo.murashita", assignment: "night", defaultShift: "reliever", note: "Plantão noturno de cobertura", isOverride: true },
+    { supervisorId: 42, supervisorName: "Rodrigo Ramos", username: "rodrigo.ramos", assignment: "day", defaultShift: "day", note: "Plantão realizado das 06h às 18h", isOverride: true },
+    { supervisorId: 43, supervisorName: "Aparecido Quirino", username: "aparecido.quirino", assignment: "off", defaultShift: "night", note: "Folga", isOverride: true },
+  ],
 };
 
 vi.mock("@/lib/trpc", () => ({
@@ -95,7 +105,15 @@ vi.mock("@/lib/trpc", () => ({
           },
         }),
       },
+      schedule: {
+        useQuery: () => ({
+          isLoading: false,
+          data: scheduleFixture,
+        }),
+      },
+      updateSchedule: { useMutation: () => ({ mutate: scheduleUpdate, isPending: false, error: null }) },
     },
+    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() } } }),
   },
 }));
 
@@ -123,8 +141,26 @@ describe("GestorDashboard", () => {
     expect(screen.getAllByText("Checklist por visita").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Requer atenção").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Uniforme e apresentação pessoal").length).toBeGreaterThan(0);
+    expect(screen.getByText("Escala de plantão")).toBeTruthy();
+    expect(screen.getByText("Plantão Noite")).toBeTruthy();
+    expect(screen.getByText("Plantão realizado das 06h às 18h")).toBeTruthy();
+    expect(screen.getAllByText("Folga").length).toBeGreaterThan(0);
     expect(screen.getByText("Progresso da equipe em um olhar")).toBeTruthy();
     expect(screen.getByText("Progresso por supervisor")).toBeTruthy();
+  });
+
+  it("permite que o Gestor edite e salve a escala diária", async () => {
+    scheduleUpdate.mockReset();
+    render(<GestorDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Alterar escala" }));
+    const pauloSchedule = screen.getByLabelText("Escala de Paulo Murashita") as HTMLSelectElement;
+    fireEvent.change(pauloSchedule, { target: { value: "day" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar escala" }));
+
+    await waitFor(() => expect(scheduleUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      entries: expect.arrayContaining([expect.objectContaining({ supervisorId: 41, assignment: "day" })]),
+    })));
   });
 
   it("gera a visualização clara do relatório diário e disponibiliza a exportação Word", async () => {

@@ -255,4 +255,13 @@
 - [x] Criar ou atualizar testes de regressão para a leitura de checklist e a geração do relatório
 - [x] Validar desktop, TypeScript, suíte de testes e build de produção
 - [x] Validar em viewport móvel a nova leitura de checklist no Painel do Gestor e no relatório diário
-- [ ] Salvar checkpoint e entregar a versão revisada
+- [x] Salvar checkpoint e entregar a versão revisada: fdc288cd
+
+## Gestão de Escala pelo Gestor
+- [x] Criar persistência de escala diária com os papéis Dia, Noite e Folguista
+- [x] Registrar a composição inicial corrigida: Rodrigo no Dia das 06h às 18h, Paulo na Noite de hoje e na próxima noite, e Aparecido em Folga hoje
+- [x] Proteger as consultas e alterações de escala exclusivamente pela sessão do Gestor
+- [x] Exibir a escala atual de forma clara no Painel do Gestor
+- [x] Permitir que o Gestor altere manualmente responsável, função e data da escala
+- [x] Validar persistência, autorização, interface desktop e celular, testes, tipos e build
+- [ ] Salvar checkpoint e entregar a versão publicada

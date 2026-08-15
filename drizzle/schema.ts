@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, index, uniqueIndex } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
 /**
@@ -21,6 +21,7 @@ export const users = mysqlTable("users", {
   passwordHash: varchar("passwordHash", { length: 255 }),
   mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
   isOperational: boolean("isOperational").default(true).notNull(),
+  defaultShift: mysqlEnum("defaultShift", ["day", "night", "reliever"]),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -29,6 +30,28 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Daily work schedule maintained by the Gestor. It stores only the selected
+ * date overrides; each supervisor's standard shift remains on the user record.
+ */
+export const supervisorSchedules = mysqlTable("supervisorSchedules", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleDate: timestamp("scheduleDate").notNull(),
+  supervisorId: int("supervisorId").notNull(),
+  assignment: mysqlEnum("assignment", ["day", "night", "reliever", "off"]).notNull(),
+  note: text("note"),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  scheduleDateIdx: index("idx_supervisorSchedules_date").on(table.scheduleDate),
+  supervisorIdx: index("idx_supervisorSchedules_supervisor").on(table.supervisorId),
+  dailySupervisorUnique: uniqueIndex("uq_supervisorSchedules_date_supervisor").on(table.scheduleDate, table.supervisorId),
+}));
+
+export type SupervisorSchedule = typeof supervisorSchedules.$inferSelect;
+export type InsertSupervisorSchedule = typeof supervisorSchedules.$inferInsert;
 
 /**
  * Routes table - stores all supervisor routes
@@ -177,6 +200,14 @@ export const usersRelations = relations(users, ({ many }) => ({
   supervisorRoutes: many(supervisorRoutes),
   supervisorLocations: many(supervisorLocations),
   postVisitHistory: many(postVisitHistory),
+  schedules: many(supervisorSchedules),
+}));
+
+export const supervisorSchedulesRelations = relations(supervisorSchedules, ({ one }) => ({
+  supervisor: one(users, {
+    fields: [supervisorSchedules.supervisorId],
+    references: [users.id],
+  }),
 }));
 
 export const routesRelations = relations(routes, ({ many }) => ({

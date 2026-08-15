@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
 import { buildGestorVisualProgress } from "@/lib/gestorVisualProgress";
-import { Activity, AlertTriangle, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Navigation, Radio, Route, ShieldCheck, TimerReset, UsersRound, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -36,6 +36,16 @@ function toDateInputValue(value: Date) {
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function scheduleAppearance(assignment: string) {
+  const config: Record<string, { label: string; detail: string; className: string; icon: typeof Sun }> = {
+    day: { label: "Plantão Dia", detail: "06h às 18h", className: "bg-amber-100 text-amber-900", icon: Sun },
+    night: { label: "Plantão Noite", detail: "18h às 06h", className: "bg-indigo-100 text-indigo-900", icon: Moon },
+    reliever: { label: "Folguista", detail: "Cobertura de folgas", className: "bg-cyan-100 text-cyan-900", icon: UsersRound },
+    off: { label: "Folga", detail: "Sem plantão nesta data", className: "bg-slate-100 text-slate-700", icon: Clock3 },
+  };
+  return config[assignment] ?? config.off;
 }
 
 function checklistStatus(status: string) {
@@ -122,18 +132,35 @@ export default function GestorDashboard() {
   const [showDailyReport, setShowDailyReport] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [reportDateValue, setReportDateValue] = useState(() => toDateInputValue(new Date()));
+  const [scheduleDateValue, setScheduleDateValue] = useState(() => toDateInputValue(new Date()));
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState<Record<number, { assignment: string; note: string }>>({});
   const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnMount: "always" });
   const { data: session, isLoading: isCheckingSession } = sessionQuery;
   const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
   const dashboard = trpc.gestor.dashboard.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
   const dailyReportInput = useMemo(() => ({ reportDate: new Date(`${reportDateValue}T12:00:00`) }), [reportDateValue]);
   const dailyReport = trpc.gestor.dailyReport.useQuery(dailyReportInput, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false });
+  const scheduleInput = useMemo(() => ({ scheduleDate: new Date(`${scheduleDateValue}T12:00:00`) }), [scheduleDateValue]);
+  const schedule = trpc.gestor.schedule.useQuery(scheduleInput, { enabled: hasConfirmedGestorSession, retry: false });
+  const utils = trpc.useUtils();
+  const updateSchedule = trpc.gestor.updateSchedule.useMutation({
+    onSuccess: async () => {
+      await utils.gestor.schedule.invalidate();
+      setIsEditingSchedule(false);
+    },
+  });
   const logout = trpc.gestorAccess.logout.useMutation({ onSuccess: () => navigate("/gestor/acesso") });
   const visualProgress = useMemo(() => buildGestorVisualProgress(dashboard.data?.operationalSupervisors ?? []), [dashboard.data?.operationalSupervisors]);
 
   useEffect(() => {
     if (sessionQuery.isFetchedAfterMount && !isCheckingSession && !session?.authenticated) navigate("/gestor/acesso");
   }, [isCheckingSession, navigate, session?.authenticated, sessionQuery.isFetchedAfterMount]);
+
+  useEffect(() => {
+    if (!schedule.data) return;
+    setScheduleDraft(Object.fromEntries(schedule.data.supervisors.map((supervisor: any) => [supervisor.supervisorId, { assignment: supervisor.assignment, note: supervisor.note ?? "" }])));
+  }, [schedule.data]);
 
   if (!sessionQuery.isFetchedAfterMount || isCheckingSession || !session?.authenticated) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Conferindo acesso do Gestor...</div>;
@@ -158,6 +185,8 @@ export default function GestorDashboard() {
         <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl shadow-slate-950/10 sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
+
+        <ScheduleManagementPanel schedule={schedule.data} loading={schedule.isLoading} dateValue={scheduleDateValue} editing={isEditingSchedule} drafts={scheduleDraft} saving={updateSchedule.isPending} error={updateSchedule.error?.message} onDateChange={(value) => { setScheduleDateValue(value); setIsEditingSchedule(false); }} onStartEditing={() => setIsEditingSchedule(true)} onCancelEditing={() => { setIsEditingSchedule(false); if (schedule.data) setScheduleDraft(Object.fromEntries(schedule.data.supervisors.map((supervisor: any) => [supervisor.supervisorId, { assignment: supervisor.assignment, note: supervisor.note ?? "" }]))); }} onDraftChange={(supervisorId, updates) => setScheduleDraft((current) => ({ ...current, [supervisorId]: { assignment: current[supervisorId]?.assignment ?? "off", note: current[supervisorId]?.note ?? "", ...updates } }))} onSave={() => { if (!schedule.data) return; updateSchedule.mutate({ scheduleDate: schedule.data.scheduleDate, entries: schedule.data.supervisors.map((supervisor: any) => ({ supervisorId: supervisor.supervisorId, assignment: (scheduleDraft[supervisor.supervisorId]?.assignment ?? supervisor.assignment) as "day" | "night" | "reliever" | "off", note: scheduleDraft[supervisor.supervisorId]?.note ?? supervisor.note ?? null })) }); }} />
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Consulte o dia atual ou selecione uma data anterior para recuperar rotas, postos, horários, checklist, cobertura, KM, GPS e alertas.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
@@ -196,6 +225,10 @@ export default function GestorDashboard() {
       </div>
     </main>
   );
+}
+
+function ScheduleManagementPanel({ schedule, loading, dateValue, editing, drafts, saving, error, onDateChange, onStartEditing, onCancelEditing, onDraftChange, onSave }: { schedule: any; loading: boolean; dateValue: string; editing: boolean; drafts: Record<number, { assignment: string; note: string }>; saving: boolean; error?: string; onDateChange: (value: string) => void; onStartEditing: () => void; onCancelEditing: () => void; onDraftChange: (supervisorId: number, updates: Partial<{ assignment: string; note: string }>) => void; onSave: () => void }) {
+  return <section className="rounded-3xl border border-indigo-100 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-indigo-700"><CalendarDays className="h-4 w-4" /> Escala de plantão</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Dia, noite, folga e cobertura</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A escala é independente das rotas. O Gestor pode ajustar a data, o responsável e uma observação operacional sempre que necessário.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data da escala<input aria-label="Data da escala" type="date" value={dateValue} onChange={(event) => onDateChange(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2" /></label>{editing ? <><Button variant="outline" onClick={onCancelEditing} disabled={saving}>Cancelar</Button><Button onClick={onSave} disabled={saving || !schedule} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Save className="h-4 w-4" /> {saving ? "Salvando..." : "Salvar escala"}</Button></> : <Button onClick={onStartEditing} disabled={!schedule || loading} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Pencil className="h-4 w-4" /> Alterar escala</Button>}</div></div>{loading ? <LoadingRows /> : !schedule ? <EmptyState title="Escala indisponível" description="Atualize a página para consultar a escala do dia." /> : <div className="p-6"><div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-950"><strong>{new Date(schedule.scheduleDate).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}.</strong> As alterações são salvas apenas para a data escolhida e preservam a escala-base dos supervisores.</div>{error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{error}</div>}<div className="grid gap-4 md:grid-cols-3">{schedule.supervisors.map((supervisor: any) => { const draft = drafts[supervisor.supervisorId] ?? { assignment: supervisor.assignment, note: supervisor.note ?? "" }; const appearance = scheduleAppearance(editing ? draft.assignment : supervisor.assignment); const Icon = appearance.icon; return <article key={supervisor.supervisorId} className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white">{String(supervisor.supervisorName).slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-1 truncate text-xs text-slate-500">@{supervisor.username}</p></div></div><Icon className="h-5 w-5 text-indigo-700" /></div>{editing ? <div className="mt-5 space-y-3"><label className="grid gap-1 text-xs font-semibold text-slate-600">Atribuição<select aria-label={`Escala de ${supervisor.supervisorName}`} value={draft.assignment} onChange={(event) => onDraftChange(supervisor.supervisorId, { assignment: event.target.value })} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2"><option value="day">Plantão Dia — 06h às 18h</option><option value="night">Plantão Noite — 18h às 06h</option><option value="reliever">Folguista</option><option value="off">Folga</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Observação<textarea value={draft.note} onChange={(event) => onDraftChange(supervisor.supervisorId, { note: event.target.value })} placeholder="Ex.: cobertura de folga" rows={2} className="resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2" /></label></div> : <div className="mt-5"><Badge className={appearance.className}>{appearance.label}</Badge><p className="mt-2 text-sm font-medium text-slate-900">{appearance.detail}</p><p className="mt-2 text-xs leading-5 text-slate-600">{supervisor.note || (supervisor.isOverride ? "Ajuste manual do Gestor" : "Escala-base do supervisor")}</p></div>}</article>; })}</div></div>}</section>;
 }
 
 function VisualProgressPanel({ visualProgress, loading }: { visualProgress: ReturnType<typeof buildGestorVisualProgress>; loading: boolean }) {
