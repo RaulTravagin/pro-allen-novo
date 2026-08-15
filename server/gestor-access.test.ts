@@ -60,6 +60,8 @@ describe("gestorAccess", () => {
     const authorizedCaller = appRouter.createCaller(createContext(sessionCookie).context);
     await expect(authorizedCaller.gestorAccess.session()).resolves.toEqual({ authenticated: true });
     await expect(authorizedCaller.gestor.dashboard()).resolves.toMatchObject({ activeRoutes: [] });
-    await expect(authorizedCaller.gestor.dailyReport()).resolves.toMatchObject({ summary: { supervisors: 0 } });
+    const historicalDate = new Date("2026-08-14T12:00:00");
+    await expect(authorizedCaller.gestor.dailyReport({ reportDate: historicalDate })).resolves.toMatchObject({ summary: { supervisors: 0 } });
+    expect(db.getGestorOperationalSnapshot).toHaveBeenLastCalledWith(historicalDate, { includeHistoricalUsers: true });
   });
 });

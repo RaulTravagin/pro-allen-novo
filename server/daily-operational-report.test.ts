@@ -35,4 +35,11 @@ describe("buildDailyOperationalReport", () => {
     expect(report.supervisors[0]).toMatchObject({ supervisorName: "Paulo Murashita", operationalStatusLabel: "Em atendimento", coverageCount: 1, checklistTotals: { total: 18, compliant: 8, nonCompliant: 1, unanswered: 9 } });
     expect(report.supervisors[0].route?.activeVisit).toMatchObject({ postName: "Cobertura Extra" });
   });
+
+  it("preserva a data histórica consultada no relatório", () => {
+    const reportDate = new Date("2026-08-14T12:00:00");
+    const report = buildDailyOperationalReport({ reportDate, operationalSupervisors: [] });
+
+    expect(report.reportDate).toEqual(reportDate);
+  });
 });

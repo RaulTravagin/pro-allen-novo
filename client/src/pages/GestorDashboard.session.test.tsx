@@ -39,7 +39,10 @@ describe("GestorDashboard com sessão em validação", () => {
 
     expect(screen.getByText("Conferindo acesso do Gestor...")).toBeTruthy();
     expect(mocks.dashboardQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
-    expect(mocks.dailyReportQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
+    expect(mocks.dailyReportQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ reportDate: expect.any(Date) }),
+      expect.objectContaining({ enabled: false })
+    );
   });
 
   it("mantém a ordem dos hooks ao passar da sessão em validação para autenticada", () => {

@@ -233,3 +233,13 @@
 - [x] Corrigir o carregamento de CSS e JavaScript em rotas profundas publicadas
 - [x] Corrigir o fluxo de acesso e adicionar regressão automatizada
 - [x] Validar em desktop e celular, salvar checkpoint e disponibilizar a correção
+
+## Histórico Operacional de Raul Travagin
+- [x] Confirmar a senha do Gestor como segredo seguro
+- [x] Mapear rotas, visitas, checklists e observações vinculados a Raul Travagin
+- [x] Identificar se a ausência decorre de desativação, filtro ou vínculo entre contas
+- [x] Recuperar a visualização histórica sem reativar indevidamente acessos removidos
+- [x] Validar explicitamente os checklists históricos vinculados a Raul Travagin
+- [x] Adicionar evidência automatizada para os itens de checklist das datas históricas recuperadas
+- [x] Validar o painel do Gestor e o relatório histórico com sessão real
+- [ ] Salvar checkpoint e entregar o diagnóstico ao solicitante

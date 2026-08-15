@@ -123,7 +123,9 @@ export const appRouter = router({
 
   gestor: router({
     dashboard: gestorProcedure.query(async () => db.getGestorOperationalSnapshot()),
-    dailyReport: gestorProcedure.query(async () => buildDailyOperationalReport(await db.getGestorOperationalSnapshot())),
+    dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional() }).optional()).query(async ({ input }) => {
+      return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true }));
+    }),
   }),
 
   // Routes and Posts

@@ -129,6 +129,10 @@ describe("GestorDashboard", () => {
 
     expect(screen.getByText("Relatório operacional diário")).toBeTruthy();
     expect(screen.getByText("Acompanhamento completo dos supervisores")).toBeTruthy();
+    const dateInput = screen.getByLabelText("Data do relatório") as HTMLInputElement;
+    expect(dateInput.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    fireEvent.change(dateInput, { target: { value: "2026-08-14" } });
+    expect(dateInput.value).toBe("2026-08-14");
     const exportButton = screen.getByRole("button", { name: "Baixar Word" });
     expect(exportButton).toBeTruthy();
     fireEvent.click(exportButton);

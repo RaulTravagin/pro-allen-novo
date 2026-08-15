@@ -532,7 +532,7 @@ export function deriveGestorOperationalState(input: {
 }
 
 /** Dados consolidados usados pelo painel protegido do Gestor. */
-export async function getGestorOperationalSnapshot() {
+export async function getGestorOperationalSnapshot(reportDate?: Date, options: { includeHistoricalUsers?: boolean } = {}) {
   const db = await getDb();
   const emptySnapshot = {
     activeRoutes: [],
@@ -541,11 +541,12 @@ export async function getGestorOperationalSnapshot() {
     recentVisits: [],
     metrics: { supervisorsOnRoute: 0, activeRoutes: 0, visitsInProgress: 0, completedVisits: 0, pendingVisits: 0, totalKm: 0, gpsStale: 0, alerts: 0 },
     lastUpdatedAt: new Date(),
+    reportDate: reportDate ?? new Date(),
   };
   if (!db) return emptySnapshot;
 
   const now = new Date();
-  const today = new Date(now);
+  const today = new Date(reportDate ?? now);
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -666,10 +667,14 @@ export async function getGestorOperationalSnapshot() {
   });
 
   const activeOperationalUserIds = new Set(allUsers.filter((user) => user.role === "user" && user.isOperational).map((user) => user.id));
-  const operationalRouteViews = routeViews.filter((route) => activeOperationalUserIds.has(route.supervisorId));
+  const operationalRouteViews = options.includeHistoricalUsers
+    ? routeViews
+    : routeViews.filter((route) => activeOperationalUserIds.has(route.supervisorId));
   const routeBySupervisor = new Map(operationalRouteViews.map((route) => [route.supervisorId, route]));
   const supervisorsById = new Map(allUsers.map((user) => [user.id, user]));
-  const supervisorIds = new Set<number>(activeOperationalUserIds);
+  const supervisorIds = options.includeHistoricalUsers
+    ? new Set<number>(operationalRouteViews.map((route) => route.supervisorId))
+    : new Set<number>(activeOperationalUserIds);
 
   const operationalSupervisors = Array.from(supervisorIds).map((supervisorId) => {
     const route = routeBySupervisor.get(supervisorId) ?? null;
@@ -713,5 +718,6 @@ export async function getGestorOperationalSnapshot() {
       alerts: alerts.length,
     },
     lastUpdatedAt: now,
+    reportDate: today,
   };
 }

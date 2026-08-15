@@ -97,7 +97,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
   }, { supervisors: 0, supervisorsOnRoute: 0, completedVisits: 0, pendingVisits: 0, visitsInProgress: 0, coverages: 0, kmCovered: 0, nonCompliantItems: 0, unansweredItems: 0, alerts: 0 });
 
   return {
-    reportDate: new Date(),
+    reportDate: snapshot.reportDate ? new Date(snapshot.reportDate) : new Date(),
     generatedAt: new Date(),
     summary: { ...summary, kmCovered: Number(summary.kmCovered.toFixed(2)) },
     supervisors,
