@@ -149,6 +149,21 @@ export const appRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível atualizar a escala" });
       }
     }),
+    postsManagement: gestorProcedure.query(async () => db.getGestorPostsManagement()),
+    createPost: gestorProcedure.input(z.object({
+      routeId: z.number().int().positive(),
+      name: z.string().trim().min(2, "Informe o nome do posto").max(255),
+      region: z.string().trim().min(2, "Informe a região").max(255),
+      address: z.string().trim().min(3, "Informe o endereço").max(255),
+    })).mutation(async ({ input }) => {
+      try {
+        const post = await db.createGestorPost(input);
+        if (!post) throw new Error("Não foi possível localizar o posto criado");
+        return post;
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar o posto" });
+      }
+    }),
   }),
 
   // Routes and Posts

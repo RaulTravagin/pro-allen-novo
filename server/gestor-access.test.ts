@@ -5,6 +5,8 @@ vi.mock("./db", () => ({
   getGestorOperationalSnapshot: vi.fn(),
   getGestorSchedule: vi.fn(),
   replaceGestorSchedule: vi.fn(),
+  getGestorPostsManagement: vi.fn(),
+  createGestorPost: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -55,6 +57,8 @@ describe("gestorAccess", () => {
     await expect(appRouter.createCaller(invalid.context).gestor.dailyReport()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.schedule()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.updateSchedule({ scheduleDate: new Date("2026-08-15T12:00:00"), entries: [{ supervisorId: 1, assignment: "day" }] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.postsManagement()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.createPost({ routeId: 1, name: "Novo posto", region: "Jundiaí", address: "Rua das Flores, 100" })).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const login = createContext();
     await appRouter.createCaller(login.context).gestorAccess.login({ password: configuredGestorPassword! });
@@ -72,5 +76,9 @@ describe("gestorAccess", () => {
     await expect(authorizedCaller.gestor.schedule({ scheduleDate: historicalDate })).resolves.toMatchObject({ supervisors: [] });
     await expect(authorizedCaller.gestor.updateSchedule({ scheduleDate: historicalDate, entries: [{ supervisorId: 1, assignment: "day", note: "Plantão" }] })).resolves.toMatchObject({ supervisors: [] });
     expect(db.replaceGestorSchedule).toHaveBeenCalledWith(expect.objectContaining({ entries: [expect.objectContaining({ assignment: "day" })] }));
+    vi.mocked(db.getGestorPostsManagement).mockResolvedValue({ routes: [] } as never);
+    vi.mocked(db.createGestorPost).mockResolvedValue({ id: 99, routeId: 1, name: "Novo posto" } as never);
+    await expect(authorizedCaller.gestor.postsManagement()).resolves.toEqual({ routes: [] });
+    await expect(authorizedCaller.gestor.createPost({ routeId: 1, name: "Novo posto", region: "Jundiaí", address: "Rua das Flores, 100" })).resolves.toMatchObject({ id: 99 });
   });
 });

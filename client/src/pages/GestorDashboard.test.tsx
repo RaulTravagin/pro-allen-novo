@@ -14,6 +14,7 @@ vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 const now = new Date("2026-08-12T15:00:00.000Z");
 const wordExport = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const scheduleUpdate = vi.hoisted(() => vi.fn());
+const postCreate = vi.hoisted(() => vi.fn());
 const route = {
   id: 30001,
   routeName: "Rota 1",
@@ -51,6 +52,13 @@ const scheduleFixture = {
     { supervisorId: 41, supervisorName: "Paulo Murashita", username: "paulo.murashita", assignment: "night", defaultShift: "reliever", note: "Plantão noturno de cobertura", isOverride: true },
     { supervisorId: 42, supervisorName: "Rodrigo Ramos", username: "rodrigo.ramos", assignment: "day", defaultShift: "day", note: "Plantão realizado das 06h às 18h", isOverride: true },
     { supervisorId: 43, supervisorName: "Aparecido Quirino", username: "aparecido.quirino", assignment: "off", defaultShift: "night", note: "Folga", isOverride: true },
+  ],
+};
+
+const postsManagementFixture = {
+  routes: [
+    { id: 1, name: "Rota 1", region: "Jundiaí", posts: [{ id: 101, name: "Kelvion", region: "Jundiaí", address: "Jundiaí", order: 1 }] },
+    { id: 2, name: "Rota 2", region: "Cabreúva", posts: [] },
   ],
 };
 
@@ -112,8 +120,10 @@ vi.mock("@/lib/trpc", () => ({
         }),
       },
       updateSchedule: { useMutation: () => ({ mutate: scheduleUpdate, isPending: false, error: null }) },
+      postsManagement: { useQuery: () => ({ isLoading: false, data: postsManagementFixture }) },
+      createPost: { useMutation: () => ({ mutate: postCreate, isPending: false, error: null }) },
     },
-    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() } } }),
+    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() } } }),
   },
 }));
 
@@ -161,6 +171,20 @@ describe("GestorDashboard", () => {
     await waitFor(() => expect(scheduleUpdate).toHaveBeenCalledWith(expect.objectContaining({
       entries: expect.arrayContaining([expect.objectContaining({ supervisorId: 41, assignment: "day" })]),
     })));
+  });
+
+  it("permite que o Gestor cadastre um novo posto vinculado à rota", async () => {
+    postCreate.mockReset();
+    render(<GestorDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Novo posto" }));
+    await waitFor(() => expect((screen.getByLabelText("Rota vinculada") as HTMLSelectElement).value).toBe("1"));
+    fireEvent.change(screen.getByLabelText("Nome do posto"), { target: { value: "Novo Cliente" } });
+    fireEvent.change(screen.getByLabelText("Região do posto"), { target: { value: "Jundiaí" } });
+    fireEvent.change(screen.getByLabelText("Endereço do posto"), { target: { value: "Rua das Flores, 100" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cadastrar posto" }));
+
+    await waitFor(() => expect(postCreate).toHaveBeenCalledWith({ routeId: 1, name: "Novo Cliente", region: "Jundiaí", address: "Rua das Flores, 100" }));
   });
 
   it("gera a visualização clara do relatório diário e disponibiliza a exportação Word", async () => {

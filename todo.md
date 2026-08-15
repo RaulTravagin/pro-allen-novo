@@ -264,4 +264,12 @@
 - [x] Exibir a escala atual de forma clara no Painel do Gestor
 - [x] Permitir que o Gestor altere manualmente responsável, função e data da escala
 - [x] Validar persistência, autorização, interface desktop e celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: cb12ce3a
+
+## Cadastro de Postos pelo Gestor
+- [x] Analisar os dados existentes de rotas e postos e definir o fluxo de inclusão
+- [x] Proteger a consulta e o cadastro de postos exclusivamente pela sessão do Gestor
+- [x] Permitir cadastrar nome do posto, região, endereço e rota vinculada
+- [x] Mostrar rotas disponíveis e os postos cadastrados na área do Gestor
+- [x] Validar cadastro, campos obrigatórios, autorização, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

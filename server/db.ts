@@ -243,6 +243,32 @@ export async function getPostById(id: number) {
   return result.length > 0 ? result[0] : null;
 }
 
+export async function getGestorPostsManagement() {
+  const routeRows = await getAllRoutes();
+  const routesWithPosts = await Promise.all(routeRows.map(async (route) => ({
+    ...route,
+    posts: await getPostsByRouteId(route.id),
+  })));
+  return { routes: routesWithPosts };
+}
+
+export async function createGestorPost(input: { routeId: number; name: string; region: string; address: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const route = await getRouteById(input.routeId);
+  if (!route) throw new Error("Rota não encontrada");
+  const routePosts = await getPostsByRouteId(input.routeId);
+  const order = routePosts.reduce((maximum, post) => Math.max(maximum, post.order), 0) + 1;
+  const result = await db.insert(posts).values({
+    routeId: input.routeId,
+    name: input.name.trim(),
+    region: input.region.trim(),
+    address: input.address.trim(),
+    order,
+  });
+  return getPostById(getInsertedId(result));
+}
+
 // Supervisor Routes queries
 export async function createSupervisorRoute(supervisorId: number, routeId: number, date: Date) {
   const db = await getDb();
