@@ -36,12 +36,29 @@ function duration(minutes: unknown) {
   return hours ? `${hours}h ${remainder}min` : `${remainder} min`;
 }
 
+function checklistSummary(checklist: any) {
+  const total = Number(checklist?.total ?? 0);
+  const compliant = Number(checklist?.compliant ?? 0);
+  const nonCompliant = Number(checklist?.nonCompliant ?? 0);
+  const unanswered = Number(checklist?.unanswered ?? 0);
+  if (total === 0) return "Checklist não iniciado";
+  if (nonCompliant > 0) return `Requer atenção: ${nonCompliant} item(ns) não conforme(s)`;
+  if (unanswered > 0) return `Preenchimento pendente: ${unanswered} item(ns) aguardando resposta`;
+  return `Checklist conforme: ${compliant} item(ns) verificado(s)`;
+}
+
+function checklistItemStatus(item: any) {
+  if (item.isCompliant === true) return "Conforme";
+  if (item.isCompliant === false) return "Não conforme";
+  return "Sem resposta";
+}
+
 function cell(value: unknown, options: { bold?: boolean; color?: string; shading?: string; width?: number } = {}) {
   return new TableCell({
     width: options.width ? { size: options.width, type: WidthType.PERCENTAGE } : undefined,
     shading: options.shading ? { type: ShadingType.CLEAR, color: options.shading } : undefined,
     margins: { top: 100, bottom: 100, left: 120, right: 120 },
-    children: [new Paragraph({ children: [new TextRun({ text: text(value), bold: options.bold, color: options.color ?? slate, size: 18 })] })],
+    children: text(value).split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, bold: options.bold, color: options.color ?? slate, size: 18 })] })),
   });
 }
 
@@ -85,10 +102,19 @@ function supervisorSection(supervisor: any, index: number) {
       [[route ? `${route.name} · ${route.region}` : "Sem rota preparada", route?.activeVisit ? `${route.activeVisit.postName} desde ${time(route.activeVisit.arrivalTime)} (${duration(route.activeVisit.durationMinutes)})` : "Sem atendimento ativo", route?.kmInitial != null ? `Inicial: ${route.kmInitial} km\nFinal: ${text(route.kmFinal)} km\nPercorrido: ${text(route.kmCovered)} km` : "KM não informado", location]],
       [25, 25, 25, 25],
     ),
-    new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Checklist consolidado: ${supervisor.checklistTotals.compliant}/${supervisor.checklistTotals.total} conforme · ${supervisor.checklistTotals.nonCompliant} não conformidades · ${supervisor.checklistTotals.unanswered} sem resposta · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
+    new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Checklist consolidado: ${checklistSummary(supervisor.checklistTotals)} · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
     new Paragraph({ spacing: { before: 140, after: 80 }, children: [new TextRun({ text: `Alertas: ${(supervisor.alerts ?? []).map((alert: any) => alert.title).join(" · ") || "Sem alertas operacionais"}`, bold: true, color: (supervisor.alerts ?? []).length ? "B45309" : "166534" })] }),
     new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Postos e atendimentos", color: slate, bold: true })] }),
     ...(visitRows.length ? [table(["Posto", "Situação", "Horários", "Observações"], visitRows, [22, 16, 28, 34])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto registrado para este supervisor no dia.", color: muted, italics: true })] })]),
+    new Paragraph({ spacing: { before: 220, after: 80 }, heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Checklist por visita", color: slate, bold: true })] }),
+    ...((route?.visits ?? []).filter((visit: any) => visit.status === "visited" || visit.status === "in_progress").flatMap((visit: any) => {
+      const items = visit.checklistItems ?? [];
+      if (!items.length) return [];
+      return [
+        new Paragraph({ spacing: { before: 100, after: 60 }, children: [new TextRun({ text: `${visit.postName}: ${checklistSummary(visit.checklist)}`, bold: true, color: slate })] }),
+        table(["Item verificado", "Resultado", "Observação"], items.map((item: any) => [`${text(item.category)} · ${text(item.description)}`, checklistItemStatus(item), text(item.notes)]), [52, 20, 28]),
+      ];
+    })),
   ];
 }
 

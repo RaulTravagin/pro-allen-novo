@@ -40,6 +40,7 @@ const route = {
     observations: "Verificar troca de uniforme.",
     durationMinutes: 30,
     checklistSummary: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
+    checklistItems: [{ id: 1, category: "Uniforme", description: "Uniforme e apresentação pessoal", isCompliant: true, notes: "Em ordem" }, { id: 2, category: "Limpeza", description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" }],
   }],
 };
 
@@ -89,7 +90,7 @@ vi.mock("@/lib/trpc", () => ({
               alerts: [{ title: "Atendimento prolongado" }],
               checklistTotals: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
               coverageCount: 0,
-              route: { name: "Rota 1", region: "Jundiaí", totalPosts: 4, completedVisits: 1, kmInitial: "1250", kmCovered: 0, activeVisit: { postName: "Kelvion", arrivalTime: now, durationMinutes: 30 }, visits: [{ postName: "Kelvion", region: "Jordanésia", status: "in_progress", arrivalTime: now, departureTime: null, durationMinutes: 30, observations: "Verificar troca de uniforme.", isCoverage: false, checklist: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 } }] },
+              route: { name: "Rota 1", region: "Jundiaí", totalPosts: 4, completedVisits: 1, kmInitial: "1250", kmCovered: 0, activeVisit: { postName: "Kelvion", arrivalTime: now, durationMinutes: 30 }, visits: [{ postName: "Kelvion", region: "Jordanésia", status: "in_progress", arrivalTime: now, departureTime: null, durationMinutes: 30, observations: "Verificar troca de uniforme.", isCoverage: false, checklist: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 }, checklistItems: route.checklistVisits[0].checklistItems }] },
             }],
           },
         }),
@@ -119,6 +120,9 @@ describe("GestorDashboard", () => {
     expect(screen.getByText("Verificar troca de uniforme.")).toBeTruthy();
     expect(screen.getByText("Atendimento prolongado · Paulo Murashita")).toBeTruthy();
     expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
+    expect(screen.getAllByText("Checklist por visita").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Requer atenção").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Uniforme e apresentação pessoal").length).toBeGreaterThan(0);
     expect(screen.getByText("Progresso da equipe em um olhar")).toBeTruthy();
     expect(screen.getByText("Progresso por supervisor")).toBeTruthy();
   });
@@ -138,6 +142,6 @@ describe("GestorDashboard", () => {
     fireEvent.click(exportButton);
     await waitFor(() => expect(wordExport).toHaveBeenCalled());
     expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(1);
-    expect(screen.getByText("Checklist conforme")).toBeTruthy();
+    expect(screen.getByText("Itens conformes")).toBeTruthy();
   });
 });

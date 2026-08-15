@@ -24,7 +24,7 @@ describe("buildDailyOperationalReport", () => {
           kmFinal: "12018.5",
           kmCovered: 18.5,
           checklistVisits: [
-            { postName: "Kelvion", postRegion: "Jundiaí", status: "visited", isCoverage: false, checklistSummary: { total: 9, compliant: 8, nonCompliant: 1, unanswered: 0 } },
+            { postName: "Kelvion", postRegion: "Jundiaí", status: "visited", isCoverage: false, checklistSummary: { total: 9, compliant: 8, nonCompliant: 1, unanswered: 0 }, checklistItems: [{ id: 1, category: "Uniforme", description: "Uniforme e apresentação pessoal", isCompliant: true, notes: "Em ordem" }, { id: 2, category: "Limpeza", description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" }] },
             { postName: "Cobertura Extra", postRegion: "Jundiaí", status: "in_progress", isCoverage: true, coverageReason: "Cobertura emergencial", arrivalTime: new Date(), checklistSummary: { total: 9, compliant: 0, nonCompliant: 0, unanswered: 9 } },
           ],
         },
@@ -34,6 +34,7 @@ describe("buildDailyOperationalReport", () => {
     expect(report.summary).toMatchObject({ supervisors: 1, supervisorsOnRoute: 1, completedVisits: 1, visitsInProgress: 1, coverages: 1, kmCovered: 18.5, nonCompliantItems: 1, unansweredItems: 9, alerts: 1 });
     expect(report.supervisors[0]).toMatchObject({ supervisorName: "Paulo Murashita", operationalStatusLabel: "Em atendimento", coverageCount: 1, checklistTotals: { total: 18, compliant: 8, nonCompliant: 1, unanswered: 9 } });
     expect(report.supervisors[0].route?.activeVisit).toMatchObject({ postName: "Cobertura Extra" });
+    expect(report.supervisors[0].route?.visits[0]?.checklistItems).toEqual(expect.arrayContaining([expect.objectContaining({ description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" })]));
   });
 
   it("preserva a data histórica consultada no relatório", () => {

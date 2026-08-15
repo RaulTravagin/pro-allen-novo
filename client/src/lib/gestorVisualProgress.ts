@@ -51,7 +51,7 @@ export function buildGestorVisualProgress(supervisors: any[]) {
     const pending = Math.max(0, total - completed - inProgress);
     const status = supervisor.operationalStatus ?? supervisor.status ?? "sem_rota";
     const alertCount = (supervisor.alerts ?? []).length;
-    const checklistTotals = visits.reduce((accumulator: { total: number; compliant: number; nonCompliant: number; unanswered: number }, visit: any) => {
+    const checklistTotals = visits.filter((visit: any) => visit.status === "visited" || visit.status === "in_progress").reduce((accumulator: { total: number; compliant: number; nonCompliant: number; unanswered: number }, visit: any) => {
       const checklist = visit.checklistSummary ?? {};
       accumulator.total += asNonNegativeNumber(checklist.total);
       accumulator.compliant += asNonNegativeNumber(checklist.compliant);

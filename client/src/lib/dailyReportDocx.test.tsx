@@ -24,7 +24,7 @@ describe("createDailyReportWordDocument", () => {
           kmFinal: 12018.5,
           kmCovered: 18.5,
           activeVisit: null,
-          visits: [{ postName: "Kelvion", status: "visited", arrivalTime: new Date(), departureTime: new Date(), durationMinutes: 20, isCoverage: true, coverageReason: "Cobertura emergencial", observations: "Tudo em ordem", checklist: { total: 9, compliant: 8, nonCompliant: 1, unanswered: 0 } }],
+          visits: [{ postName: "Kelvion", status: "visited", arrivalTime: new Date(), departureTime: new Date(), durationMinutes: 20, isCoverage: true, coverageReason: "Cobertura emergencial", observations: "Tudo em ordem", checklist: { total: 9, compliant: 8, nonCompliant: 1, unanswered: 0 }, checklistItems: [{ id: 1, category: "Uniforme", description: "Uniforme e apresentação pessoal", isCompliant: true, notes: "Em ordem" }, { id: 2, category: "Limpeza", description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" }] }],
         },
       }],
     });

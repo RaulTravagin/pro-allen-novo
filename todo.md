@@ -242,4 +242,17 @@
 - [x] Validar explicitamente os checklists históricos vinculados a Raul Travagin
 - [x] Adicionar evidência automatizada para os itens de checklist das datas históricas recuperadas
 - [x] Validar o painel do Gestor e o relatório histórico com sessão real
-- [ ] Salvar checkpoint e entregar o diagnóstico ao solicitante
+- [x] Salvar checkpoint da correção histórica: c3bcfd60
+- [x] Entregar o diagnóstico, a orientação de data e a versão publicada ao solicitante
+
+## Checklist Intuitivo e Revisão Técnica
+- [x] Analisar o fluxo atual de checklist no Painel do Gestor e no relatório Word
+- [x] Exibir um resumo visual e simples de conformidades, pendências e não conformidades por visita no Painel do Gestor
+- [x] Permitir leitura dos itens de checklist e observações de cada visita sem poluir a tela do Gestor
+- [x] Organizar no relatório Word um resumo de checklist por visita, com situações e observações relevantes
+- [x] Revisar erros de interface, dados e exportação que possam afetar os fluxos principais
+- [x] Validar que as novas superfícies de checklist e relatório permanecem protegidas por sessão do Gestor
+- [x] Criar ou atualizar testes de regressão para a leitura de checklist e a geração do relatório
+- [x] Validar desktop, TypeScript, suíte de testes e build de produção
+- [x] Validar em viewport móvel a nova leitura de checklist no Painel do Gestor e no relatório diário
+- [ ] Salvar checkpoint e entregar a versão revisada

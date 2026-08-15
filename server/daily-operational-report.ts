@@ -22,7 +22,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
     const completedVisits = visits.filter((visit: AnyRecord) => visit.status === "visited");
     const activeVisit = visits.find((visit: AnyRecord) => visit.status === "in_progress") ?? null;
     const coverages = visits.filter((visit: AnyRecord) => visit.isCoverage);
-    const checklistTotals = visits.reduce((total: AnyRecord, visit: AnyRecord) => {
+    const checklistTotals = visits.filter((visit: AnyRecord) => visit.status === "visited" || visit.status === "in_progress").reduce((total: AnyRecord, visit: AnyRecord) => {
       const checklist = visit.checklistSummary ?? {};
       total.total += asNumber(checklist.total);
       total.compliant += asNumber(checklist.compliant);
@@ -67,6 +67,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
           isCoverage: Boolean(visit.isCoverage),
           coverageReason: visit.coverageReason ?? null,
           checklist: visit.checklistSummary ?? { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 },
+          checklistItems: visit.checklistItems ?? [],
         })),
       } : null,
       latestLocation: supervisor.latestLocation ? {

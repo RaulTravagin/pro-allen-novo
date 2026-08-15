@@ -598,7 +598,10 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow))),
     getAllSupervisorsLatestLocations(),
     db.select({
+      id: checklistItems.id,
       visitChecklistId: checklistItems.visitChecklistId,
+      category: checklistItems.category,
+      description: checklistItems.description,
       isCompliant: checklistItems.isCompliant,
       notes: checklistItems.notes,
     })
@@ -630,7 +633,18 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
         const unansweredItems = items.filter((item) => item.isCompliant === null).length;
         const referenceTime = checklist.departureTime ?? now;
         const durationMinutes = checklist.arrivalTime ? Math.max(0, Math.floor((referenceTime.getTime() - checklist.arrivalTime.getTime()) / 60_000)) : null;
-        return { ...checklist, durationMinutes, checklistSummary: { total: items.length, compliant: compliantItems, nonCompliant: nonCompliantItems, unanswered: unansweredItems } };
+        return {
+          ...checklist,
+          durationMinutes,
+          checklistSummary: { total: items.length, compliant: compliantItems, nonCompliant: nonCompliantItems, unanswered: unansweredItems },
+          checklistItems: items.map((item) => ({
+            id: item.id,
+            category: item.category,
+            description: item.description,
+            isCompliant: item.isCompliant,
+            notes: item.notes,
+          })),
+        };
       });
     const activeVisit = routeChecklists.find((checklist) => checklist.status === "in_progress") ?? null;
     const nextPost = routeChecklists.find((checklist) => checklist.status === "pending") ?? null;
