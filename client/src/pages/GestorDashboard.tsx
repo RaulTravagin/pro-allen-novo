@@ -2,11 +2,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { buildGestorVisualProgress } from "@/lib/gestorVisualProgress";
 import { Activity, AlertTriangle, Building2, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Plus, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 const REFRESH_INTERVAL = 15_000;
@@ -22,6 +23,13 @@ function formatDateTime(value: Date | string | null | undefined) {
 function formatCoordinates(latitude: unknown, longitude: unknown) {
   if (latitude == null || longitude == null) return "GPS ainda não recebido";
   return `${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)}`;
+}
+
+function mapCoordinate(latitude: unknown, longitude: unknown) {
+  if (latitude == null || longitude == null) return null;
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
 }
 
 function formatDuration(minutes: number | null | undefined) {
@@ -205,6 +213,8 @@ export default function GestorDashboard() {
 
         <ScheduleManagementPanel schedule={schedule.data} loading={schedule.isLoading} dateValue={scheduleDateValue} editing={isEditingSchedule} drafts={scheduleDraft} saving={updateSchedule.isPending} error={updateSchedule.error?.message} onDateChange={(value) => { setScheduleDateValue(value); setIsEditingSchedule(false); }} onStartEditing={() => setIsEditingSchedule(true)} onCancelEditing={() => { setIsEditingSchedule(false); if (schedule.data) setScheduleDraft(Object.fromEntries(schedule.data.supervisors.map((supervisor: any) => [supervisor.supervisorId, { assignment: supervisor.assignment, note: supervisor.note ?? "" }]))); }} onDraftChange={(supervisorId, updates) => setScheduleDraft((current) => ({ ...current, [supervisorId]: { assignment: current[supervisorId]?.assignment ?? "off", note: current[supervisorId]?.note ?? "", ...updates } }))} onSave={() => { if (!schedule.data) return; updateSchedule.mutate({ scheduleDate: schedule.data.scheduleDate, entries: schedule.data.supervisors.map((supervisor: any) => ({ supervisorId: supervisor.supervisorId, assignment: (scheduleDraft[supervisor.supervisorId]?.assignment ?? supervisor.assignment) as "day" | "night" | "reliever" | "off", note: scheduleDraft[supervisor.supervisorId]?.note ?? supervisor.note ?? null })) }); }} />
 
+        <OperationalMapPanel routes={postsManagement.data?.routes ?? []} supervisors={supervisors} loading={postsManagement.isLoading || dashboard.isLoading} />
+
         <PostsManagementPanel management={postsManagement.data} loading={postsManagement.isLoading} form={postForm} showingForm={showPostForm} saving={createPost.isPending} error={createPost.error?.message} onOpenForm={() => setShowPostForm(true)} onCancelForm={() => setShowPostForm(false)} onRouteChange={(routeId) => { const route = postsManagement.data?.routes.find((item: any) => item.id === Number(routeId)); setPostForm((current) => ({ ...current, routeId, region: route?.region ?? current.region })); }} onFormChange={(changes) => setPostForm((current) => ({ ...current, ...changes }))} onSubmit={() => { if (!postForm.routeId) return; createPost.mutate({ routeId: Number(postForm.routeId), name: postForm.name, region: postForm.region, address: postForm.address }); }} />
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
@@ -248,6 +258,59 @@ export default function GestorDashboard() {
 
 function ScheduleManagementPanel({ schedule, loading, dateValue, editing, drafts, saving, error, onDateChange, onStartEditing, onCancelEditing, onDraftChange, onSave }: { schedule: any; loading: boolean; dateValue: string; editing: boolean; drafts: Record<number, { assignment: string; note: string }>; saving: boolean; error?: string; onDateChange: (value: string) => void; onStartEditing: () => void; onCancelEditing: () => void; onDraftChange: (supervisorId: number, updates: Partial<{ assignment: string; note: string }>) => void; onSave: () => void }) {
   return <section className="rounded-3xl border border-indigo-100 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-indigo-700"><CalendarDays className="h-4 w-4" /> Escala de plantão</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Dia, noite, folga e cobertura</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A escala é independente das rotas. O Gestor pode ajustar a data, o responsável e uma observação operacional sempre que necessário.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data da escala<input aria-label="Data da escala" type="date" value={dateValue} onChange={(event) => onDateChange(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2" /></label>{editing ? <><Button variant="outline" onClick={onCancelEditing} disabled={saving}>Cancelar</Button><Button onClick={onSave} disabled={saving || !schedule} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Save className="h-4 w-4" /> {saving ? "Salvando..." : "Salvar escala"}</Button></> : <Button onClick={onStartEditing} disabled={!schedule || loading} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Pencil className="h-4 w-4" /> Alterar escala</Button>}</div></div>{loading ? <LoadingRows /> : !schedule ? <EmptyState title="Escala indisponível" description="Atualize a página para consultar a escala do dia." /> : <div className="p-6"><div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-950"><strong>{new Date(schedule.scheduleDate).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}.</strong> As alterações são salvas apenas para a data escolhida e preservam a escala-base dos supervisores.</div>{error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{error}</div>}<div className="grid gap-4 md:grid-cols-3">{schedule.supervisors.map((supervisor: any) => { const draft = drafts[supervisor.supervisorId] ?? { assignment: supervisor.assignment, note: supervisor.note ?? "" }; const appearance = scheduleAppearance(editing ? draft.assignment : supervisor.assignment); const Icon = appearance.icon; return <article key={supervisor.supervisorId} className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white">{String(supervisor.supervisorName).slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-1 truncate text-xs text-slate-500">@{supervisor.username}</p></div></div><Icon className="h-5 w-5 text-indigo-700" /></div>{editing ? <div className="mt-5 space-y-3"><label className="grid gap-1 text-xs font-semibold text-slate-600">Atribuição<select aria-label={`Escala de ${supervisor.supervisorName}`} value={draft.assignment} onChange={(event) => onDraftChange(supervisor.supervisorId, { assignment: event.target.value })} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2"><option value="day">Plantão Dia — 06h às 18h</option><option value="night">Plantão Noite — 18h às 06h</option><option value="reliever">Folguista</option><option value="off">Folga</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Observação<textarea value={draft.note} onChange={(event) => onDraftChange(supervisor.supervisorId, { note: event.target.value })} placeholder="Ex.: cobertura de folga" rows={2} className="resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-600 focus:ring-2" /></label></div> : <div className="mt-5"><Badge className={appearance.className}>{appearance.label}</Badge><p className="mt-2 text-sm font-medium text-slate-900">{appearance.detail}</p><p className="mt-2 text-xs leading-5 text-slate-600">{supervisor.note || (supervisor.isOverride ? "Ajuste manual do Gestor" : "Escala-base do supervisor")}</p></div>}</article>; })}</div></div>}</section>;
+}
+
+function OperationalMapPanel({ routes, supervisors, loading }: { routes: any[]; supervisors: any[]; loading: boolean }) {
+  const [selectedRouteId, setSelectedRouteId] = useState<string>("");
+  const [mapReady, setMapReady] = useState(false);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const overlaysRef = useRef<any[]>([]);
+  const selectedRoute = routes.find((route) => String(route.id) === selectedRouteId) ?? routes[0];
+  const routePosts = selectedRoute?.posts ?? [];
+  const mappedPosts = routePosts.map((post: any) => ({ ...post, coordinate: mapCoordinate(post.latitude, post.longitude) })).filter((post: any) => post.coordinate);
+  const supervisorMarkers = supervisors.map((supervisor) => ({ supervisor, coordinate: mapCoordinate(supervisor.latestLocation?.latitude, supervisor.latestLocation?.longitude) })).filter((entry) => entry.coordinate);
+  const mapDataSignature = `${selectedRoute?.id ?? ""}:${mappedPosts.map((post: any) => `${post.id}-${post.coordinate.lat}-${post.coordinate.lng}`).join("|")}:${supervisorMarkers.map(({ supervisor, coordinate }) => `${supervisor.supervisorId}-${coordinate?.lat}-${coordinate?.lng}`).join("|")}`;
+
+  useEffect(() => {
+    if (!selectedRouteId && routes[0]) setSelectedRouteId(String(routes[0].id));
+  }, [routes, selectedRouteId]);
+
+  const onMapReady = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    setMapReady(true);
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !window.google?.maps) return;
+    overlaysRef.current.forEach((overlay) => {
+      if (typeof overlay.setMap === "function") overlay.setMap(null);
+      else overlay.map = null;
+    });
+    overlaysRef.current = [];
+
+    const bounds = new window.google.maps.LatLngBounds();
+    const addMarker = (position: google.maps.LatLngLiteral, title: string, tone: "post" | "supervisor") => {
+      const content = document.createElement("div");
+      content.className = tone === "supervisor" ? "flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-emerald-600 text-xs font-bold text-white shadow-lg" : "flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-blue-700 text-xs font-bold text-white shadow-lg";
+      content.textContent = tone === "supervisor" ? "GPS" : "P";
+      const marker = new window.google.maps.marker.AdvancedMarkerElement({ map, position, title, content });
+      overlaysRef.current.push(marker);
+      bounds.extend(position);
+    };
+
+    mappedPosts.forEach((post: any) => addMarker(post.coordinate, `${post.name} · ${post.address}`, "post"));
+    supervisorMarkers.forEach(({ supervisor, coordinate }) => addMarker(coordinate!, `${supervisor.supervisorName} · última posição GPS`, "supervisor"));
+    if (mappedPosts.length > 1) {
+      const routeTrace = new window.google.maps.Polyline({ map, path: mappedPosts.map((post: any) => post.coordinate), geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.85, strokeWeight: 4 });
+      overlaysRef.current.push(routeTrace);
+    }
+    if (!bounds.isEmpty()) map.fitBounds(bounds, 56);
+    else map.setCenter({ lat: -23.185, lng: -46.884 });
+  }, [mapReady, mapDataSignature]);
+
+  const pendingPosts = routePosts.length - mappedPosts.length;
+  return <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><MapPin className="h-4 w-4" /> Mapa operacional</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Rota, postos e posição de campo</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">O mapa mostra os postos com coordenadas confirmadas e a última posição GPS recebida dos supervisores. Nenhuma localização é estimada para postos sem endereço completo.</p></div><label className="grid gap-1 text-xs font-semibold text-slate-600">Rota exibida<select aria-label="Rota exibida no mapa" value={selectedRoute ? String(selectedRoute.id) : ""} onChange={(event) => setSelectedRouteId(event.target.value)} disabled={loading || !routes.length} className="h-10 min-w-56 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-cyan-600 focus:ring-2">{routes.map((route) => <option key={route.id} value={route.id}>{route.name} · {route.region}</option>)}</select></label></div>{loading ? <LoadingRows /> : !routes.length ? <EmptyState title="Nenhuma rota cadastrada" description="Cadastre uma rota e seus postos para preparar a visualização operacional." /> : <div className="grid gap-0 lg:grid-cols-[1fr_320px]"><MapView className="h-[440px] min-h-[360px]" initialCenter={{ lat: -23.185, lng: -46.884 }} initialZoom={10} onMapReady={onMapReady} /><aside className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0"><p className="text-sm font-semibold text-slate-950">Situação da localização</p><div className="mt-4 space-y-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-950">{mappedPosts.length}/{routePosts.length}</p><p className="mt-1 text-xs leading-5 text-blue-800">postos da rota com coordenadas confirmadas</p></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-950">{pendingPosts}</p><p className="mt-1 text-xs leading-5 text-amber-800">posto(s) aguardando endereço completo para localização</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-2xl font-bold text-emerald-950">{supervisorMarkers.length}</p><p className="mt-1 text-xs leading-5 text-emerald-800">supervisor(es) com última posição GPS no mapa</p></div></div><div className="mt-5 rounded-xl border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600"><p className="font-semibold text-slate-900">Legenda</p><p className="mt-2"><span className="font-semibold text-blue-700">P azul:</span> posto geocodificado.</p><p><span className="font-semibold text-emerald-700">GPS verde:</span> última posição recebida.</p><p className="mt-3">O traçado da rota aparecerá automaticamente quando houver pelo menos dois postos com coordenadas confirmadas.</p></div></aside></div>}</section>;
 }
 
 function PostsManagementPanel({ management, loading, form, showingForm, saving, error, onOpenForm, onCancelForm, onRouteChange, onFormChange, onSubmit }: { management: any; loading: boolean; form: { routeId: string; name: string; region: string; address: string }; showingForm: boolean; saving: boolean; error?: string; onOpenForm: () => void; onCancelForm: () => void; onRouteChange: (routeId: string) => void; onFormChange: (changes: Partial<{ routeId: string; name: string; region: string; address: string }>) => void; onSubmit: () => void }) {

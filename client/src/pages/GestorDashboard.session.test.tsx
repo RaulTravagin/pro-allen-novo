@@ -24,6 +24,10 @@ vi.mock("@/lib/trpc", () => ({
   },
 }));
 
+vi.mock("@/components/Map", () => ({
+  MapView: () => <div data-testid="operational-map" />,
+}));
+
 vi.mock("wouter", () => ({ useLocation: () => ["/gestor", vi.fn()] }));
 
 import GestorDashboard from "./GestorDashboard";

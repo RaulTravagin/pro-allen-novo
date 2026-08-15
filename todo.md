@@ -272,4 +272,13 @@
 - [x] Permitir cadastrar nome do posto, região, endereço e rota vinculada
 - [x] Mostrar rotas disponíveis e os postos cadastrados na área do Gestor
 - [x] Validar cadastro, campos obrigatórios, autorização, desktop, celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: 14190780
+
+## Google Maps para Postos e Rotas
+- [x] Auditar endereços e coordenadas atuais dos postos para identificar dados geocodificáveis
+- [x] Preparar a estrutura de geocodificação futura para endereços completos de postos
+- [x] Exibir no mapa a última localização GPS do supervisor e os postos que já tiverem coordenadas
+- [x] Indicar claramente os postos pendentes de localização, sem inventar coordenadas nem traçados
+- [x] Proteger operações de geocodificação e visualização gerencial pela sessão do Gestor
+- [x] Validar mapa, coordenadas, estados sem endereço, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

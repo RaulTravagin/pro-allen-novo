@@ -131,6 +131,10 @@ vi.mock("@/lib/dailyReportDocx", () => ({
   downloadDailyReportWord: wordExport,
 }));
 
+vi.mock("@/components/Map", () => ({
+  MapView: ({ className }: { className?: string }) => <div data-testid="operational-map" className={className}>Mapa Google</div>,
+}));
+
 vi.mock("wouter", () => ({ useLocation: () => ["/gestor", vi.fn()] }));
 
 import GestorDashboard from "./GestorDashboard";
@@ -157,6 +161,9 @@ describe("GestorDashboard", () => {
     expect(screen.getAllByText("Folga").length).toBeGreaterThan(0);
     expect(screen.getByText("Progresso da equipe em um olhar")).toBeTruthy();
     expect(screen.getByText("Progresso por supervisor")).toBeTruthy();
+    expect(screen.getByText("Mapa operacional")).toBeTruthy();
+    expect(screen.getByTestId("operational-map")).toBeTruthy();
+    expect(screen.getByText("posto(s) aguardando endereço completo para localização")).toBeTruthy();
   });
 
   it("permite que o Gestor edite e salve a escala diária", async () => {
