@@ -11,6 +11,10 @@ describe("buildDailyOperationalReport", () => {
         status: "em_atendimento",
         latestLocation: { latitude: "-23.12345", longitude: "-46.12345", accuracy: "12", recordedAt: new Date() },
         alerts: [{ code: "gps_stale", title: "GPS desatualizado" }],
+        activities: [
+          { id: 1, routeName: "Base Operacional", routeRegion: "Operação Interna", routeActivityType: "operational_base", routeStatus: "completed", startedAt: new Date("2026-08-12T09:00:00.000Z"), completedAt: new Date("2026-08-12T11:00:00.000Z"), kmInitial: "12000", kmFinal: "12008", kmCovered: 8 },
+          { id: 2, routeName: "Rota 1", routeRegion: "Jundiaí", routeActivityType: "field_route", routeStatus: "in_progress", startedAt: new Date("2026-08-12T11:15:00.000Z"), kmInitial: "12008", kmFinal: null, kmCovered: null },
+        ],
         route: {
           id: 2,
           routeName: "Rota 1",
@@ -35,6 +39,7 @@ describe("buildDailyOperationalReport", () => {
     expect(report.supervisors[0]).toMatchObject({ supervisorName: "Paulo Murashita", operationalStatusLabel: "Em atendimento", coverageCount: 1, checklistTotals: { total: 18, compliant: 8, nonCompliant: 1, unanswered: 9 } });
     expect(report.supervisors[0].route?.activeVisit).toMatchObject({ postName: "Cobertura Extra" });
     expect(report.supervisors[0].route?.visits[0]?.checklistItems).toEqual(expect.arrayContaining([expect.objectContaining({ description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" })]));
+    expect(report.supervisors[0].activities).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Base Operacional", status: "completed", kmFinal: "12008" }), expect.objectContaining({ name: "Rota 1", status: "in_progress" })]));
   });
 
   it("preserva a data histórica consultada no relatório", () => {

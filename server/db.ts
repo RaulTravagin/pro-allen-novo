@@ -818,14 +818,23 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
   const operationalRouteViews = options.includeHistoricalUsers
     ? routeViews
     : routeViews.filter((route) => activeOperationalUserIds.has(route.supervisorId));
-  const routeBySupervisor = new Map(operationalRouteViews.map((route) => [route.supervisorId, route]));
+  const routesBySupervisor = new Map<number, typeof operationalRouteViews>();
+  for (const route of operationalRouteViews) {
+    const routesForSupervisor = routesBySupervisor.get(route.supervisorId) ?? [];
+    routesForSupervisor.push(route);
+    routesBySupervisor.set(route.supervisorId, routesForSupervisor);
+  }
   const supervisorsById = new Map(allUsers.map((user) => [user.id, user]));
   const supervisorIds = options.includeHistoricalUsers
     ? new Set<number>(operationalRouteViews.map((route) => route.supervisorId))
     : new Set<number>(activeOperationalUserIds);
 
   const operationalSupervisors = Array.from(supervisorIds).map((supervisorId) => {
-    const route = routeBySupervisor.get(supervisorId) ?? null;
+    const activities = (routesBySupervisor.get(supervisorId) ?? []).sort((a, b) => (a.startedAt ?? a.updatedAt).getTime() - (b.startedAt ?? b.updatedAt).getTime());
+    const route = activities.find((activity) => activity.routeStatus === "in_progress")
+      ?? activities.find((activity) => activity.routeStatus === "pending")
+      ?? activities.at(-1)
+      ?? null;
     const supervisor = supervisorsById.get(supervisorId);
     return {
       supervisorId,
@@ -833,6 +842,21 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       supervisorUsername: supervisor?.username ?? route?.supervisorUsername ?? null,
       status: route?.operationalStatus ?? "sem_rota",
       route,
+      activities: activities.map((activity) => ({
+        id: activity.id,
+        routeName: activity.routeName,
+        routeRegion: activity.routeRegion,
+        routeActivityType: activity.routeActivityType,
+        routeStatus: activity.routeStatus,
+        startedAt: activity.startedAt,
+        completedAt: activity.completedAt,
+        kmInitial: activity.kmInitial,
+        kmFinal: activity.kmFinal,
+        kmCovered: activity.kmCovered,
+        totalPosts: activity.totalPosts,
+        completedVisits: activity.completedVisits,
+        pendingVisits: activity.pendingVisits,
+      })),
       latestLocation: route?.latestLocation ?? locationBySupervisor.get(supervisorId) ?? null,
       alerts: route?.alerts ?? [],
     };

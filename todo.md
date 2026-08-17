@@ -298,4 +298,13 @@
 - [x] Destacar GPS, KM, checklist, observações e alertas no mesmo fluxo de acompanhamento
 - [x] Preservar e facilitar o acesso ao relatório diário e ao relatório Word
 - [x] Validar permissões, dados operacionais, desktop, celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: a0a358ab
+
+## Saída da Base para Rota de Campo
+- [x] Mapear a regra atual de uma rota aberta por dia e o histórico de atividades concluídas
+- [x] Liberar a preparação de rota de campo depois de encerrar a Base Operacional com KM final
+- [x] Preservar Base e rota de campo como registros separados no mesmo dia
+- [x] Orientar claramente o supervisor sobre encerrar a Base antes de iniciar a nova rota
+- [x] Exibir a sequência Base → rota de campo no Painel do Gestor e nos relatórios
+- [x] Validar transição, KM, histórico, autorização, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

@@ -83,6 +83,18 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
       checklistTotals,
       completedVisitCount: completedVisits.length,
       coverageCount: coverages.length,
+      activities: (supervisor.activities ?? []).map((activity: AnyRecord) => ({
+        id: activity.id,
+        name: activity.routeActivityType === "operational_base" ? "Base Operacional" : activity.routeName,
+        region: activity.routeRegion,
+        activityType: activity.routeActivityType ?? "field_route",
+        status: activity.routeStatus,
+        startedAt: activity.startedAt ?? null,
+        completedAt: activity.completedAt ?? null,
+        kmInitial: activity.kmInitial ?? null,
+        kmFinal: activity.kmFinal ?? null,
+        kmCovered: activity.kmCovered ?? null,
+      })),
     };
   });
 

@@ -86,6 +86,12 @@ function metricTable(report: DailyReport) {
 
 function supervisorSection(supervisor: any, index: number) {
   const route = supervisor.route;
+  const activityRows = (supervisor.activities ?? []).map((activity: any) => [
+    activity.name,
+    activity.status === "completed" ? "Encerrada" : activity.status === "in_progress" ? "Em andamento" : "Aguardando KM",
+    `Início: ${time(activity.startedAt)}\nFim: ${time(activity.completedAt)}`,
+    activity.kmInitial != null ? `Inicial: ${activity.kmInitial} km\nFinal: ${text(activity.kmFinal)} km\nPercorrido: ${text(activity.kmCovered)} km` : "KM não informado",
+  ]);
   const visitRows = (route?.visits ?? []).map((visit: any) => [
     `${visit.postName}${visit.isCoverage ? " (Cobertura)" : ""}`,
     visit.status === "visited" ? "Concluído" : visit.status === "in_progress" ? "Em atendimento" : visit.status === "pending" ? "Pendente" : "Não realizado",
@@ -102,6 +108,10 @@ function supervisorSection(supervisor: any, index: number) {
       [[route ? `${route.name} · ${route.region}` : "Sem rota preparada", route?.activeVisit ? `${route.activeVisit.postName} desde ${time(route.activeVisit.arrivalTime)} (${duration(route.activeVisit.durationMinutes)})` : "Sem atendimento ativo", route?.kmInitial != null ? `Inicial: ${route.kmInitial} km\nFinal: ${text(route.kmFinal)} km\nPercorrido: ${text(route.kmCovered)} km` : "KM não informado", location]],
       [25, 25, 25, 25],
     ),
+    ...(activityRows.length > 1 ? [
+      new Paragraph({ spacing: { before: 180, after: 80 }, heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Sequência de atividades no dia", color: slate, bold: true })] }),
+      table(["Atividade", "Situação", "Horários", "Quilometragem"], activityRows, [26, 18, 28, 28]),
+    ] : []),
     new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Checklist consolidado: ${checklistSummary(supervisor.checklistTotals)} · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
     new Paragraph({ spacing: { before: 140, after: 80 }, children: [new TextRun({ text: `Alertas: ${(supervisor.alerts ?? []).map((alert: any) => alert.title).join(" · ") || "Sem alertas operacionais"}`, bold: true, color: (supervisor.alerts ?? []).length ? "B45309" : "166534" })] }),
     new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Postos e atendimentos", color: slate, bold: true })] }),

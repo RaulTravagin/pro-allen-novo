@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -16,8 +16,11 @@ export default function SupervisorDashboard() {
 
   const { data: routes, isLoading: routesLoading, isError: routesError } = trpc.routes.list.useQuery();
   const { data: todayRoute, isLoading: todayRouteLoading } = trpc.supervisorRoutes.getTodayRoute.useQuery();
+  const { data: todayHistory, isLoading: todayHistoryLoading } = trpc.supervisorRoutes.getTodayHistory.useQuery();
   const selectedRoute = routes?.find((route) => route.id === Number(selectedRouteId));
   const isBaseOperational = selectedRoute?.activityType === "operational_base";
+  const completedBase = todayHistory?.find((route) => route.routeActivityType === "operational_base" && route.status === "completed");
+  const selectableRoutes = routes?.filter((route) => route.activityType !== "operational_base" || !completedBase);
   const { data: selectedPosts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: Number(selectedRouteId) },
     { enabled: Boolean(selectedRouteId) },
@@ -52,6 +55,7 @@ export default function SupervisorDashboard() {
       });
       await createChecklistsMutation.mutateAsync({ supervisorRouteId });
       await utils.supervisorRoutes.getTodayRoute.invalidate();
+      await utils.supervisorRoutes.getTodayHistory.invalidate();
       toast.success(isBaseOperational ? "Base Operacional preparada. Informe o KM inicial para iniciar a atividade." : "Rota preparada. Informe o KM inicial para começar.");
       navigate(`/supervisor/route/${supervisorRouteId}`);
     } catch (error) {
@@ -112,11 +116,12 @@ export default function SupervisorDashboard() {
         {!todayRoute && (
           <Card className="border-blue-200 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-950"><RouteIcon className="h-5 w-5 text-blue-600" />Iniciar atividade</CardTitle>
-              <CardDescription>Selecione uma rota de campo ou a Base Operacional e confirme. A criação não acontece apenas ao abrir o seletor.</CardDescription>
+              <CardTitle className="flex items-center gap-2 text-slate-950"><RouteIcon className="h-5 w-5 text-blue-600" />{completedBase ? "Iniciar rota de campo" : "Iniciar atividade"}</CardTitle>
+              <CardDescription>{completedBase ? "A Base Operacional já foi encerrada. Selecione a rota de campo que será iniciada agora." : "Selecione uma rota de campo ou a Base Operacional e confirme. A criação não acontece apenas ao abrir o seletor."}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {routesLoading || todayRouteLoading ? (
+              {completedBase && <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950"><p className="font-semibold">Base Operacional encerrada</p><p className="mt-1">KM final registrado às {completedBase.completedAt ? new Date(completedBase.completedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}. Agora escolha uma rota de campo para continuar o turno.</p></div>}
+              {routesLoading || todayRouteLoading || todayHistoryLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando rotas...</div>
               ) : routesError ? (
                 <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle className="h-4 w-4" />Não foi possível carregar as rotas.</div>
@@ -125,7 +130,7 @@ export default function SupervisorDashboard() {
                   <Select value={selectedRouteId} onValueChange={setSelectedRouteId}>
                     <SelectTrigger aria-label="Selecionar rota" className="w-full"><SelectValue placeholder="Selecione uma rota..." /></SelectTrigger>
                     <SelectContent>
-                      {routes?.map((route) => (
+                      {selectableRoutes?.map((route) => (
                         <SelectItem key={route.id} value={route.id.toString()}>
                           <span className="flex items-center gap-2">{route.activityType === "operational_base" ? <Building2 className="h-4 w-4 text-violet-700" /> : <MapPin className="h-4 w-4" />}{route.name} · {route.region}</span>
                         </SelectItem>
@@ -150,7 +155,7 @@ export default function SupervisorDashboard() {
                   )}
 
                   <Button onClick={handleStartRoute} disabled={!selectedRouteId || isStarting} className="w-full bg-blue-600 hover:bg-blue-700 sm:w-auto">
-                    {isStarting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparando...</> : <>{isBaseOperational ? "Preparar atividade na base" : "Preparar rota"} <ArrowRight className="ml-2 h-4 w-4" /></>}
+                    {isStarting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparando...</> : <>{isBaseOperational ? "Preparar atividade na base" : completedBase ? "Iniciar rota de campo" : "Preparar rota"} <ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
                 </>
               )}

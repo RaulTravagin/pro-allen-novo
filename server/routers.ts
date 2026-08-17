@@ -222,7 +222,14 @@ export const appRouter = router({
     getTodayRoute: protectedProcedure.query(async ({ ctx }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       const routes = await db.getSupervisorRoutesToday(ctx.user.id);
-      return routes.length > 0 ? routes[0] : null;
+      return routes.find((route) => route.status === 'in_progress')
+        ?? routes.find((route) => route.status === 'pending')
+        ?? null;
+    }),
+
+    getTodayHistory: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      return await db.getSupervisorRoutesToday(ctx.user.id);
     }),
     
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {

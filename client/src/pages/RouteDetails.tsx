@@ -191,8 +191,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         id: supervisorRouteId,
         kmFinal: finalKm,
       });
+      await utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId });
+      await utils.supervisorRoutes.getTodayRoute.invalidate();
+      await utils.supervisorRoutes.getTodayHistory.invalidate();
       setShowKmFinal(false);
-      toast.success("Rota encerrada com sucesso!");
+      toast.success(isBaseOperational ? "Base Operacional encerrada. Agora escolha a rota de campo." : "Rota encerrada com sucesso!");
     } catch (error) {
       toast.error("Erro ao encerrar rota");
       console.error("Error ending route:", error);
@@ -306,6 +309,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   <div className="mt-3 space-y-1">
                     <p className="text-3xl font-bold text-slate-900">{Number(route.kmFinal).toLocaleString("pt-BR")} km</p>
                     <p className="text-sm text-slate-600">Total percorrido: {(Number(route.kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>
+                    {isBaseOperational && <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-950">Base Operacional encerrada</p><p className="mt-1 text-xs leading-5 text-violet-800">Você já pode selecionar uma rota de campo para continuar o turno.</p><Button type="button" onClick={() => navigate("/supervisor")} className="mt-3 w-full bg-violet-700 hover:bg-violet-800">Selecionar rota de campo <ArrowLeft className="ml-2 h-4 w-4 rotate-180" /></Button></div>}
                   </div>
                 ) : route.status === "in_progress" ? (
                   showKmFinal ? (
