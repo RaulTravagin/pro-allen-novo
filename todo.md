@@ -289,4 +289,13 @@
 - [x] Permitir preparar e acompanhar uma atividade em Base Operacional sem criar postos de cliente fictícios
 - [x] Exibir Base Operacional de forma clara no Painel do Gestor e nos relatórios
 - [x] Validar seleção, autorização, desktop, celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: 45f0faf0
+
+## Central Operacional do Gestor
+- [x] Mapear os dados atuais de supervisor, posto, tempo, GPS, KM, checklist, alertas e relatórios
+- [x] Remover os gráficos visuais do Painel do Gestor
+- [x] Priorizar cartões operacionais por supervisor com atividade, posto atual, tempo em posto e próxima ação
+- [x] Destacar GPS, KM, checklist, observações e alertas no mesmo fluxo de acompanhamento
+- [x] Preservar e facilitar o acesso ao relatório diário e ao relatório Word
+- [x] Validar permissões, dados operacionais, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

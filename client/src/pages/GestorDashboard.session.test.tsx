@@ -69,7 +69,7 @@ describe("GestorDashboard com sessão em validação", () => {
     rerender(<GestorDashboard />);
 
     expect(screen.getByText("Monitoramento de ponta a ponta")).toBeTruthy();
-    expect(screen.getByText("Aguardando supervisores em operação")).toBeTruthy();
+    expect(screen.getByText("Nenhum supervisor cadastrado")).toBeTruthy();
     expect(mocks.dashboardQuery).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ enabled: true }));
   });
 });

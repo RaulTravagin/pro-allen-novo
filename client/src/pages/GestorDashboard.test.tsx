@@ -159,8 +159,8 @@ describe("GestorDashboard", () => {
     expect(screen.getByText("Plantão Noite")).toBeTruthy();
     expect(screen.getByText("Plantão realizado das 06h às 18h")).toBeTruthy();
     expect(screen.getAllByText("Folga").length).toBeGreaterThan(0);
-    expect(screen.getByText("Progresso da equipe em um olhar")).toBeTruthy();
-    expect(screen.getByText("Progresso por supervisor")).toBeTruthy();
+    expect(screen.getByText("Supervisores, postos e tempo de atendimento")).toBeTruthy();
+    expect(screen.getByText("Posto atual e tempo")).toBeTruthy();
     expect(screen.getByText("Mapa operacional")).toBeTruthy();
     expect(screen.getByTestId("operational-map")).toBeTruthy();
     expect(screen.getByText("posto(s) aguardando endereço completo para localização")).toBeTruthy();
