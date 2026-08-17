@@ -281,4 +281,12 @@
 - [x] Indicar claramente os postos pendentes de localização, sem inventar coordenadas nem traçados
 - [x] Proteger operações de geocodificação e visualização gerencial pela sessão do Gestor
 - [x] Validar mapa, coordenadas, estados sem endereço, desktop, celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: 9902c1f4
+
+## Base Operacional na Preparação de Rota
+- [x] Analisar o fluxo de preparação de rota e compatibilidade com registros já existentes
+- [x] Adicionar Base Operacional como opção própria na seleção de atividade do supervisor
+- [x] Permitir preparar e acompanhar uma atividade em Base Operacional sem criar postos de cliente fictícios
+- [x] Exibir Base Operacional de forma clara no Painel do Gestor e nos relatórios
+- [x] Validar seleção, autorização, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

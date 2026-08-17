@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowLeft, Fuel, Clock, AlertCircle, Route } from "lucide-react";
+import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -34,6 +34,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
   const { data: checklists, isLoading: checklistsLoading } = trpc.checklists.getByRoute.useQuery({ supervisorRouteId });
   const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
+  const isBaseOperational = route?.routeActivityType === "operational_base";
 
   useEffect(() => {
     if (route?.status === 'completed') setShowKmFinal(false);
@@ -234,8 +235,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Detalhes da Rota</h1>
-              <p className="text-gray-600 mt-1">Status: <span className="font-semibold text-blue-600">{route.status}</span></p>
+              <h1 className="text-2xl font-bold text-gray-900">{isBaseOperational ? "Base Operacional" : "Detalhes da Rota"}</h1>
+              <p className="text-gray-600 mt-1">{isBaseOperational ? "Atividade de apoio e operação interna" : "Status da rota"}: <span className="font-semibold text-blue-600">{route.status}</span></p>
             </div>
           </div>
           <Button onClick={() => logout()} variant="outline">
@@ -334,7 +335,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         </section>
 
-        <section className="mb-8" aria-labelledby="coverage-title">
+        {!isBaseOperational && <section className="mb-8" aria-labelledby="coverage-title">
           <Card className="border-violet-200 bg-violet-50/40 shadow-sm">
             <CardHeader>
               <CardTitle id="coverage-title" className="flex items-center gap-2 text-violet-950">
@@ -382,10 +383,18 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar coberturas.</CardContent>}
             {activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de iniciar uma cobertura.</CardContent>}
           </Card>
-        </section>
+        </section>}
 
         {/* Posts List */}
-        <div className="space-y-4">
+        {isBaseOperational ? <section className="mb-8" aria-labelledby="base-operational-title">
+          <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
+            <CardHeader>
+              <CardTitle id="base-operational-title" className="flex items-center gap-2 text-violet-950"><Building2 className="h-5 w-5 text-violet-700" /> Atividade em Base Operacional</CardTitle>
+              <CardDescription>Esta atividade não possui postos de cliente ou checklist de visita. Registre o KM da viatura e mantenha a localização ativa enquanto estiver na base.</CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-violet-900">{route.status === "pending" ? "Informe o KM inicial para começar o registro da atividade na base." : route.status === "in_progress" ? "Atividade na base em andamento. Ao finalizar, informe o KM final para encerrar o registro do dia." : "Atividade na base encerrada."}</CardContent>
+          </Card>
+        </section> : <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900">Postos a Visitar</h2>
             <span className="text-sm text-gray-600">
@@ -470,7 +479,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               />
             );
           })}
-        </div>
+        </div>}
 
       </div>
     </div>

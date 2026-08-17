@@ -57,4 +57,18 @@ describe("preparação de rota para supervisor local", () => {
     expect(db.getSupervisorRouteById).toHaveBeenCalledWith(30_001);
     expect(db.createVisitChecklist).toHaveBeenCalledWith(30_001, 11);
   });
+
+  it("prepara a Base Operacional sem gerar postos ou checklists fictícios", async () => {
+    vi.mocked(db.getRouteById).mockResolvedValue({ id: 50_001, name: "Base Operacional", activityType: "operational_base" } as never);
+    vi.mocked(db.createSupervisorRoute).mockResolvedValue(50_101);
+    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 50_101, supervisorId: 3_270_009, routeId: 50_001, routeActivityType: "operational_base" } as never);
+    vi.mocked(db.getPostsByRouteId).mockResolvedValue([] as never);
+
+    const caller = appRouter.createCaller(localSupervisorContext);
+    const supervisorRouteId = await caller.supervisorRoutes.create({ routeId: 50_001, date: new Date() });
+
+    await expect(caller.checklists.createForRoute({ supervisorRouteId })).resolves.toEqual([]);
+    expect(supervisorRouteId).toBe(50_101);
+    expect(db.createVisitChecklist).not.toHaveBeenCalled();
+  });
 });

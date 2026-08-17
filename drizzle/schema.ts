@@ -61,6 +61,7 @@ export const routes = mysqlTable("routes", {
   name: varchar("name", { length: 255 }).notNull(),
   region: varchar("region", { length: 255 }).notNull(),
   description: text("description"),
+  activityType: mysqlEnum("activityType", ["field_route", "operational_base"]).default("field_route").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

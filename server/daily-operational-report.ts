@@ -5,7 +5,9 @@ const statusLabels: Record<string, string> = {
   aguardando_km: "Aguardando KM inicial",
   em_deslocamento: "Em deslocamento",
   em_atendimento: "Em atendimento",
+  em_base_operacional: "Na Base Operacional",
   rota_concluida: "Rota concluída",
+  base_concluida: "Base concluída",
   rota_cancelada: "Rota cancelada",
 };
 
@@ -41,6 +43,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
         id: route.id,
         name: route.routeName,
         region: route.routeRegion,
+        activityType: route.routeActivityType ?? "field_route",
         status: route.routeStatus,
         startedAt: route.startedAt ?? null,
         completedAt: route.completedAt ?? null,
@@ -85,7 +88,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
 
   const summary = supervisors.reduce((total: AnyRecord, supervisor: AnyRecord) => {
     total.supervisors += 1;
-    total.supervisorsOnRoute += ["aguardando_km", "em_deslocamento", "em_atendimento"].includes(supervisor.operationalStatus) ? 1 : 0;
+    total.supervisorsOnRoute += ["aguardando_km", "em_deslocamento", "em_atendimento", "em_base_operacional"].includes(supervisor.operationalStatus) ? 1 : 0;
     total.completedVisits += supervisor.route?.completedVisits ?? 0;
     total.pendingVisits += supervisor.route?.pendingVisits ?? 0;
     total.visitsInProgress += supervisor.route?.activeVisit ? 1 : 0;

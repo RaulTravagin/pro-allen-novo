@@ -287,7 +287,24 @@ export async function createSupervisorRoute(supervisorId: number, routeId: numbe
 export async function getSupervisorRouteById(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const result = await db.select().from(supervisorRoutes).where(eq(supervisorRoutes.id, id)).limit(1);
+  const result = await db.select({
+    id: supervisorRoutes.id,
+    supervisorId: supervisorRoutes.supervisorId,
+    routeId: supervisorRoutes.routeId,
+    date: supervisorRoutes.date,
+    status: supervisorRoutes.status,
+    kmInitial: supervisorRoutes.kmInitial,
+    kmFinal: supervisorRoutes.kmFinal,
+    startedAt: supervisorRoutes.startedAt,
+    completedAt: supervisorRoutes.completedAt,
+    createdAt: supervisorRoutes.createdAt,
+    updatedAt: supervisorRoutes.updatedAt,
+    routeName: routes.name,
+    routeRegion: routes.region,
+    routeActivityType: routes.activityType,
+  }).from(supervisorRoutes)
+    .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+    .where(eq(supervisorRoutes.id, id)).limit(1);
   return result.length > 0 ? result[0] : null;
 }
 
@@ -300,7 +317,23 @@ export async function getSupervisorRoutesToday(supervisorId: number) {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   
-  return await db.select().from(supervisorRoutes)
+  return await db.select({
+    id: supervisorRoutes.id,
+    supervisorId: supervisorRoutes.supervisorId,
+    routeId: supervisorRoutes.routeId,
+    date: supervisorRoutes.date,
+    status: supervisorRoutes.status,
+    kmInitial: supervisorRoutes.kmInitial,
+    kmFinal: supervisorRoutes.kmFinal,
+    startedAt: supervisorRoutes.startedAt,
+    completedAt: supervisorRoutes.completedAt,
+    createdAt: supervisorRoutes.createdAt,
+    updatedAt: supervisorRoutes.updatedAt,
+    routeName: routes.name,
+    routeRegion: routes.region,
+    routeActivityType: routes.activityType,
+  }).from(supervisorRoutes)
+    .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
     .where(and(
       eq(supervisorRoutes.supervisorId, supervisorId),
       gte(supervisorRoutes.date, today),
@@ -601,6 +634,7 @@ type OperationalAlert = {
 /** Converte dados de rota em um estado legível e em alertas acionáveis para o Gestor. */
 export function deriveGestorOperationalState(input: {
   routeStatus?: string | null;
+  isOperationalBase?: boolean;
   hasKmInitial?: boolean;
   activeVisitArrival?: Date | null;
   latestGpsAt?: Date | null;
@@ -611,19 +645,19 @@ export function deriveGestorOperationalState(input: {
   const gpsAgeMinutes = input.latestGpsAt ? Math.max(0, Math.floor((now.getTime() - input.latestGpsAt.getTime()) / 60_000)) : null;
   const activeVisitMinutes = input.activeVisitArrival ? Math.max(0, Math.floor((now.getTime() - input.activeVisitArrival.getTime()) / 60_000)) : null;
 
-  let status: "sem_rota" | "aguardando_km" | "em_deslocamento" | "em_atendimento" | "rota_concluida" | "rota_cancelada" = "sem_rota";
+  let status: "sem_rota" | "aguardando_km" | "em_deslocamento" | "em_atendimento" | "em_base_operacional" | "rota_concluida" | "base_concluida" | "rota_cancelada" = "sem_rota";
   if (input.routeStatus === "pending") {
     status = "aguardando_km";
     alerts.push({ code: "km_pending", severity: "info", title: "KM inicial pendente", description: "A rota foi preparada, mas a viatura ainda não iniciou a operação." });
   }
   if (input.routeStatus === "in_progress") {
-    status = input.activeVisitArrival ? "em_atendimento" : "em_deslocamento";
+    status = input.isOperationalBase ? "em_base_operacional" : input.activeVisitArrival ? "em_atendimento" : "em_deslocamento";
     if (!input.hasKmInitial) alerts.push({ code: "km_pending", severity: "warning", title: "KM inicial não informado", description: "A rota está em operação sem quilometragem inicial registrada." });
     if (!input.latestGpsAt) alerts.push({ code: "gps_missing", severity: "warning", title: "GPS não recebido", description: "Ainda não há localização registrada durante esta operação." });
     if (gpsAgeMinutes !== null && gpsAgeMinutes > 5) alerts.push({ code: "gps_stale", severity: "warning", title: "GPS desatualizado", description: `A última localização foi recebida há ${gpsAgeMinutes} min.` });
     if (activeVisitMinutes !== null && activeVisitMinutes > 90) alerts.push({ code: "visit_extended", severity: "warning", title: "Atendimento prolongado", description: `O posto está em atendimento há ${activeVisitMinutes} min.` });
   }
-  if (input.routeStatus === "completed") status = "rota_concluida";
+  if (input.routeStatus === "completed") status = input.isOperationalBase ? "base_concluida" : "rota_concluida";
   if (input.routeStatus === "cancelled") status = "rota_cancelada";
 
   return { status, alerts, gpsAgeMinutes, activeVisitMinutes };
@@ -658,6 +692,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       supervisorUsername: users.username,
       routeName: routes.name,
       routeRegion: routes.region,
+      routeActivityType: routes.activityType,
       status: supervisorRoutes.status,
       kmInitial: supervisorRoutes.kmInitial,
       kmFinal: supervisorRoutes.kmFinal,
@@ -752,6 +787,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     const latestLocation = locationBySupervisor.get(route.supervisorId) ?? null;
     const state = deriveGestorOperationalState({
       routeStatus: route.status,
+      isOperationalBase: route.routeActivityType === "operational_base",
       hasKmInitial: route.kmInitial !== null,
       activeVisitArrival: activeVisit?.arrivalTime ?? null,
       latestGpsAt: latestLocation?.recordedAt ?? null,

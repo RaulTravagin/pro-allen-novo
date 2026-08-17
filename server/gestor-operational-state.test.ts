@@ -32,4 +32,11 @@ describe("deriveGestorOperationalState", () => {
     expect(result.status).toBe("em_deslocamento");
     expect(result.alerts).toContainEqual(expect.objectContaining({ code: "gps_missing" }));
   });
+
+  it("identifica atividade interna na Base Operacional sem tratá-la como deslocamento", () => {
+    const result = deriveGestorOperationalState({ routeStatus: "in_progress", isOperationalBase: true, hasKmInitial: true, latestGpsAt: now, now });
+
+    expect(result.status).toBe("em_base_operacional");
+    expect(result.alerts).not.toContainEqual(expect.objectContaining({ code: "visit_extended" }));
+  });
 });
