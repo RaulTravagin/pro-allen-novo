@@ -1,14 +1,17 @@
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "../drizzle/schema";
 import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: NodePgDatabase<typeof schema> | null = null;
+let _pool: Pool | null = null;
 
-/** Normaliza o retorno do driver MySQL para obter o identificador da linha inserida. */
+/** Normaliza retornos PostgreSQL com cláusula RETURNING para obter o identificador inserido. */
 export function getInsertedId(result: unknown) {
-  const header = Array.isArray(result) ? result[0] : result;
-  const insertId = Number((header as { insertId?: unknown } | undefined)?.insertId);
+  const row = Array.isArray(result) ? result[0] : result;
+  const insertId = Number((row as { id?: unknown; insertId?: unknown } | undefined)?.id ?? (row as { insertId?: unknown } | undefined)?.insertId);
   if (!Number.isSafeInteger(insertId) || insertId <= 0) {
     throw new Error("Não foi possível obter o identificador do registro criado");
   }
@@ -19,9 +22,12 @@ export function getInsertedId(result: unknown) {
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = process.env.DATABASE_SSL === "true"
-        ? drizzle({ connection: { uri: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } })
-        : drizzle(process.env.DATABASE_URL);
+      const requiresSsl = process.env.DATABASE_SSL === "true" || process.env.DATABASE_URL.includes("neon.tech");
+      _pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
+      });
+      _db = drizzle({ client: _pool, schema });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -80,7 +86,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -141,7 +148,7 @@ export async function provisionLocalSupervisor(input: { username: string; name: 
     isOperational: true,
     role: "user",
     lastSignedIn: new Date(),
-  });
+  }).returning({ id: users.id });
   return (await getUserById(getInsertedId(result)))!;
 }
 
@@ -267,7 +274,7 @@ export async function createGestorPost(input: { routeId: number; name: string; r
     region: input.region.trim(),
     address: input.address.trim(),
     order,
-  });
+  }).returning({ id: posts.id });
   return getPostById(getInsertedId(result));
 }
 
@@ -281,7 +288,7 @@ export async function createSupervisorRoute(supervisorId: number, routeId: numbe
     routeId,
     date,
     status: 'pending',
-  });
+  }).returning({ id: supervisorRoutes.id });
 
   return getInsertedId(result);
 }
@@ -367,7 +374,7 @@ export async function createVisitChecklist(
     status: 'pending',
     isCoverage: options.isCoverage ?? false,
     coverageReason: options.coverageReason ?? null,
-  });
+  }).returning({ id: visitChecklists.id });
 
   return getInsertedId(result);
 }
@@ -426,7 +433,7 @@ export async function createChecklistItem(visitChecklistId: number, category: st
     visitChecklistId,
     category,
     description,
-  });
+  }).returning({ id: checklistItems.id });
 
   return getInsertedId(result);
 }

@@ -373,7 +373,22 @@
 - [x] Entregar o pacote corrigido e orientar o novo deploy no Render
 
 ## Push Completo ao GitHub
-- [ ] Conferir o estado final do projeto e a exclusão de segredos antes do push
-- [ ] Autenticar o terminal com a credencial de escrita fornecida pelo usuário
-- [ ] Enviar todo o projeto, incluindo client, server, drizzle, docs e configurações do Render
-- [ ] Confirmar o commit remoto no repositório RaulTravagin/pro-allen-novo
+- [x] Conferir o estado final do projeto e a exclusão de segredos antes do push
+- [x] Autenticar o terminal com a credencial de escrita fornecida pelo usuário
+- [x] Enviar todo o projeto, incluindo client, server, drizzle, docs e configurações do Render
+- [x] Confirmar o commit remoto no repositório RaulTravagin/pro-allen-novo
+
+## Banco de Produção e Contas Iniciais
+- [ ] Confirmar a incompatibilidade entre a URL Neon PostgreSQL e o driver MySQL atual
+- [ ] Preparar ou selecionar uma estratégia de banco compatível com o projeto
+- [ ] Executar migrações e seed idempotente no banco de produção compatível
+- [ ] Verificar as contas de supervisor e entregar as credenciais iniciais
+
+## Conversão para PostgreSQL/Neon
+- [ ] Mapear o uso de MySQL no esquema, driver, migrações, queries e scripts de seed
+- [ ] Converter o esquema e o driver Drizzle para PostgreSQL/Neon
+- [ ] Gerar a migração inicial PostgreSQL e adaptar o seed idempotente
+- [ ] Validar tipos, testes, build e inicialização contra a configuração PostgreSQL
+- [ ] Fazer commit e push da conversão ao repositório GitHub
+- [ ] Executar migração e seed na URL Neon de produção acessível
+- [ ] Confirmar as contas iniciais de supervisor no banco Neon
