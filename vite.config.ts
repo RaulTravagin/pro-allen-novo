@@ -169,7 +169,9 @@ export default defineConfig({
     },
   },
   envDir: path.resolve(import.meta.dirname),
-  root: path.resolve(import.meta.dirname, "client"),
+  // Provedores externos encontram index.html na raiz do repositório.
+  // O código React continua organizado em client/src.
+  root: path.resolve(import.meta.dirname),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),

@@ -10,7 +10,7 @@ Crie uma conta em [Aiven](https://aiven.io/free-mysql-database), selecione **MyS
 
 ## 2. Enviar o código a um repositório GitHub
 
-Extraia o ZIP de deploy e envie os arquivos para um repositório privado ou público no GitHub. O arquivo `render.yaml` fica na raiz e descreve o serviço web. Não envie `.env` com senhas reais.
+Extraia o ZIP de deploy e envie os arquivos para um repositório privado ou público no GitHub. Os arquivos `render.yaml` e `index.html` ficam na raiz; o código React permanece em `client/src`. Não envie `.env` com senhas reais.
 
 ## 3. Criar o serviço no Render
 

@@ -359,3 +359,15 @@
 - [ ] Publicar frontend, backend, banco e configurações de deploy no repositório GitHub
 - [ ] Confirmar o link do repositório e os próximos passos do Render
 - [ ] Enviar a versão final ao repositório RaulTravagin/pro-allen-novo informado pelo usuário
+
+## Código-Fonte para Upload Manual
+- [x] Gerar ZIP atualizado com frontend, backend, banco, migrações e configurações de deploy
+- [x] Validar ausência de segredos, dependências e artefatos reconstruíveis no ZIP
+- [x] Entregar o arquivo ZIP atualizado para download manual
+
+## Correção de Entrada Vite para Render
+- [x] Auditar a estrutura do pacote e reproduzir a resolução de client/index.html
+- [x] Ajustar a estrutura de entrada do Vite para deploy externo independente
+- [x] Validar build e startup de produção com o novo caminho de entrada
+- [x] Gerar e validar ZIP corrigido para upload manual
+- [ ] Entregar o pacote corrigido e orientar o novo deploy no Render
