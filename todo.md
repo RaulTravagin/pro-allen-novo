@@ -328,4 +328,19 @@
 - [x] Exibir aviso claro de que os registros locais não são compartilhados em tempo real entre dispositivos
 - [x] Preparar exportação e importação manual dos dados locais para recuperação posterior
 - [x] Validar persistência, logout, integridade de dados, desktop, celular, testes, tipos e build
-- [ ] Salvar checkpoint e entregar a versão publicada
+- [x] Salvar checkpoint e entregar a versão publicada: 37ad81ff
+
+## Pacote Final para Netlify Drop
+- [x] Executar a compilação final com o modo local de contingência
+- [x] Incluir redirecionamento de SPA para a rota /local no Netlify
+- [x] Gerar o ZIP de dist/public sem pastas envolventes
+- [x] Validar index.html na raiz e assets incluídos no pacote
+- [x] Entregar o ZIP final para envio pelo Netlify Drop
+
+## Correção do Pacote Estático Local
+- [x] Identificar a inicialização que ainda chama autenticação e APIs online no build estático
+- [x] Forçar a rota principal do build estático para o modo local sem consultas tRPC
+- [x] Garantir que login, rotas e checklists locais usem somente mocks e LocalStorage
+- [x] Validar que não há requisições a /api/trpc após abrir, autenticar e preencher checklist local
+- [x] Gerar e validar o novo ZIP de dist/public com index.html na raiz
+- [ ] Entregar o ZIP corrigido para Netlify Drop
