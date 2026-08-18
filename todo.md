@@ -385,10 +385,21 @@
 - [ ] Verificar as contas de supervisor e entregar as credenciais iniciais
 
 ## Conversão para PostgreSQL/Neon
-- [ ] Mapear o uso de MySQL no esquema, driver, migrações, queries e scripts de seed
-- [ ] Converter o esquema e o driver Drizzle para PostgreSQL/Neon
-- [ ] Gerar a migração inicial PostgreSQL e adaptar o seed idempotente
-- [ ] Validar tipos, testes, build e inicialização contra a configuração PostgreSQL
-- [ ] Fazer commit e push da conversão ao repositório GitHub
+- [x] Mapear o uso de MySQL no esquema, driver, migrações, queries e scripts de seed
+- [x] Converter o esquema e o driver Drizzle para PostgreSQL/Neon
+- [x] Gerar a migração inicial PostgreSQL e adaptar o seed idempotente
+- [x] Validar tipos e build contra a configuração PostgreSQL
+- [x] Fazer commit e push da conversão ao repositório GitHub: e6f5589
 - [ ] Executar migração e seed na URL Neon de produção acessível
 - [ ] Confirmar as contas iniciais de supervisor no banco Neon
+
+## Verificação do Deploy Render
+- [ ] Verificar a disponibilidade pública, a saúde e os fluxos locais do serviço Render
+- [ ] Confirmar indícios de migração e seed no banco Neon sem expor a URL de conexão
+- [ ] Informar logins iniciais de supervisores e senha do Gestor
+
+## Correção do Mapa Operacional no Render
+- [ ] Identificar se o mapa atual depende de Google Maps, Leaflet/OpenStreetMap ou proxy específico
+- [ ] Corrigir a integração ou configurar a variável de ambiente necessária ao mapa externo
+- [ ] Validar a renderização do mapa, marcadores e estado sem coordenadas no deploy Render
+- [ ] Fazer commit e push da correção ao GitHub e orientar a atualização do Render

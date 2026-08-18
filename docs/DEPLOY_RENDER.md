@@ -21,6 +21,7 @@ No [Render Dashboard](https://dashboard.render.com/), escolha **New → Blueprin
 | `GESTOR_ACCESS_PASSWORD` | Senha exclusiva do Gestor |
 | `INITIAL_SUPERVISOR_PASSWORD` | Senha inicial de Paulo, Rodrigo e Aparecido |
 | `RAULTRAVAGIN_INITIAL_PASSWORD` | Senha inicial de `raultravagin` |
+| `VITE_GOOGLE_MAPS_API_KEY` | Chave restrita para o Mapa Operacional |
 
 O Render gera `JWT_SECRET` automaticamente. Na primeira inicialização, o comando `start:render` executa a migração PostgreSQL em `drizzle-pg/`, verifica as quatro rotas, a Base Operacional, os postos e as contas iniciais. Esse seed é idempotente e não duplica os dados em reinicializações.
 
@@ -28,4 +29,4 @@ O Render gera `JWT_SECRET` automaticamente. Na primeira inicialização, o coman
 
 Após o deploy, acesse a URL `https://<nome-do-servico>.onrender.com`. Os supervisores e o Gestor usarão o mesmo banco Neon, permitindo a atualização compartilhada de rotas, checklists, KM, escala e relatórios. O login OAuth Manus permanece desativado no deploy externo; os logins locais e o acesso por senha do Gestor continuam disponíveis.
 
-O mapa operacional requer uma chave própria do Google Maps caso seja ativado fora da infraestrutura atual.
+O Mapa Operacional usa a **Maps JavaScript API do Google**, não Leaflet/OpenStreetMap. Para habilitá-lo, crie no Google Cloud uma chave com **Maps JavaScript API**, **Geocoding API** e **Places API** ativadas. No Render, informe-a como `VITE_GOOGLE_MAPS_API_KEY` antes do build e restrinja a chave ao referenciador `https://pro-allen-oficial.onrender.com/*` (ou ao domínio final usado). A chave é carregada pelo navegador por exigência do Google Maps; a restrição de domínio é obrigatória.

@@ -24,3 +24,5 @@ services:
         sync: false
       - key: RAULTRAVAGIN_INITIAL_PASSWORD
         sync: false
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false
