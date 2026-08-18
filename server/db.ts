@@ -19,7 +19,9 @@ export function getInsertedId(result: unknown) {
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = process.env.DATABASE_SSL === "true"
+        ? drizzle({ connection: { uri: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } })
+        : drizzle(process.env.DATABASE_URL);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

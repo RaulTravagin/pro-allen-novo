@@ -343,4 +343,12 @@
 - [x] Garantir que login, rotas e checklists locais usem somente mocks e LocalStorage
 - [x] Validar que não há requisições a /api/trpc após abrir, autenticar e preencher checklist local
 - [x] Gerar e validar o novo ZIP de dist/public com index.html na raiz
-- [ ] Entregar o ZIP corrigido para Netlify Drop
+- [x] Entregar o ZIP corrigido para Netlify Drop
+
+## Deploy Independente no Render
+- [x] Verificar a disponibilidade atual de recursos gratuitos do Render e o fluxo de banco PostgreSQL
+- [x] Preparar configurações de serviço, build, start, variáveis e health check para o Render
+- [x] Preparar a inicialização de banco MySQL compatível fora do Manus, evitando uma migração arriscada para PostgreSQL
+- [x] Elaborar instruções objetivas de criação de conta, banco, serviço web e variáveis no Render
+- [x] Gerar e validar um pacote ZIP de deploy independente
+- [ ] Entregar o pacote e informar os passos que dependem da conta do usuário no Render
