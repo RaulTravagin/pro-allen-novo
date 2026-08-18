@@ -61,8 +61,14 @@ export default function Login() {
         <div className="mt-8 text-center">
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">CT3 Chults Travagin</p>
           <a
+            href="/local"
+            className="mt-3 inline-block text-[11px] font-semibold text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:text-zinc-100 focus-visible:outline-none"
+          >
+            Usar modo local de contingência
+          </a>
+          <a
             href="/gestor/acesso"
-            className="mt-2 inline-block text-[11px] font-semibold text-[#f6c915] transition-colors hover:text-yellow-300 focus-visible:text-yellow-200 focus-visible:outline-none"
+            className="mt-2 block text-[11px] font-semibold text-[#f6c915] transition-colors hover:text-yellow-300 focus-visible:text-yellow-200 focus-visible:outline-none"
           >
             Acesso do Gestor
           </a>

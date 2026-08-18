@@ -307,4 +307,25 @@
 - [x] Orientar claramente o supervisor sobre encerrar a Base antes de iniciar a nova rota
 - [x] Exibir a sequência Base → rota de campo no Painel do Gestor e nos relatórios
 - [x] Validar transição, KM, histórico, autorização, desktop, celular, testes, tipos e build
+- [x] Salvar checkpoint e entregar a versão publicada: 86838597
+
+## Entrega do Código-Fonte
+- [x] Gerar um ZIP portátil com o código completo, excluindo segredos, dependências e artefatos reconstruíveis
+- [x] Validar o conteúdo e a integridade do arquivo compactado
+- [x] Entregar o arquivo ZIP para download
+
+## Pacote Estático Compilado
+- [x] Executar a compilação de produção completa pelo script do projeto
+- [x] Gerar um ZIP somente do conteúdo estático compilado, com index.html na raiz
+- [x] Validar a integridade e a estrutura do pacote estático
+- [x] Documentar as dependências de servidor, banco, autenticação e mapas que não podem operar apenas com arquivos estáticos
+- [x] Entregar o ZIP estático para download
+
+## Modo Local de Contingência
+- [x] Mapear login, rotas e checklists que podem operar somente no dispositivo
+- [x] Criar sessões locais e armazenamento de checklists no LocalStorage sem expor senhas em texto puro
+- [x] Permitir que o supervisor use login, rota e checklist em modo local quando o servidor não estiver disponível
+- [x] Exibir aviso claro de que os registros locais não são compartilhados em tempo real entre dispositivos
+- [x] Preparar exportação e importação manual dos dados locais para recuperação posterior
+- [x] Validar persistência, logout, integridade de dados, desktop, celular, testes, tipos e build
 - [ ] Salvar checkpoint e entregar a versão publicada

@@ -18,6 +18,7 @@ const MetricsDashboard = lazy(() => import("./pages/MetricsDashboard"));
 const ReportExport = lazy(() => import("./pages/ReportExport"));
 const GestorLogin = lazy(() => import("./pages/GestorLogin"));
 const GestorDashboard = lazy(() => import("./pages/GestorDashboard"));
+const LocalContingency = lazy(() => import("./pages/LocalContingency"));
 
 function LoadingScreen() {
   return (
@@ -31,6 +32,10 @@ function Router() {
   const [location] = useLocation();
   const { user, loading, isAuthenticated } = useAuth();
   const gestorRouteMode = getGestorRouteMode(location);
+
+  if (location === "/local") {
+    return <Suspense fallback={<LoadingScreen />}><LocalContingency /></Suspense>;
+  }
 
   if (gestorRouteMode === "login") {
     return (
