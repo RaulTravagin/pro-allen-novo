@@ -351,4 +351,10 @@
 - [x] Preparar a inicialização de banco MySQL compatível fora do Manus, evitando uma migração arriscada para PostgreSQL
 - [x] Elaborar instruções objetivas de criação de conta, banco, serviço web e variáveis no Render
 - [x] Gerar e validar um pacote ZIP de deploy independente
-- [ ] Entregar o pacote e informar os passos que dependem da conta do usuário no Render
+- [x] Entregar o pacote e informar os passos que dependem da conta do usuário no Render
+
+## Publicação no GitHub
+- [ ] Verificar a conexão GitHub e confirmar o repositório de destino
+- [ ] Validar código, migrações, render.yaml e documentação antes do envio
+- [ ] Publicar frontend, backend, banco e configurações de deploy no repositório GitHub
+- [ ] Confirmar o link do repositório e os próximos passos do Render
