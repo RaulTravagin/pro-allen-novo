@@ -358,3 +358,4 @@
 - [ ] Validar código, migrações, render.yaml e documentação antes do envio
 - [ ] Publicar frontend, backend, banco e configurações de deploy no repositório GitHub
 - [ ] Confirmar o link do repositório e os próximos passos do Render
+- [ ] Enviar a versão final ao repositório RaulTravagin/pro-allen-novo informado pelo usuário
