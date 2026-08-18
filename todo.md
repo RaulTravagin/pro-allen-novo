@@ -399,7 +399,14 @@
 - [ ] Informar logins iniciais de supervisores e senha do Gestor
 
 ## Correção do Mapa Operacional no Render
-- [ ] Identificar se o mapa atual depende de Google Maps, Leaflet/OpenStreetMap ou proxy específico
-- [ ] Corrigir a integração ou configurar a variável de ambiente necessária ao mapa externo
+- [x] Identificar que o mapa atual usa Google Maps por meio de proxy Manus, não Leaflet/OpenStreetMap
+- [x] Corrigir a integração para carregamento direto do Google Maps com variável de build no Render
 - [ ] Validar a renderização do mapa, marcadores e estado sem coordenadas no deploy Render
-- [ ] Fazer commit e push da correção ao GitHub e orientar a atualização do Render
+- [x] Fazer commit e push da correção ao GitHub: 8e74435
+
+## Migração do Mapa para Leaflet/OpenStreetMap
+- [ ] Substituir o componente Google Maps por Leaflet com tiles OpenStreetMap
+- [ ] Preservar marcadores de posto, GPS de supervisor, ajuste de enquadramento e traçado de rota
+- [ ] Remover variáveis e dependências do Google Maps do Render e da documentação
+- [ ] Validar mapa desktop e celular, estados sem coordenadas, testes, tipos e build
+- [ ] Fazer commit e push da migração ao GitHub e orientar o redeploy no Render

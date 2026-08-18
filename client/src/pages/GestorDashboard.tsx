@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { Activity, AlertTriangle, Building2, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Plus, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 const REFRESH_INTERVAL = 15_000;
@@ -259,58 +259,17 @@ function ScheduleManagementPanel({ schedule, loading, dateValue, editing, drafts
 
 function OperationalMapPanel({ routes, supervisors, loading }: { routes: any[]; supervisors: any[]; loading: boolean }) {
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
-  const [mapReady, setMapReady] = useState(false);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const overlaysRef = useRef<any[]>([]);
   const selectedRoute = routes.find((route) => String(route.id) === selectedRouteId) ?? routes[0];
   const routePosts = selectedRoute?.posts ?? [];
   const mappedPosts = routePosts.map((post: any) => ({ ...post, coordinate: mapCoordinate(post.latitude, post.longitude) })).filter((post: any) => post.coordinate);
   const supervisorMarkers = supervisors.map((supervisor) => ({ supervisor, coordinate: mapCoordinate(supervisor.latestLocation?.latitude, supervisor.latestLocation?.longitude) })).filter((entry) => entry.coordinate);
-  const mapDataSignature = `${selectedRoute?.id ?? ""}:${mappedPosts.map((post: any) => `${post.id}-${post.coordinate.lat}-${post.coordinate.lng}`).join("|")}:${supervisorMarkers.map(({ supervisor, coordinate }) => `${supervisor.supervisorId}-${coordinate?.lat}-${coordinate?.lng}`).join("|")}`;
 
   useEffect(() => {
     if (!selectedRouteId && routes[0]) setSelectedRouteId(String(routes[0].id));
   }, [routes, selectedRouteId]);
 
-  const onMapReady = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-    setMapReady(true);
-  }, []);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map || !window.google?.maps) return;
-    overlaysRef.current.forEach((overlay) => {
-      if (typeof overlay.setMap === "function") overlay.setMap(null);
-      else overlay.map = null;
-    });
-    overlaysRef.current = [];
-
-    const bounds = new window.google.maps.LatLngBounds();
-    const addMarker = (position: google.maps.LatLngLiteral, title: string, tone: "post" | "supervisor") => {
-      const marker = new window.google.maps.Marker({
-        map,
-        position,
-        title,
-        label: tone === "supervisor" ? { text: "GPS", color: "#ffffff", fontWeight: "700", fontSize: "10px" } : { text: "P", color: "#ffffff", fontWeight: "700" },
-        icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: tone === "supervisor" ? 17 : 14, fillColor: tone === "supervisor" ? "#059669" : "#1d4ed8", fillOpacity: 1, strokeColor: "#ffffff", strokeOpacity: 1, strokeWeight: 2 },
-      });
-      overlaysRef.current.push(marker);
-      bounds.extend(position);
-    };
-
-    mappedPosts.forEach((post: any) => addMarker(post.coordinate, `${post.name} · ${post.address}`, "post"));
-    supervisorMarkers.forEach(({ supervisor, coordinate }) => addMarker(coordinate!, `${supervisor.supervisorName} · última posição GPS`, "supervisor"));
-    if (mappedPosts.length > 1) {
-      const routeTrace = new window.google.maps.Polyline({ map, path: mappedPosts.map((post: any) => post.coordinate), geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.85, strokeWeight: 4 });
-      overlaysRef.current.push(routeTrace);
-    }
-    if (!bounds.isEmpty()) map.fitBounds(bounds, 56);
-    else map.setCenter({ lat: -23.185, lng: -46.884 });
-  }, [mapReady, mapDataSignature]);
-
   const pendingPosts = routePosts.length - mappedPosts.length;
-  return <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><MapPin className="h-4 w-4" /> Mapa operacional</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Rota, postos e posição de campo</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">O mapa mostra os postos com coordenadas confirmadas e a última posição GPS recebida dos supervisores. Nenhuma localização é estimada para postos sem endereço completo.</p></div><label className="grid gap-1 text-xs font-semibold text-slate-600">Rota exibida<select aria-label="Rota exibida no mapa" value={selectedRoute ? String(selectedRoute.id) : ""} onChange={(event) => setSelectedRouteId(event.target.value)} disabled={loading || !routes.length} className="h-10 min-w-56 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-cyan-600 focus:ring-2">{routes.map((route) => <option key={route.id} value={route.id}>{route.name} · {route.region}</option>)}</select></label></div>{loading ? <LoadingRows /> : !routes.length ? <EmptyState title="Nenhuma rota cadastrada" description="Cadastre uma rota e seus postos para preparar a visualização operacional." /> : <div className="grid gap-0 lg:grid-cols-[1fr_320px]"><MapView className="h-[440px] min-h-[360px]" initialCenter={{ lat: -23.185, lng: -46.884 }} initialZoom={10} onMapReady={onMapReady} /><aside className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0"><p className="text-sm font-semibold text-slate-950">Situação da localização</p><div className="mt-4 space-y-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-950">{mappedPosts.length}/{routePosts.length}</p><p className="mt-1 text-xs leading-5 text-blue-800">postos da rota com coordenadas confirmadas</p></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-950">{pendingPosts}</p><p className="mt-1 text-xs leading-5 text-amber-800">posto(s) aguardando endereço completo para localização</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-2xl font-bold text-emerald-950">{supervisorMarkers.length}</p><p className="mt-1 text-xs leading-5 text-emerald-800">supervisor(es) com última posição GPS no mapa</p></div></div><div className="mt-5 rounded-xl border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600"><p className="font-semibold text-slate-900">Legenda</p><p className="mt-2"><span className="font-semibold text-blue-700">P azul:</span> posto geocodificado.</p><p><span className="font-semibold text-emerald-700">GPS verde:</span> última posição recebida.</p><p className="mt-3">O traçado da rota aparecerá automaticamente quando houver pelo menos dois postos com coordenadas confirmadas.</p><p className="mt-3 border-t border-slate-200 pt-3">O Render exige a variável de build <code>VITE_GOOGLE_MAPS_API_KEY</code> com uma chave do Google Maps restrita ao domínio público.</p></div></aside></div>}</section>;
+  return <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><MapPin className="h-4 w-4" /> Mapa operacional</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Rota, postos e posição de campo</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">O mapa usa OpenStreetMap, mostra postos com coordenadas confirmadas e a última posição GPS recebida dos supervisores. Nenhuma localização é estimada para postos sem endereço completo.</p></div><label className="grid gap-1 text-xs font-semibold text-slate-600">Rota exibida<select aria-label="Rota exibida no mapa" value={selectedRoute ? String(selectedRoute.id) : ""} onChange={(event) => setSelectedRouteId(event.target.value)} disabled={loading || !routes.length} className="h-10 min-w-56 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-cyan-600 focus:ring-2">{routes.map((route) => <option key={route.id} value={route.id}>{route.name} · {route.region}</option>)}</select></label></div>{loading ? <LoadingRows /> : !routes.length ? <EmptyState title="Nenhuma rota cadastrada" description="Cadastre uma rota e seus postos para preparar a visualização operacional." /> : <div className="grid gap-0 lg:grid-cols-[1fr_320px]"><MapView className="h-[440px] min-h-[360px]" initialCenter={{ lat: -23.185, lng: -46.884 }} initialZoom={10} posts={mappedPosts.map((post: any) => ({ id: post.id, title: `${post.name} · ${post.address || post.region}`, position: post.coordinate }))} supervisors={supervisorMarkers.map(({ supervisor, coordinate }) => ({ id: supervisor.supervisorId, title: `${supervisor.supervisorName} · última posição GPS`, position: coordinate! }))} routePath={mappedPosts.map((post: any) => post.coordinate)} /><aside className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0"><p className="text-sm font-semibold text-slate-950">Situação da localização</p><div className="mt-4 space-y-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-950">{mappedPosts.length}/{routePosts.length}</p><p className="mt-1 text-xs leading-5 text-blue-800">postos da rota com coordenadas confirmadas</p></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-950">{pendingPosts}</p><p className="mt-1 text-xs leading-5 text-amber-800">posto(s) aguardando endereço completo para localização</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-2xl font-bold text-emerald-950">{supervisorMarkers.length}</p><p className="mt-1 text-xs leading-5 text-emerald-800">supervisor(es) com última posição GPS no mapa</p></div></div><div className="mt-5 rounded-xl border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600"><p className="font-semibold text-slate-900">Legenda</p><p className="mt-2"><span className="font-semibold text-blue-700">P azul:</span> posto geocodificado.</p><p><span className="font-semibold text-emerald-700">GPS verde:</span> última posição recebida.</p><p className="mt-3">O traçado da rota aparecerá automaticamente quando houver pelo menos dois postos com coordenadas confirmadas.</p><p className="mt-3 border-t border-slate-200 pt-3">Base cartográfica fornecida pelo OpenStreetMap, sem chave de API.</p></div></aside></div>}</section>;
 }
 
 function PostsManagementPanel({ management, loading, form, showingForm, saving, error, onOpenForm, onCancelForm, onRouteChange, onFormChange, onSubmit }: { management: any; loading: boolean; form: { routeId: string; name: string; region: string; address: string }; showingForm: boolean; saving: boolean; error?: string; onOpenForm: () => void; onCancelForm: () => void; onRouteChange: (routeId: string) => void; onFormChange: (changes: Partial<{ routeId: string; name: string; region: string; address: string }>) => void; onSubmit: () => void }) {
