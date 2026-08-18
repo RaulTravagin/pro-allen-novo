@@ -354,11 +354,11 @@
 - [x] Entregar o pacote e informar os passos que dependem da conta do usuário no Render
 
 ## Publicação no GitHub
-- [ ] Verificar a conexão GitHub e confirmar o repositório de destino
-- [ ] Validar código, migrações, render.yaml e documentação antes do envio
-- [ ] Publicar frontend, backend, banco e configurações de deploy no repositório GitHub
-- [ ] Confirmar o link do repositório e os próximos passos do Render
-- [ ] Enviar a versão final ao repositório RaulTravagin/pro-allen-novo informado pelo usuário
+- [x] Verificar a conexão GitHub e confirmar o repositório de destino
+- [x] Validar código, migrações, render.yaml e documentação antes do envio
+- [x] Tentar a publicação no repositório GitHub e identificar o bloqueio de permissão de escrita
+- [x] Informar a limitação de permissão e os próximos passos no Render
+- [x] Substituir o envio direto pelo pacote de upload manual solicitado pelo usuário
 
 ## Código-Fonte para Upload Manual
 - [x] Gerar ZIP atualizado com frontend, backend, banco, migrações e configurações de deploy
@@ -370,4 +370,10 @@
 - [x] Ajustar a estrutura de entrada do Vite para deploy externo independente
 - [x] Validar build e startup de produção com o novo caminho de entrada
 - [x] Gerar e validar ZIP corrigido para upload manual
-- [ ] Entregar o pacote corrigido e orientar o novo deploy no Render
+- [x] Entregar o pacote corrigido e orientar o novo deploy no Render
+
+## Push Completo ao GitHub
+- [ ] Conferir o estado final do projeto e a exclusão de segredos antes do push
+- [ ] Autenticar o terminal com a credencial de escrita fornecida pelo usuário
+- [ ] Enviar todo o projeto, incluindo client, server, drizzle, docs e configurações do Render
+- [ ] Confirmar o commit remoto no repositório RaulTravagin/pro-allen-novo
