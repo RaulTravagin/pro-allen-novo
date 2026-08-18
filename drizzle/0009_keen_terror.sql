@@ -1,0 +1,1 @@
+ALTER TABLE `routes` ADD `activityType` enum('field_route','operational_base') DEFAULT 'field_route' NOT NULL;

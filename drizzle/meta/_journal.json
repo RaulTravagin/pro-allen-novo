@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1784819929057,
+      "tag": "0000_powerful_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1784820240372,
+      "tag": "0001_fixed_swordsman",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784904753440,
+      "tag": "0002_common_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1785759790515,
+      "tag": "0003_thick_ogun",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1785943093468,
+      "tag": "0004_illegal_cammi",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786548923117,
+      "tag": "0005_living_maginty",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1786552056308,
+      "tag": "0006_mixed_nick_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1786555940786,
+      "tag": "0007_military_ken_ellis",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1786762034484,
+      "tag": "0008_abnormal_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1786985993513,
+      "tag": "0009_keen_terror",
+      "breakpoints": true
+    }
+  ]
+}

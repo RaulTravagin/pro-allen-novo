@@ -1,0 +1,4 @@
+  arrivalLatitude: decimal("arrivalLatitude", { precision: 10, scale: 8 }),
+  arrivalLongitude: decimal("arrivalLongitude", { precision: 11, scale: 8 }),
+  departureLatitude: decimal("departureLatitude", { precision: 10, scale: 8 }),
+  departureLongitude: decimal("departureLongitude", { precision: 11, scale: 8 }),

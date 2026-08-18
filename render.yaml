@@ -1,0 +1,26 @@
+services:
+  - type: web
+    runtime: node
+    name: pro-allen-online
+    region: oregon
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start:render
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MANUS_OAUTH_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GESTOR_ACCESS_PASSWORD
+        sync: false
+      - key: INITIAL_SUPERVISOR_PASSWORD
+        sync: false
+      - key: RAULTRAVAGIN_INITIAL_PASSWORD
+        sync: false
