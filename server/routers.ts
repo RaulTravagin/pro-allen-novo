@@ -202,6 +202,54 @@ export const appRouter = router({
     }),
   }),
 
+  fleet: router({
+    listVehicles: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      return db.listActiveVehicles();
+    }),
+
+    saveVehicle: protectedProcedure
+      .input(z.object({ plate: z.string().min(7).max(12), model: z.string().min(2).max(120) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        try {
+          return await db.upsertVehicle(input);
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar a viatura" });
+        }
+      }),
+
+    getFuelSummary: protectedProcedure
+      .input(z.object({ vehicleId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        return db.getVehicleFuelSummary(input.vehicleId);
+      }),
+
+    registerFuel: protectedProcedure
+      .input(z.object({
+        supervisorRouteId: z.number().int().positive(),
+        odometerKm: z.number().finite().nonnegative(),
+        amount: z.number().finite().positive(),
+        liters: z.number().finite().positive(),
+        fuelType: z.enum(["gasoline", "ethanol", "diesel"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND" });
+        if (route.status !== "in_progress" || !route.vehicleId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Inicie uma rota com viatura antes de registrar o abastecimento" });
+        }
+        const kmInitial = route.kmInitial == null ? null : Number(route.kmInitial);
+        if (kmInitial !== null && input.odometerKm < kmInitial) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O KM de abastecimento não pode ser menor que o KM inicial" });
+        }
+        const { supervisorRouteId: _supervisorRouteId, ...fuelInput } = input;
+        return db.createFuelLog({ vehicleId: route.vehicleId, supervisorRouteId: route.id, supervisorId: ctx.user.id, ...fuelInput });
+      }),
+  }),
+
   // Supervisor Routes
   supervisorRoutes: router({
     create: protectedProcedure
@@ -240,7 +288,7 @@ export const appRouter = router({
     }),
     
     updateKm: protectedProcedure
-      .input(z.object({ id: z.number(), kmInitial: z.number().optional(), kmFinal: z.number().optional() }))
+      .input(z.object({ id: z.number(), vehicleId: z.number().int().positive().optional(), kmInitial: z.number().optional(), kmFinal: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         const route = await db.getSupervisorRouteById(input.id);
@@ -250,7 +298,15 @@ export const appRouter = router({
           if (!Number.isFinite(input.kmInitial) || input.kmInitial < 0 || route.status !== 'pending') {
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'Informe um KM inicial válido para uma rota pendente' });
           }
+          if (!input.vehicleId) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selecione a viatura antes de registrar o KM inicial' });
+          }
+          const vehicle = await db.getVehicleById(input.vehicleId);
+          if (!vehicle?.isActive) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Viatura inválida ou indisponível' });
+          }
           updates.kmInitial = input.kmInitial;
+          updates.vehicleId = input.vehicleId;
           updates.status = 'in_progress';
           updates.startedAt = new Date();
         }

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route } from "lucide-react";
+import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -26,6 +26,15 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [kmInitial, setKmInitial] = useState<string>("");
   const [kmFinal, setKmFinal] = useState<string>("");
   const [showKmFinal, setShowKmFinal] = useState(false);
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [showNewVehicle, setShowNewVehicle] = useState(false);
+  const [vehiclePlate, setVehiclePlate] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [showFuelForm, setShowFuelForm] = useState(false);
+  const [fuelOdometer, setFuelOdometer] = useState("");
+  const [fuelAmount, setFuelAmount] = useState("");
+  const [fuelLiters, setFuelLiters] = useState("");
+  const [fuelType, setFuelType] = useState<"gasoline" | "ethanol" | "diesel">("gasoline");
   const [gpsError, setGpsError] = useState<string>("");
   const [coveragePostId, setCoveragePostId] = useState("");
   const [coverageReason, setCoverageReason] = useState("");
@@ -33,12 +42,22 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
   const { data: checklists, isLoading: checklistsLoading } = trpc.checklists.getByRoute.useQuery({ supervisorRouteId });
+  const { data: vehicles } = trpc.fleet.listVehicles.useQuery();
+  const effectiveVehicleId = Number(route?.vehicleId ?? selectedVehicleId);
+  const { data: fuelSummary } = trpc.fleet.getFuelSummary.useQuery(
+    { vehicleId: effectiveVehicleId },
+    { enabled: Number.isSafeInteger(effectiveVehicleId) && effectiveVehicleId > 0 },
+  );
   const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
   const isBaseOperational = route?.routeActivityType === "operational_base";
 
   useEffect(() => {
     if (route?.status === 'completed') setShowKmFinal(false);
   }, [route?.status]);
+
+  useEffect(() => {
+    if (route?.vehicleId) setSelectedVehicleId(String(route.vehicleId));
+  }, [route?.vehicleId]);
 
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: route?.routeId || 0 },
@@ -51,6 +70,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
+  const saveVehicleMutation = trpc.fleet.saveVehicle.useMutation();
+  const registerFuelMutation = trpc.fleet.registerFuel.useMutation();
   const recordLocationMutation = trpc.locations.record.useMutation();
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
@@ -156,14 +177,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   const handleStartRoute = async () => {
     const initialKm = Number(kmInitial);
+    const vehicleId = Number(selectedVehicleId);
     if (!Number.isFinite(initialKm) || initialKm < 0) {
       toast.error("Por favor, informe o KM inicial");
+      return;
+    }
+    if (!Number.isSafeInteger(vehicleId) || vehicleId <= 0) {
+      toast.error("Selecione a viatura antes de registrar o KM inicial");
       return;
     }
     
     try {
       await updateKmMutation.mutateAsync({
         id: supervisorRouteId,
+        vehicleId,
         kmInitial: initialKm,
       });
       toast.success("Rota iniciada com sucesso!");
@@ -172,6 +199,48 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       console.error("Error starting route:", error);
     }
   };
+
+  const handleSaveVehicle = async () => {
+    if (vehiclePlate.trim().length < 7 || vehicleModel.trim().length < 2) {
+      toast.error("Informe placa e modelo da viatura");
+      return;
+    }
+    try {
+      const vehicle = await saveVehicleMutation.mutateAsync({ plate: vehiclePlate, model: vehicleModel });
+      setSelectedVehicleId(String(vehicle.id));
+      setVehiclePlate("");
+      setVehicleModel("");
+      setShowNewVehicle(false);
+      await utils.fleet.listVehicles.invalidate();
+      toast.success("Viatura cadastrada e selecionada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível cadastrar a viatura");
+    }
+  };
+
+  const handleRegisterFuel = async () => {
+    const odometerKm = Number(fuelOdometer);
+    const amount = Number(fuelAmount.replace(",", "."));
+    const liters = Number(fuelLiters.replace(",", "."));
+    if (![odometerKm, amount, liters].every(Number.isFinite) || odometerKm < 0 || amount <= 0 || liters <= 0) {
+      toast.error("Informe KM, valor e litros válidos para o abastecimento");
+      return;
+    }
+    try {
+      await registerFuelMutation.mutateAsync({ supervisorRouteId, odometerKm, amount, liters, fuelType });
+      setFuelOdometer("");
+      setFuelAmount("");
+      setFuelLiters("");
+      setShowFuelForm(false);
+      if (effectiveVehicleId) await utils.fleet.getFuelSummary.invalidate({ vehicleId: effectiveVehicleId });
+      toast.success("Abastecimento registrado com sucesso");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível registrar o abastecimento");
+    }
+  };
+
+  const formatCurrency = (value: number | null | undefined) => value == null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const formatNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}${suffix}`;
 
   const handleEndRoute = async () => {
     const finalKm = Number(kmFinal);
@@ -266,19 +335,44 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         )}
 
         <section className="mb-8" aria-labelledby="vehicle-control-title">
-          <Card className="border-blue-200 bg-white shadow-sm">
+          <Card className="border-amber-200 bg-white shadow-sm">
             <CardHeader>
               <CardTitle id="vehicle-control-title" className="flex items-center gap-2">
-                <Fuel className="h-5 w-5 text-blue-600" />
+                <CarFront className="h-5 w-5 text-amber-600" />
                 Controle da viatura
               </CardTitle>
               <CardDescription>
-                Registre aqui a quilometragem da viatura. Esta informação é independente dos postos visitados.
+                Selecione a viatura, registre retirada, abastecimentos e devolução. Tudo fica associado à placa selecionada.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-6 md:grid-cols-2">
+            <CardContent className="space-y-6">
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">1. Seleção de viatura</p>
+                    {route.vehicleId ? (
+                      <p className="mt-1 text-lg font-bold text-slate-950">{route.vehiclePlate} <span className="font-medium text-slate-600">· {route.vehicleModel}</span></p>
+                    ) : <p className="mt-1 text-sm text-slate-700">A seleção da placa é obrigatória antes do KM inicial.</p>}
+                  </div>
+                  {!route.vehicleId && <Button type="button" variant="outline" onClick={() => setShowNewVehicle((value) => !value)} className="border-amber-300 bg-white"><Plus className="mr-2 h-4 w-4" />Nova viatura</Button>}
+                </div>
+                {!route.vehicleId && <div className="mt-4 space-y-2">
+                  <Label htmlFor="vehicle-select">Placa / modelo</Label>
+                  <select id="vehicle-select" value={selectedVehicleId} onChange={(event) => setSelectedVehicleId(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring">
+                    <option value="">Selecione a viatura</option>
+                    {(vehicles ?? []).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}
+                  </select>
+                </div>}
+                {!route.vehicleId && showNewVehicle && <div className="mt-4 grid gap-3 rounded-lg border border-amber-200 bg-white p-3 md:grid-cols-[1fr_1.4fr_auto] md:items-end">
+                  <div className="space-y-2"><Label htmlFor="vehicle-plate">Placa</Label><Input id="vehicle-plate" value={vehiclePlate} onChange={(event) => setVehiclePlate(event.target.value.toUpperCase())} placeholder="Ex.: ABC1D23" /></div>
+                  <div className="space-y-2"><Label htmlFor="vehicle-model">Modelo</Label><Input id="vehicle-model" value={vehicleModel} onChange={(event) => setVehicleModel(event.target.value)} placeholder="Ex.: Fiat Strada" /></div>
+                  <Button type="button" onClick={handleSaveVehicle} disabled={saveVehicleMutation.isPending} className="bg-amber-600 hover:bg-amber-700">{saveVehicleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cadastrar"}</Button>
+                </div>}
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">KM inicial</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">2. KM inicial</p>
                 {route.kmInitial == null ? (
                   <div className="mt-3 space-y-3">
                     <Label htmlFor="kmInitial">Leitura ao retirar a viatura</Label>
@@ -292,7 +386,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     />
                     <Button
                       onClick={handleStartRoute}
-                      disabled={!kmInitial || updateKmMutation.isPending}
+                      disabled={!kmInitial || !selectedVehicleId || updateKmMutation.isPending}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                     >
                       {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Registrar KM inicial"}
@@ -304,7 +398,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">KM final</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">4. KM final</p>
                 {route.kmFinal != null ? (
                   <div className="mt-3 space-y-1">
                     <p className="text-3xl font-bold text-slate-900">{Number(route.kmFinal).toLocaleString("pt-BR")} km</p>
@@ -334,6 +428,27 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 ) : (
                   <p className="mt-3 text-sm text-slate-600">Disponível depois do registro do KM inicial.</p>
                 )}
+              </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">3. Abastecimento</p><p className="mt-1 text-sm text-emerald-950">Registre durante a operação para acompanhar consumo e custo da viatura.</p></div>
+                  {route.status === "in_progress" && <Button type="button" onClick={() => setShowFuelForm((value) => !value)} className="bg-emerald-700 hover:bg-emerald-800"><Fuel className="mr-2 h-4 w-4" />Registrar abastecimento</Button>}
+                </div>
+                {showFuelForm && <div className="mt-4 grid gap-3 rounded-lg border border-emerald-200 bg-white p-3 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2"><Label htmlFor="fuel-km">KM no abastecimento</Label><Input id="fuel-km" type="number" inputMode="decimal" value={fuelOdometer} onChange={(event) => setFuelOdometer(event.target.value)} placeholder="Ex.: 15120" /></div>
+                  <div className="space-y-2"><Label htmlFor="fuel-amount">Valor pago (R$)</Label><Input id="fuel-amount" inputMode="decimal" value={fuelAmount} onChange={(event) => setFuelAmount(event.target.value)} placeholder="Ex.: 150,00" /></div>
+                  <div className="space-y-2"><Label htmlFor="fuel-liters">Litros</Label><Input id="fuel-liters" inputMode="decimal" value={fuelLiters} onChange={(event) => setFuelLiters(event.target.value)} placeholder="Ex.: 28,5" /></div>
+                  <div className="space-y-2"><Label htmlFor="fuel-type">Combustível</Label><select id="fuel-type" value={fuelType} onChange={(event) => setFuelType(event.target.value as typeof fuelType)} className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm"><option value="gasoline">Gasolina</option><option value="ethanol">Etanol</option><option value="diesel">Diesel</option></select></div>
+                  <div className="md:col-span-2 lg:col-span-4"><Button type="button" onClick={handleRegisterFuel} disabled={registerFuelMutation.isPending} className="w-full bg-emerald-700 hover:bg-emerald-800">{registerFuelMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</> : "Salvar abastecimento"}</Button></div>
+                </div>}
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-emerald-100 bg-white p-3"><Gauge className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">Média de consumo</p><p className="mt-1 text-xl font-bold text-slate-950">{formatNumber(fuelSummary?.latestMetrics?.consumptionKmPerLiter, " km/L")}</p></div>
+                  <div className="rounded-lg border border-emerald-100 bg-white p-3"><CircleDollarSign className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">Custo por KM</p><p className="mt-1 text-xl font-bold text-slate-950">{formatCurrency(fuelSummary?.latestMetrics?.costPerKm)}</p></div>
+                  <div className="rounded-lg border border-emerald-100 bg-white p-3"><Droplets className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">KM entre abastecimentos</p><p className="mt-1 text-xl font-bold text-slate-950">{formatNumber(fuelSummary?.latestMetrics?.distanceSincePrevious, " km")}</p></div>
+                </div>
+                {fuelSummary && fuelSummary.history.length > 0 && <div className="mt-5"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><History className="h-4 w-4" />Últimos abastecimentos — {fuelSummary.vehicle.plate}</div><div className="mt-2 overflow-x-auto rounded-lg border border-emerald-100 bg-white"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-emerald-50 text-xs uppercase text-emerald-900"><tr><th className="p-3">Data</th><th className="p-3">KM</th><th className="p-3">Combustível</th><th className="p-3">Valor / litros</th><th className="p-3">Média</th><th className="p-3">Custo/KM</th></tr></thead><tbody>{fuelSummary.history.slice(0, 5).map((log) => <tr key={log.id} className="border-t border-emerald-50"><td className="p-3">{new Date(log.createdAt).toLocaleDateString("pt-BR")}</td><td className="p-3">{formatNumber(Number(log.odometerKm), " km")}</td><td className="p-3">{{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[log.fuelType]}</td><td className="p-3">{formatCurrency(Number(log.amount))} · {formatNumber(Number(log.liters), " L")}</td><td className="p-3">{formatNumber(log.consumptionKmPerLiter, " km/L")}</td><td className="p-3">{formatCurrency(log.costPerKm)}</td></tr>)}</tbody></table></div></div>}
               </div>
             </CardContent>
           </Card>

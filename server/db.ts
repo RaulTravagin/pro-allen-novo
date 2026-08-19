@@ -2,7 +2,7 @@ import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: NodePgDatabase<typeof schema> | null = null;
@@ -293,6 +293,99 @@ export async function createSupervisorRoute(supervisorId: number, routeId: numbe
   return getInsertedId(result);
 }
 
+function normalizeVehiclePlate(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").trim();
+}
+
+export async function listActiveVehicles() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(vehicles).where(eq(vehicles.isActive, true)).orderBy(vehicles.plate);
+}
+
+export async function getVehicleById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(vehicles).where(eq(vehicles.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertVehicle(input: { plate: string; model: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const plate = normalizeVehiclePlate(input.plate);
+  const model = input.model.trim();
+  if (plate.length < 7) throw new Error("Informe uma placa válida");
+  if (model.length < 2) throw new Error("Informe o modelo da viatura");
+  const existing = await db.select().from(vehicles).where(eq(vehicles.plate, plate)).limit(1);
+  if (existing[0]) {
+    await db.update(vehicles).set({ model, isActive: true }).where(eq(vehicles.id, existing[0].id));
+    return (await getVehicleById(existing[0].id))!;
+  }
+  const result = await db.insert(vehicles).values({ plate, model, isActive: true }).returning({ id: vehicles.id });
+  return (await getVehicleById(getInsertedId(result)))!;
+}
+
+type FuelMetrics = {
+  distanceSincePrevious: number | null;
+  consumptionKmPerLiter: number | null;
+  costPerKm: number | null;
+};
+
+function calculateFuelMetrics(current: { odometerKm: unknown; liters: unknown; amount: unknown }, previous?: { odometerKm: unknown }): FuelMetrics {
+  if (!previous) return { distanceSincePrevious: null, consumptionKmPerLiter: null, costPerKm: null };
+  const distance = Number(current.odometerKm) - Number(previous.odometerKm);
+  if (!Number.isFinite(distance) || distance <= 0) return { distanceSincePrevious: null, consumptionKmPerLiter: null, costPerKm: null };
+  const liters = Number(current.liters);
+  const amount = Number(current.amount);
+  return {
+    distanceSincePrevious: Number(distance.toFixed(2)),
+    consumptionKmPerLiter: liters > 0 ? Number((distance / liters).toFixed(2)) : null,
+    costPerKm: amount >= 0 ? Number((amount / distance).toFixed(2)) : null,
+  };
+}
+
+export async function getVehicleFuelSummary(vehicleId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const vehicle = await getVehicleById(vehicleId);
+  if (!vehicle) return null;
+  const logs = await db.select({
+    id: fuelLogs.id,
+    vehicleId: fuelLogs.vehicleId,
+    supervisorRouteId: fuelLogs.supervisorRouteId,
+    supervisorId: fuelLogs.supervisorId,
+    odometerKm: fuelLogs.odometerKm,
+    amount: fuelLogs.amount,
+    liters: fuelLogs.liters,
+    fuelType: fuelLogs.fuelType,
+    createdAt: fuelLogs.createdAt,
+  }).from(fuelLogs).where(eq(fuelLogs.vehicleId, vehicleId)).orderBy(desc(fuelLogs.createdAt));
+  const chronological = [...logs].reverse();
+  const history = chronological.map((log, index) => ({ ...log, ...calculateFuelMetrics(log, chronological[index - 1]) })).reverse();
+  return {
+    vehicle,
+    history,
+    latestMetrics: history[0] ? {
+      consumptionKmPerLiter: history[0].consumptionKmPerLiter,
+      costPerKm: history[0].costPerKm,
+      distanceSincePrevious: history[0].distanceSincePrevious,
+    } : null,
+  };
+}
+
+export async function createFuelLog(input: { vehicleId: number; supervisorRouteId: number; supervisorId: number; odometerKm: number; amount: number; liters: number; fuelType: "gasoline" | "ethanol" | "diesel" }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(fuelLogs).values({
+    ...input,
+    odometerKm: input.odometerKm.toFixed(2),
+    amount: input.amount.toFixed(2),
+    liters: input.liters.toFixed(3),
+  }).returning({ id: fuelLogs.id });
+  return { id: getInsertedId(result), summary: await getVehicleFuelSummary(input.vehicleId) };
+}
+
 export async function getSupervisorRouteById(id: number) {
   const db = await getDb();
   if (!db) return null;
@@ -311,8 +404,12 @@ export async function getSupervisorRouteById(id: number) {
     routeName: routes.name,
     routeRegion: routes.region,
     routeActivityType: routes.activityType,
+    vehicleId: supervisorRoutes.vehicleId,
+    vehiclePlate: vehicles.plate,
+    vehicleModel: vehicles.model,
   }).from(supervisorRoutes)
     .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+    .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
     .where(eq(supervisorRoutes.id, id)).limit(1);
   return result.length > 0 ? result[0] : null;
 }
@@ -341,8 +438,12 @@ export async function getSupervisorRoutesToday(supervisorId: number) {
     routeName: routes.name,
     routeRegion: routes.region,
     routeActivityType: routes.activityType,
+    vehicleId: supervisorRoutes.vehicleId,
+    vehiclePlate: vehicles.plate,
+    vehicleModel: vehicles.model,
   }).from(supervisorRoutes)
     .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+    .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
     .where(and(
       eq(supervisorRoutes.supervisorId, supervisorId),
       gte(supervisorRoutes.date, today),

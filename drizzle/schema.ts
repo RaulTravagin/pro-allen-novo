@@ -9,6 +9,7 @@ export const scheduleAssignmentEnum = pgEnum("schedule_assignment", ["day", "nig
 export const routeActivityTypeEnum = pgEnum("route_activity_type", ["field_route", "operational_base"]);
 export const supervisorRouteStatusEnum = pgEnum("supervisor_route_status", ["pending", "in_progress", "completed", "cancelled"]);
 export const visitChecklistStatusEnum = pgEnum("visit_checklist_status", ["pending", "in_progress", "visited", "skipped"]);
+export const fuelTypeEnum = pgEnum("fuel_type", ["gasoline", "ethanol", "diesel"]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -77,10 +78,26 @@ export const posts = pgTable("posts", {
 export type Post = typeof posts.$inferSelect;
 export type InsertPost = typeof posts.$inferInsert;
 
+export const vehicles = pgTable("vehicles", {
+  id: serial("id").primaryKey(),
+  plate: varchar("plate", { length: 10 }).notNull(),
+  model: varchar("model", { length: 120 }).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  plateUnique: uniqueIndex("uq_vehicles_plate").on(table.plate),
+  activeIdx: index("idx_vehicles_active").on(table.isActive),
+}));
+
+export type Vehicle = typeof vehicles.$inferSelect;
+export type InsertVehicle = typeof vehicles.$inferInsert;
+
 export const supervisorRoutes = pgTable("supervisorRoutes", {
   id: serial("id").primaryKey(),
   supervisorId: integer("supervisorId").notNull(),
   routeId: integer("routeId").notNull(),
+  vehicleId: integer("vehicleId"),
   date: timestamp("date", { withTimezone: true }).notNull(),
   status: supervisorRouteStatusEnum("status").default("pending").notNull(),
   kmInitial: numeric("kmInitial", { precision: 10, scale: 2 }),
@@ -91,12 +108,32 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
   updatedAt: updatedAt(),
 }, (table) => ({
   supervisorIdIdx: index("idx_supervisorRoutes_supervisorId").on(table.supervisorId),
+  vehicleIdIdx: index("idx_supervisorRoutes_vehicleId").on(table.vehicleId),
   dateIdx: index("idx_supervisorRoutes_date").on(table.date),
   statusIdx: index("idx_supervisorRoutes_status").on(table.status),
 }));
 
 export type SupervisorRoute = typeof supervisorRoutes.$inferSelect;
 export type InsertSupervisorRoute = typeof supervisorRoutes.$inferInsert;
+
+export const fuelLogs = pgTable("fuel_logs", {
+  id: serial("id").primaryKey(),
+  vehicleId: integer("vehicleId").notNull(),
+  supervisorRouteId: integer("supervisorRouteId").notNull(),
+  supervisorId: integer("supervisorId").notNull(),
+  odometerKm: numeric("odometerKm", { precision: 10, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  liters: numeric("liters", { precision: 10, scale: 3 }).notNull(),
+  fuelType: fuelTypeEnum("fuelType").notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  vehicleCreatedIdx: index("idx_fuel_logs_vehicle_created").on(table.vehicleId, table.createdAt),
+  routeIdx: index("idx_fuel_logs_route").on(table.supervisorRouteId),
+  supervisorIdx: index("idx_fuel_logs_supervisor").on(table.supervisorId),
+}));
+
+export type FuelLog = typeof fuelLogs.$inferSelect;
+export type InsertFuelLog = typeof fuelLogs.$inferInsert;
 
 export const visitChecklists = pgTable("visitChecklists", {
   id: serial("id").primaryKey(),
@@ -172,7 +209,9 @@ export const usersRelations = relations(users, ({ many }) => ({ supervisorRoutes
 export const supervisorSchedulesRelations = relations(supervisorSchedules, ({ one }) => ({ supervisor: one(users, { fields: [supervisorSchedules.supervisorId], references: [users.id] }) }));
 export const routesRelations = relations(routes, ({ many }) => ({ posts: many(posts), supervisorRoutes: many(supervisorRoutes) }));
 export const postsRelations = relations(posts, ({ one, many }) => ({ route: one(routes, { fields: [posts.routeId], references: [routes.id] }), visitChecklists: many(visitChecklists), postVisitHistory: many(postVisitHistory) }));
-export const supervisorRoutesRelations = relations(supervisorRoutes, ({ one, many }) => ({ supervisor: one(users, { fields: [supervisorRoutes.supervisorId], references: [users.id] }), route: one(routes, { fields: [supervisorRoutes.routeId], references: [routes.id] }), visitChecklists: many(visitChecklists), supervisorLocations: many(supervisorLocations) }));
+export const vehiclesRelations = relations(vehicles, ({ many }) => ({ supervisorRoutes: many(supervisorRoutes), fuelLogs: many(fuelLogs) }));
+export const supervisorRoutesRelations = relations(supervisorRoutes, ({ one, many }) => ({ supervisor: one(users, { fields: [supervisorRoutes.supervisorId], references: [users.id] }), route: one(routes, { fields: [supervisorRoutes.routeId], references: [routes.id] }), vehicle: one(vehicles, { fields: [supervisorRoutes.vehicleId], references: [vehicles.id] }), visitChecklists: many(visitChecklists), supervisorLocations: many(supervisorLocations), fuelLogs: many(fuelLogs) }));
+export const fuelLogsRelations = relations(fuelLogs, ({ one }) => ({ vehicle: one(vehicles, { fields: [fuelLogs.vehicleId], references: [vehicles.id] }), supervisorRoute: one(supervisorRoutes, { fields: [fuelLogs.supervisorRouteId], references: [supervisorRoutes.id] }), supervisor: one(users, { fields: [fuelLogs.supervisorId], references: [users.id] }) }));
 export const visitChecklistsRelations = relations(visitChecklists, ({ one, many }) => ({ supervisorRoute: one(supervisorRoutes, { fields: [visitChecklists.supervisorRouteId], references: [supervisorRoutes.id] }), post: one(posts, { fields: [visitChecklists.postId], references: [posts.id] }), checklistItems: many(checklistItems) }));
 export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({ visitChecklist: one(visitChecklists, { fields: [checklistItems.visitChecklistId], references: [visitChecklists.id] }) }));
 export const supervisorLocationsRelations = relations(supervisorLocations, ({ one }) => ({ supervisor: one(users, { fields: [supervisorLocations.supervisorId], references: [users.id] }), supervisorRoute: one(supervisorRoutes, { fields: [supervisorLocations.supervisorRouteId], references: [supervisorRoutes.id] }) }));

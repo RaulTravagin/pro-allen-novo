@@ -405,8 +405,31 @@
 - [x] Fazer commit e push da correção ao GitHub: 8e74435
 
 ## Migração do Mapa para Leaflet/OpenStreetMap
-- [ ] Substituir o componente Google Maps por Leaflet com tiles OpenStreetMap
-- [ ] Preservar marcadores de posto, GPS de supervisor, ajuste de enquadramento e traçado de rota
-- [ ] Remover variáveis e dependências do Google Maps do Render e da documentação
+- [x] Substituir o componente Google Maps por Leaflet com tiles OpenStreetMap
+- [x] Preservar marcadores de posto, GPS de supervisor, ajuste de enquadramento e traçado de rota
+- [x] Remover variáveis e dependências do Google Maps do Render e da documentação
 - [ ] Validar mapa desktop e celular, estados sem coordenadas, testes, tipos e build
-- [ ] Fazer commit e push da migração ao GitHub e orientar o redeploy no Render
+- [x] Fazer commit e push da migração ao GitHub: 8896c31
+
+## Backup SQL do Neon
+- [ ] Obter uma conexão segura ao banco Neon de produção sem expor credenciais
+- [ ] Gerar dump SQL de estrutura e dados de todas as tabelas
+- [ ] Validar a integridade do arquivo de backup
+- [ ] Entregar o arquivo SQL para download e definir se ele deve permanecer fora do GitHub
+
+## Apresentação Executiva Pro Allen
+- [ ] Estruturar a narrativa de capa, desafio, solução, módulos, arquitetura, benefícios e implantação
+- [ ] Criar a rota /apresentacao com visual Pro Allen em páginas A4 paisagem e impressão/PDF
+- [ ] Implementar botão de impressão/salvamento em PDF e exportação em PowerPoint
+- [ ] Validar conteúdo, apresentação desktop, impressão, responsividade e geração do PowerPoint
+- [ ] Fazer commit e push ao GitHub e orientar o redeploy no Render
+
+## Controle de Frota e Abastecimento
+- [x] Mapear o controle de KM atual e modelar viaturas, usos e abastecimentos
+- [x] Criar tabelas PostgreSQL de viaturas e fuel_logs associadas à atividade atual
+- [x] Exigir seleção de placa/modelo antes do KM inicial e associar KM e abastecimento à viatura
+- [x] Criar formulário de abastecimento com KM, valor, litros e combustível
+- [x] Calcular e exibir média Km/L, custo por Km e histórico recente por placa
+- [x] Validar regras de viatura e abastecimento com três testes de regressão, TypeScript e build de produção
+- [ ] Aplicar a migração no Neon de produção durante o próximo deploy com uma DATABASE_URL válida no Render
+- [ ] Fazer commit e push ao GitHub e orientar migração e redeploy no Render
