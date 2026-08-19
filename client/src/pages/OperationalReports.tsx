@@ -65,6 +65,65 @@ function Metric({ label, value, icon: Icon, alert = false }: { label: string; va
   return <Card className={alert ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}><CardContent className="p-5"><Icon className={`h-5 w-5 ${alert ? "text-amber-700" : "text-blue-700"}`} /><p className="mt-4 text-2xl font-bold tracking-tight text-slate-950">{value}</p><p className="mt-1 text-sm text-slate-600">{label}</p></CardContent></Card>;
 }
 
+function splitIntoPages<T>(items: T[], size: number) {
+  const pages: T[][] = [];
+  for (let index = 0; index < items.length; index += size) pages.push(items.slice(index, index + size));
+  return pages.length ? pages : [[]];
+}
+
+function visitStatusLabel(status: string) {
+  if (status === "visited") return "Concluída";
+  if (status === "in_progress") return "Em andamento";
+  return "Pendente";
+}
+
+function PrintHeader({ filters, page, totalPages }: { filters: any; page: number; totalPages: number }) {
+  return <>
+    <div className="print-header">
+      <div><p className="print-kicker">PRO ALLEN · GESTÃO OPERACIONAL</p><h1>Relatório Operacional de Campo</h1><p>Período analisado: {new Date(filters.startDate).toLocaleDateString("pt-BR")} a {new Date(filters.endDate).toLocaleDateString("pt-BR")}</p></div>
+      <div className="print-stamp"><strong>DOCUMENTO DE GESTÃO</strong><span>Emissão: {new Date().toLocaleDateString("pt-BR")}</span></div>
+    </div>
+    <div className="print-rule" />
+    <div className="print-page-meta"><span>Uso interno · Supervisão de campo</span><span>Página {page} de {totalPages}</span></div>
+  </>;
+}
+
+function PrintOperationalReport({ data, filters }: { data: any; filters: any }) {
+  const fuelPages = splitIntoPages<any>(data.fuelLogs ?? [], 14);
+  const auditPages = splitIntoPages<any>(data.visits ?? [], 11);
+  const totalPages = 1 + fuelPages.length + auditPages.length;
+  const summary = data.summary;
+  let pageNumber = 1;
+
+  return <article className="print-document" aria-hidden="true">
+    <section className="print-page">
+      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <div className="print-title-block"><p>VISÃO EXECUTIVA</p><h2>Resumo do período</h2><span>Indicadores consolidados de rota, consumo e auditoria.</span></div>
+      <div className="print-metric-grid">
+        <div><span>KM rodados</span><strong>{formatNumber(summary?.totalKm, " km")}</strong></div>
+        <div><span>Combustível</span><strong>{formatCurrency(summary?.totalFuelAmount)}</strong></div>
+        <div><span>Média de consumo</span><strong>{summary?.averageConsumptionKmPerLiter != null ? formatNumber(summary.averageConsumptionKmPerLiter, " km/L") : "Sem base"}</strong></div>
+        <div><span>Inspeções</span><strong>{formatNumber(summary?.inspections)}</strong></div>
+        <div><span>Conformidade</span><strong>{summary?.complianceRate != null ? `${formatNumber(summary.complianceRate)}%` : "Sem base"}</strong></div>
+      </div>
+      <div className="print-summary-box"><h3>Leitura gerencial</h3><p>Foram consolidados {data.fuelLogs?.length ?? 0} abastecimento(s) e {data.visits?.length ?? 0} auditoria(s) no período filtrado. Os detalhes das viaturas e dos postos seguem nas páginas subsequentes.</p></div>
+      <footer className="print-footer"><span>Pro Allen · Relatório operacional</span><span>Gerado pelo sistema de gestão de supervisores</span></footer>
+    </section>
+    {fuelPages.map((logs, index) => <section className="print-page" key={`fuel-${index}`}>
+      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <div className="print-title-block compact"><p>FROTA E ABASTECIMENTOS</p><h2>Controle de consumo</h2><span>{data.fuelLogs?.length ?? 0} registro(s) no período selecionado.</span></div>
+      <table className="print-table print-fuel-table"><thead><tr><th>Data / hora</th><th>Viatura</th><th>Supervisor</th><th>KM</th><th>Comb.</th><th>Litros</th><th>Valor</th><th>Média</th><th>Custo/KM</th></tr></thead><tbody>{logs.length ? logs.map((log: any) => <tr key={log.id}><td>{formatDateTime(log.createdAt)}</td><td><strong>{log.vehiclePlate ?? "—"}</strong><br /><small>{log.vehicleModel ?? ""}</small></td><td>{log.supervisorName ?? "—"}</td><td>{formatNumber(log.odometerKm, " km")}</td><td>{formatFuelType(log.fuelType)}</td><td>{formatNumber(log.liters, " L")}</td><td>{formatCurrency(log.amount)}</td><td>{log.consumptionKmPerLiter != null ? formatNumber(log.consumptionKmPerLiter, " km/L") : "—"}</td><td>{log.costPerKm != null ? formatCurrency(log.costPerKm) : "—"}</td></tr>) : <tr><td colSpan={9} className="print-empty">Nenhum abastecimento no período selecionado.</td></tr>}</tbody></table>
+      <footer className="print-footer"><span>Pro Allen · Controle de frota</span><span>Dados registrados pelos supervisores</span></footer>
+    </section>)}
+    {auditPages.map((visits, index) => <section className="print-page" key={`audit-${index}`}>
+      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <div className="print-title-block compact"><p>AUDITORIAS E CHECKLISTS</p><h2>Visitas aos postos</h2><span>Horários, situação da visita e observações operacionais.</span></div>
+      <table className="print-table print-audit-table"><thead><tr><th>Posto / região</th><th>Supervisor / viatura</th><th>Entrada e saída</th><th>Status</th><th>Checklist</th><th>Ocorrências e observações</th></tr></thead><tbody>{visits.length ? visits.map((visit: any) => <tr key={visit.id}><td><strong>{visit.postName}</strong><br /><small>{visit.postRegion ?? ""}</small></td><td>{visit.supervisorName ?? "—"}<br /><small>{visit.vehiclePlate ?? "Sem placa"}</small></td><td>Entrada: {formatDateTime(visit.arrivalTime)}<br />Saída: {formatDateTime(visit.departureTime)}</td><td>{visitStatusLabel(visit.status)}</td><td>{visit.nonCompliant > 0 ? `${visit.nonCompliant} ocorrência(s)` : "Conforme"}<br /><small>{visit.compliant} item(ns) conforme(s)</small></td><td>{visit.observations || visit.coverageReason || "Sem observações"}</td></tr>) : <tr><td colSpan={6} className="print-empty">Nenhuma auditoria no período selecionado.</td></tr>}</tbody></table>
+      <footer className="print-footer"><span>Pro Allen · Auditorias de postos</span><span>Informações preenchidas em campo</span></footer>
+    </section>)}
+  </article>;
+}
+
 export default function OperationalReports() {
   const [, navigate] = useLocation();
   const { user, loading: authLoading } = useAuth();
@@ -85,9 +144,52 @@ export default function OperationalReports() {
   const options = data?.filterOptions ?? { supervisors: [], vehicles: [] };
   const summary = data?.summary;
   return <main className="report-print min-h-screen bg-slate-100 text-slate-950">
-    <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } body { background: white !important; } .no-print { display: none !important; } .report-print { background: white !important; } .print-avoid { break-inside: avoid; page-break-inside: avoid; } .print-table { font-size: 9px; } }`}</style>
+    <style>{`
+      .print-document { display: none; }
+      @media print {
+        @page { size: A4 landscape; margin: 10mm; }
+        html, body { width: 297mm !important; height: auto !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .no-print, .screen-report { display: none !important; }
+        .report-print { display: block !important; min-height: 0 !important; background: #fff !important; }
+        .print-document { display: block !important; width: 277mm !important; color: #172033 !important; font-family: Arial, Helvetica, sans-serif !important; }
+        .print-page { position: relative; box-sizing: border-box; width: 277mm; min-height: 190mm; padding: 0 0 14mm; break-after: page; page-break-after: always; overflow: hidden; }
+        .print-page:last-child { break-after: auto; page-break-after: auto; }
+        .print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12mm; }
+        .print-kicker { margin: 0 0 2mm; color: #9a7000; font-size: 8pt; font-weight: 700; letter-spacing: .18em; }
+        .print-header h1 { margin: 0; font-size: 19pt; line-height: 1.1; color: #111827; }
+        .print-header p:not(.print-kicker) { margin: 2mm 0 0; font-size: 9pt; color: #475569; }
+        .print-stamp { min-width: 50mm; border: .35mm solid #d6b044; border-radius: 2mm; padding: 3mm 4mm; text-align: right; color: #6b4c00; font-size: 8pt; }
+        .print-stamp strong, .print-stamp span { display: block; }
+        .print-stamp span { margin-top: 1mm; color: #64748b; }
+        .print-rule { height: 1.2mm; margin: 5mm 0 2mm; background: #172033; }
+        .print-page-meta { display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; }
+        .print-title-block { margin-top: 9mm; }
+        .print-title-block p { margin: 0; color: #9a7000; font-size: 8pt; font-weight: 700; letter-spacing: .14em; }
+        .print-title-block h2 { margin: 1.5mm 0 1mm; font-size: 17pt; line-height: 1.1; color: #172033; }
+        .print-title-block span { font-size: 9pt; color: #64748b; }
+        .print-title-block.compact { margin-top: 7mm; margin-bottom: 4mm; }
+        .print-title-block.compact h2 { font-size: 15pt; }
+        .print-metric-grid { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 3mm; margin-top: 7mm; }
+        .print-metric-grid > div { box-sizing: border-box; min-height: 27mm; border: .3mm solid #cbd5e1; border-radius: 2mm; padding: 4mm; background: #f8fafc; }
+        .print-metric-grid span { display: block; color: #64748b; font-size: 8pt; }
+        .print-metric-grid strong { display: block; margin-top: 3mm; color: #111827; font-size: 15pt; line-height: 1.05; }
+        .print-summary-box { margin-top: 7mm; border-left: 1.2mm solid #d3a800; background: #fffbeb; padding: 4mm 5mm; }
+        .print-summary-box h3 { margin: 0; color: #6b4c00; font-size: 10pt; }
+        .print-summary-box p { margin: 2mm 0 0; color: #475569; font-size: 9pt; line-height: 1.45; }
+        .print-table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; font-size: 7.7pt !important; line-height: 1.25 !important; }
+        .print-table th { padding: 2.4mm 2mm; background: #172033 !important; color: #fff !important; font-size: 7.1pt; font-weight: 700; letter-spacing: .03em; text-align: left; }
+        .print-table td { vertical-align: top; border-bottom: .22mm solid #cbd5e1; padding: 2.4mm 2mm; overflow-wrap: anywhere; }
+        .print-table tr { break-inside: avoid; page-break-inside: avoid; }
+        .print-table tbody tr:nth-child(even) { background: #f8fafc !important; }
+        .print-table small { color: #64748b; font-size: 6.8pt; }
+        .print-fuel-table th:nth-child(1) { width: 11%; } .print-fuel-table th:nth-child(2) { width: 13%; } .print-fuel-table th:nth-child(3) { width: 13%; } .print-fuel-table th:nth-child(4) { width: 10%; } .print-fuel-table th:nth-child(5) { width: 10%; } .print-fuel-table th:nth-child(6) { width: 8%; } .print-fuel-table th:nth-child(7) { width: 10%; } .print-fuel-table th:nth-child(8) { width: 12%; } .print-fuel-table th:nth-child(9) { width: 13%; }
+        .print-audit-table th:nth-child(1) { width: 16%; } .print-audit-table th:nth-child(2) { width: 15%; } .print-audit-table th:nth-child(3) { width: 18%; } .print-audit-table th:nth-child(4) { width: 10%; } .print-audit-table th:nth-child(5) { width: 12%; } .print-audit-table th:nth-child(6) { width: 29%; }
+        .print-empty { padding: 12mm !important; text-align: center; color: #64748b; }
+        .print-footer { position: absolute; right: 0; bottom: 3mm; left: 0; display: flex; justify-content: space-between; border-top: .22mm solid #cbd5e1; padding-top: 2mm; color: #64748b; font-size: 7pt; }
+      }
+    `}</style>
     <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Auditorias, rotas, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && downloadCsv(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar CSV / Excel</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6">
+    <div className="screen-report mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6">
       <section className="print-avoid rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><p className="text-sm font-semibold text-amber-300">Pro Allen — Relatório de Gestão Operacional</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Visão executiva da operação de campo</h2><p className="mt-3 text-sm text-slate-300">Período: {new Date(filters.startDate).toLocaleDateString("pt-BR")} a {new Date(filters.endDate).toLocaleDateString("pt-BR")} · Emissão: {new Date().toLocaleString("pt-BR")}</p></section>
       <section className="no-print print-avoid rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><label className="grid gap-1 text-xs font-semibold text-slate-600">Início<input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Fim<input type="date" value={endDate} min={startDate} max={toDateInput(new Date())} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Supervisor<select value={supervisorId} onChange={(event) => setSupervisorId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os supervisores</option>{options.supervisors.map((supervisor: any) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name ?? supervisor.username}</option>)}</select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Placa / viatura<select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todas as viaturas</option>{options.vehicles.map((vehicle: any) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}</select></label></div><p className="mt-3 text-xs text-slate-500">O período inicial considera os últimos 30 dias. Os dados são atualizados quando os filtros são alterados.</p></section>
       {report.isLoading ? <div className="flex items-center justify-center p-12 text-sm text-slate-600"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Consolidando dados...</div> : report.error ? <Card className="border-rose-200 bg-rose-50"><CardContent className="flex gap-3 p-5 text-sm text-rose-950"><AlertTriangle className="h-5 w-5 shrink-0" />{report.error.message}</CardContent></Card> : data && <>
@@ -96,5 +198,6 @@ export default function OperationalReports() {
         <section className="print-avoid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><h3 className="flex items-center gap-2 text-lg font-semibold"><FileText className="h-5 w-5 text-blue-700" /> Auditorias e checklists dos postos</h3><p className="mt-1 text-sm text-slate-600">Horários, situação da visita e ocorrências registradas em campo.</p></div><div className="overflow-x-auto"><table className="print-table min-w-[1080px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Posto auditado</th><th className="px-4 py-3">Supervisor</th><th className="px-4 py-3">Entrada / saída</th><th className="px-4 py-3">Situação</th><th className="px-4 py-3">Ocorrências</th></tr></thead><tbody className="divide-y divide-slate-100">{data.visits.length ? data.visits.map((visit: any) => <tr key={visit.id} className="align-top"><td className="px-4 py-3 font-medium">{visit.postName}<p className="mt-1 text-xs font-normal text-slate-500">{visit.postRegion}</p></td><td className="px-4 py-3 text-slate-600">{visit.supervisorName ?? "—"}<p className="mt-1 text-xs">{visit.vehiclePlate ?? "Sem placa"}</p></td><td className="px-4 py-3 text-xs text-slate-600">Entrada: {formatDateTime(visit.arrivalTime)}<br />Saída: {formatDateTime(visit.departureTime)}</td><td className="px-4 py-3"><span className={visit.status === "visited" ? "rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800" : visit.status === "in_progress" ? "rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800" : "rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"}>{visit.status === "visited" ? "Concluída" : visit.status === "in_progress" ? "Em andamento" : "Pendente"}</span></td><td className="max-w-[340px] px-4 py-3 text-xs leading-5 text-slate-600">{visit.nonCompliant > 0 ? <p className="mb-2 font-semibold text-rose-700">{visit.nonCompliant} ocorrência(s) no checklist</p> : <p className="mb-2 font-semibold text-emerald-700">Checklist conforme</p>}{visit.observations || visit.coverageReason || "Sem observações"}</td></tr>) : <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Nenhuma auditoria no período selecionado.</td></tr>}</tbody></table></div></section>
       </>}
     </div>
+    {data && <PrintOperationalReport data={data} filters={filters} />}
   </main>;
 }

@@ -455,3 +455,9 @@
 - [x] Implementar PDF executivo/impressão A4 com resumo, tabelas, status de ocorrências e quebra de página adequada
 - [x] Criar testes de persistência do turno, filtros, cálculos e exportações
 - [x] Publicar no Render sem migração adicional, pois as tabelas existentes já registram o turno, KM, checklist e abastecimentos: b2c8d30
+
+## Correção de Impressão do Relatório Operacional
+- [x] Auditar a estrutura atual e separar o conteúdo de tela da versão pronta para impressão A4
+- [x] Criar páginas de impressão com cabeçalho, resumo compacto, tabelas legíveis e quebras controladas
+- [x] Validar a estrutura de impressão, TypeScript, regressão do relatório e build de produção
+- [ ] Publicar a correção no Render e orientar a geração do PDF
