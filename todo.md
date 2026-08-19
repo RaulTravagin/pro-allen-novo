@@ -460,4 +460,4 @@
 - [x] Auditar a estrutura atual e separar o conteúdo de tela da versão pronta para impressão A4
 - [x] Criar páginas de impressão com cabeçalho, resumo compacto, tabelas legíveis e quebras controladas
 - [x] Validar a estrutura de impressão, TypeScript, regressão do relatório e build de produção
-- [ ] Publicar a correção no Render e orientar a geração do PDF
+- [x] Publicar a correção no Render e orientar a geração do PDF: 878b95e
