@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
@@ -345,6 +345,14 @@ function calculateFuelMetrics(current: { odometerKm: unknown; liters: unknown; a
   };
 }
 
+/** Enriquece o histórico de uma viatura com o consumo calculado entre abastecimentos consecutivos. */
+export function enrichFuelHistory<T extends { odometerKm: unknown; liters: unknown; amount: unknown; createdAt: Date }>(logs: T[]) {
+  const chronological = [...logs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return chronological
+    .map((log, index) => ({ ...log, ...calculateFuelMetrics(log, chronological[index - 1]) }))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
 export async function getVehicleFuelSummary(vehicleId: number) {
   const db = await getDb();
   if (!db) return null;
@@ -361,8 +369,7 @@ export async function getVehicleFuelSummary(vehicleId: number) {
     fuelType: fuelLogs.fuelType,
     createdAt: fuelLogs.createdAt,
   }).from(fuelLogs).where(eq(fuelLogs.vehicleId, vehicleId)).orderBy(desc(fuelLogs.createdAt));
-  const chronological = [...logs].reverse();
-  const history = chronological.map((log, index) => ({ ...log, ...calculateFuelMetrics(log, chronological[index - 1]) })).reverse();
+  const history = enrichFuelHistory(logs);
   return {
     vehicle,
     history,
@@ -804,6 +811,9 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       routeRegion: routes.region,
       routeActivityType: routes.activityType,
       status: supervisorRoutes.status,
+      vehicleId: supervisorRoutes.vehicleId,
+      vehiclePlate: vehicles.plate,
+      vehicleModel: vehicles.model,
       kmInitial: supervisorRoutes.kmInitial,
       kmFinal: supervisorRoutes.kmFinal,
       startedAt: supervisorRoutes.startedAt,
@@ -812,6 +822,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     })
       .from(supervisorRoutes)
       .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+      .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
       .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
       .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow)))
       .orderBy(desc(supervisorRoutes.updatedAt)),
@@ -855,6 +866,25 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     db.select({ id: users.id, name: users.name, username: users.username, role: users.role, isOperational: users.isOperational }).from(users),
   ]);
 
+  const vehicleIds = Array.from(new Set(todayRoutes.map((route) => route.vehicleId).filter((vehicleId): vehicleId is number => vehicleId !== null)));
+  const fuelLogsForVehicles = vehicleIds.length
+    ? await db.select({
+      id: fuelLogs.id,
+      vehicleId: fuelLogs.vehicleId,
+      supervisorRouteId: fuelLogs.supervisorRouteId,
+      supervisorId: fuelLogs.supervisorId,
+      odometerKm: fuelLogs.odometerKm,
+      amount: fuelLogs.amount,
+      liters: fuelLogs.liters,
+      fuelType: fuelLogs.fuelType,
+      createdAt: fuelLogs.createdAt,
+    }).from(fuelLogs).where(inArray(fuelLogs.vehicleId, vehicleIds)).orderBy(fuelLogs.vehicleId, fuelLogs.createdAt)
+    : [];
+  const fuelHistoryByVehicle = new Map<number, Array<(typeof fuelLogsForVehicles)[number] & FuelMetrics>>();
+  for (const vehicleId of vehicleIds) {
+    fuelHistoryByVehicle.set(vehicleId, enrichFuelHistory(fuelLogsForVehicles.filter((log) => log.vehicleId === vehicleId)));
+  }
+
   const locationBySupervisor = new Map<number, (typeof latestLocations)[number]>();
   for (const location of latestLocations) locationBySupervisor.set(location.supervisorId, location);
 
@@ -866,6 +896,8 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
   }
 
   const routeViews = todayRoutes.map((route) => {
+    const fuelHistory = route.vehicleId ? (fuelHistoryByVehicle.get(route.vehicleId) ?? []) : [];
+    const latestFuel = fuelHistory[0] ?? null;
     const routeChecklists = todayChecklists
       .filter((checklist) => checklist.supervisorRouteId === route.id)
       .sort((a, b) => a.postOrder - b.postOrder)
@@ -908,6 +940,15 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     return {
       ...route,
       routeStatus: route.status,
+      vehicle: route.vehicleId ? { id: route.vehicleId, plate: route.vehiclePlate, model: route.vehicleModel } : null,
+      fuelSummary: latestFuel ? {
+        consumptionKmPerLiter: latestFuel.consumptionKmPerLiter,
+        costPerKm: latestFuel.costPerKm,
+        distanceSincePrevious: latestFuel.distanceSincePrevious,
+        latestFuelAt: latestFuel.createdAt,
+      } : null,
+      fuelLogs: fuelHistory.filter((log) => log.supervisorRouteId === route.id),
+      fuelHistory: fuelHistory.slice(0, 8),
       totalPosts: routeChecklists.length,
       completedVisits,
       pendingVisits,
@@ -963,6 +1004,9 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
         kmInitial: activity.kmInitial,
         kmFinal: activity.kmFinal,
         kmCovered: activity.kmCovered,
+        vehicle: activity.vehicle,
+        fuelSummary: activity.fuelSummary,
+        fuelLogs: activity.fuelLogs,
         totalPosts: activity.totalPosts,
         completedVisits: activity.completedVisits,
         pendingVisits: activity.pendingVisits,

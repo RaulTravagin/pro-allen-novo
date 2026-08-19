@@ -54,6 +54,10 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
         kmInitial: route.kmInitial ?? null,
         kmFinal: route.kmFinal ?? null,
         kmCovered: route.kmCovered ?? null,
+        vehicle: route.vehicle ?? null,
+        fuelSummary: route.fuelSummary ?? null,
+        fuelLogs: route.fuelLogs ?? [],
+        fuelHistory: route.fuelHistory ?? [],
         activeVisit: activeVisit ? {
           postName: activeVisit.postName,
           arrivalTime: activeVisit.arrivalTime ?? null,
@@ -69,6 +73,10 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
           observations: visit.observations ?? null,
           isCoverage: Boolean(visit.isCoverage),
           coverageReason: visit.coverageReason ?? null,
+          arrivalLatitude: visit.arrivalLatitude ?? null,
+          arrivalLongitude: visit.arrivalLongitude ?? null,
+          departureLatitude: visit.departureLatitude ?? null,
+          departureLongitude: visit.departureLongitude ?? null,
           checklist: visit.checklistSummary ?? { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 },
           checklistItems: visit.checklistItems ?? [],
         })),
@@ -94,6 +102,9 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
         kmInitial: activity.kmInitial ?? null,
         kmFinal: activity.kmFinal ?? null,
         kmCovered: activity.kmCovered ?? null,
+        vehicle: activity.vehicle ?? null,
+        fuelSummary: activity.fuelSummary ?? null,
+        fuelLogs: activity.fuelLogs ?? [],
       })),
     };
   });

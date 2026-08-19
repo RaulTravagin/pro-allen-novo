@@ -436,3 +436,11 @@
 
 ## Correção de Build Integrado
 - [x] Adicionar a dependência pptxgenjs exigida pela apresentação executiva recém-integrada
+
+## Visão Completa do Gestor
+- [x] Auditar todos os campos preenchidos pelo supervisor e identificar lacunas no consolidado do Gestor
+- [x] Incluir viatura, KM inicial/final, distância, abastecimentos e indicadores de consumo no retorno do Gestor
+- [x] Exibir de forma destacada a média de consumo Km/L e o custo por Km da viatura em uso
+- [x] Exibir no card detalhado do Gestor todos os registros de rota, postos, horários, checklist, observações, GPS e frota
+- [x] Criar testes de regressão para o consolidado completo e validar a interface em desktop e celular
+- [ ] Publicar a atualização e orientar a conferência no Painel do Gestor

@@ -23,6 +23,9 @@ const route = {
   kmInitial: "1250.00",
   kmFinal: null,
   kmCovered: null,
+  vehicle: { id: 8, plate: "ABC1D23", model: "Fiat Mobi" },
+  fuelSummary: { consumptionKmPerLiter: 9, costPerKm: 0.72, distanceSincePrevious: 360, latestFuelAt: new Date("2026-08-12T14:10:00.000Z") },
+  fuelHistory: [{ id: 77, odometerKm: "12360", amount: "260", liters: "40", fuelType: "gasoline", createdAt: new Date("2026-08-12T14:10:00.000Z"), consumptionKmPerLiter: 9, costPerKm: 0.72, distanceSincePrevious: 360 }],
   totalPosts: 4,
   completedVisits: 1,
   pendingVisits: 2,
@@ -152,6 +155,10 @@ describe("GestorDashboard", () => {
     expect(screen.getByText("Verificar troca de uniforme.")).toBeTruthy();
     expect(screen.getByText("Atendimento prolongado · Paulo Murashita")).toBeTruthy();
     expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
+    expect(screen.getByText("Viatura, abastecimentos e consumo")).toBeTruthy();
+    expect(screen.getAllByText("ABC1D23 · Fiat Mobi").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("9 km/L").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,72/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Checklist por visita").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Requer atenção").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Uniforme e apresentação pessoal").length).toBeGreaterThan(0);
