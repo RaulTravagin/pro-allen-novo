@@ -432,4 +432,7 @@
 - [x] Calcular e exibir média Km/L, custo por Km e histórico recente por placa
 - [x] Validar regras de viatura e abastecimento com três testes de regressão, TypeScript e build de produção
 - [ ] Aplicar a migração no Neon de produção durante o próximo deploy com uma DATABASE_URL válida no Render
-- [ ] Fazer commit e push ao GitHub e orientar migração e redeploy no Render
+- [x] Fazer commit e push ao GitHub e orientar migração e redeploy no Render: 062dde2
+
+## Correção de Build Integrado
+- [x] Adicionar a dependência pptxgenjs exigida pela apresentação executiva recém-integrada
