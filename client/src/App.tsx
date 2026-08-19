@@ -19,6 +19,7 @@ const ReportExport = lazy(() => import("./pages/ReportExport"));
 const GestorLogin = lazy(() => import("./pages/GestorLogin"));
 const GestorDashboard = lazy(() => import("./pages/GestorDashboard"));
 const LocalContingency = lazy(() => import("./pages/LocalContingency"));
+const Presentation = lazy(() => import("./pages/Presentation"));
 
 function LoadingScreen() {
   return (
@@ -35,6 +36,10 @@ function Router() {
 
   if (location === "/local") {
     return <Suspense fallback={<LoadingScreen />}><LocalContingency /></Suspense>;
+  }
+
+  if (location === "/apresentacao" || location === "/pitch") {
+    return <Suspense fallback={<LoadingScreen />}><Presentation /></Suspense>;
   }
 
   if (gestorRouteMode === "login") {

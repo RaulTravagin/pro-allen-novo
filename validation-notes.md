@@ -12,3 +12,12 @@
 - 14/08/2026: Com sessão real do Gestor, o novo painel visual exibiu o gráfico de postos concluídos, em atendimento e pendentes por supervisor, a distribuição de situação operacional e a leitura rápida individual. A renderização foi confirmada sem falha de hooks e com dados reais da central.
 - 14/08/2026: Em viewport móvel autenticado, o gráfico de progresso foi ajustado para barras horizontais por supervisor e a distribuição de status permaneceu legível, sem transbordamento horizontal ou falha de renderização.
 - 14/08/2026: A central autenticada do Gestor exibiu os quatro blocos visuais finais: progresso por supervisor, situação da equipe, conformidade por supervisor e desempenho das rotas. Os gráficos foram preenchidos com dados operacionais reais e permaneceram legíveis em desktop.
+
+- 19/08/2026: A rota `/apresentacao` carregou corretamente após a tela inicial e exibiu capa, paleta preta/amarela, identificação do projeto, versão e oito páginas navegáveis.
+- 19/08/2026: A barra superior mostrou os botões `Salvar em PDF` e `Exportar em PowerPoint`; a interface apresentou contraste adequado e composição em estilo de lâminas.
+- 19/08/2026: O deck vertical usa rolagem com snap e controles de avanço/retorno; a tela inicial pode mostrar o início da lâmina seguinte por causa do viewport, sem sobreposição de conteúdo.
+
+- 19/08/2026: O clique em `Exportar em PowerPoint` gerou `pro-allen-apresentacao-executiva.pptx` no navegador; o arquivo tem 208 KB e passou em `unzip -t` sem erros.
+- 19/08/2026: O controle `Próxima página` atualizou o contador de `01 / 08` para `02 / 08` e moveu a leitura para a lâmina de contexto, confirmando a navegação guiada.
+
+- 19/08/2026: O botão `Salvar em PDF` está ligado a `window.print()` e as regras `@media print`/`@page` estão presentes para gerar páginas A4 paisagem; o acionamento do diálogo nativo de impressão excedeu o timeout do navegador de teste, mas a página permaneceu responsiva e navegável após o retorno.
