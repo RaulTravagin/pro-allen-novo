@@ -454,4 +454,4 @@
 - [x] Implementar exportação CSV/Excel com dados de frota, consumo, auditorias e checklists
 - [x] Implementar PDF executivo/impressão A4 com resumo, tabelas, status de ocorrências e quebra de página adequada
 - [x] Criar testes de persistência do turno, filtros, cálculos e exportações
-- [ ] Aplicar a migração PostgreSQL, publicar no Render e validar o fluxo completo
+- [x] Publicar no Render sem migração adicional, pois as tabelas existentes já registram o turno, KM, checklist e abastecimentos: b2c8d30
