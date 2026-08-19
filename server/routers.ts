@@ -37,6 +37,11 @@ const gestorProcedure = publicProcedure.use(async ({ ctx, next }) => {
   return next();
 });
 
+const gestorOrAdminProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (ctx.user?.role === "admin" || await hasGestorSession(ctx.req)) return next();
+  throw new TRPCError({ code: "FORBIDDEN", message: "Acesso do Gestor ou Administrador necessário" });
+});
+
 const DEFAULT_CHECKLIST_ITEMS = [
   { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
   { category: 'Pontualidade', description: 'Pontualidade e escala' },
@@ -125,6 +130,17 @@ export const appRouter = router({
     dashboard: gestorProcedure.query(async () => db.getGestorOperationalSnapshot()),
     dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional() }).optional()).query(async ({ input }) => {
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true }));
+    }),
+    operationalReport: gestorOrAdminProcedure.input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+      supervisorId: z.number().int().positive().optional().nullable(),
+      vehicleId: z.number().int().positive().optional().nullable(),
+    })).query(async ({ input }) => {
+      if (input.endDate < input.startDate) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A data final não pode ser anterior à data inicial" });
+      }
+      return db.getOperationalManagementReport(input);
     }),
     schedule: gestorProcedure.input(z.object({ scheduleDate: z.date().optional() }).optional()).query(async ({ input }) => {
       return db.getGestorSchedule(input?.scheduleDate);

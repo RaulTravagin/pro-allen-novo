@@ -7,6 +7,7 @@ vi.mock("./db", () => ({
   replaceGestorSchedule: vi.fn(),
   getGestorPostsManagement: vi.fn(),
   createGestorPost: vi.fn(),
+  getOperationalManagementReport: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -55,6 +56,7 @@ describe("gestorAccess", () => {
     await expect(appRouter.createCaller(invalid.context).gestorAccess.login({ password: "senha-incorreta" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(appRouter.createCaller(invalid.context).gestor.dashboard()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.dailyReport()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.operationalReport({ startDate: new Date("2026-08-01"), endDate: new Date("2026-08-15") })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.schedule()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.updateSchedule({ scheduleDate: new Date("2026-08-15T12:00:00"), entries: [{ supervisorId: 1, assignment: "day" }] })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.postsManagement()).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -71,6 +73,9 @@ describe("gestorAccess", () => {
     const historicalDate = new Date("2026-08-14T12:00:00");
     await expect(authorizedCaller.gestor.dailyReport({ reportDate: historicalDate })).resolves.toMatchObject({ summary: { supervisors: 0 } });
     expect(db.getGestorOperationalSnapshot).toHaveBeenLastCalledWith(historicalDate, { includeHistoricalUsers: true });
+    vi.mocked(db.getOperationalManagementReport).mockResolvedValue({ summary: { totalKm: 0 }, filterOptions: { supervisors: [], vehicles: [] }, routes: [], fuelLogs: [], visits: [] } as never);
+    await expect(authorizedCaller.gestor.operationalReport({ startDate: new Date("2026-08-01"), endDate: historicalDate, supervisorId: 1, vehicleId: 8 })).resolves.toMatchObject({ summary: { totalKm: 0 } });
+    expect(db.getOperationalManagementReport).toHaveBeenCalledWith(expect.objectContaining({ supervisorId: 1, vehicleId: 8 }));
     vi.mocked(db.getGestorSchedule).mockResolvedValue({ scheduleDate: historicalDate, supervisors: [] } as never);
     vi.mocked(db.replaceGestorSchedule).mockResolvedValue({ scheduleDate: historicalDate, supervisors: [] } as never);
     await expect(authorizedCaller.gestor.schedule({ scheduleDate: historicalDate })).resolves.toMatchObject({ supervisors: [] });

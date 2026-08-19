@@ -11,7 +11,8 @@ interface AdminHeaderProps {
 export function AdminHeader({ title, subtitle, onLogout }: AdminHeaderProps) {
   const [location, navigate] = useLocation();
   const navItems = [
-    { label: "Relatórios", path: "/admin", icon: LayoutDashboard },
+    { label: "Painel", path: "/admin", icon: LayoutDashboard },
+    { label: "Relatórios", path: "/admin/relatorios", icon: FileDown },
     { label: "Métricas", path: "/admin/metrics", icon: BarChart3 },
     { label: "Exportar", path: "/admin/export", icon: FileDown },
     { label: "Operação", path: "/supervisor", icon: Route },

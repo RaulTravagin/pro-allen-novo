@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -13,6 +13,7 @@ export default function SupervisorDashboard() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
+  const [hasAttemptedAutomaticResume, setHasAttemptedAutomaticResume] = useState(false);
 
   const { data: routes, isLoading: routesLoading, isError: routesError } = trpc.routes.list.useQuery();
   const { data: todayRoute, isLoading: todayRouteLoading } = trpc.supervisorRoutes.getTodayRoute.useQuery();
@@ -71,6 +72,12 @@ export default function SupervisorDashboard() {
     }
     navigate(`/supervisor/route/${todayRoute.id}`);
   };
+
+  useEffect(() => {
+    if (hasAttemptedAutomaticResume || !todayRoute || todayRoute.status !== "in_progress") return;
+    setHasAttemptedAutomaticResume(true);
+    navigate(`/supervisor/route/${todayRoute.id}`);
+  }, [hasAttemptedAutomaticResume, navigate, todayRoute?.id, todayRoute?.status]);
 
   const isStarting = createRouteMutation.isPending || createChecklistsMutation.isPending;
 

@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import PostCard from "@/components/PostCard";
+import { clearRouteDraft, readRouteDraft, saveRouteDraft } from "@/lib/onlineOperationDraft";
 
 interface RouteDetailsProps {
   params: {
@@ -38,6 +39,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [gpsError, setGpsError] = useState<string>("");
   const [coveragePostId, setCoveragePostId] = useState("");
   const [coverageReason, setCoverageReason] = useState("");
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
@@ -58,6 +60,33 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   useEffect(() => {
     if (route?.vehicleId) setSelectedVehicleId(String(route.vehicleId));
   }, [route?.vehicleId]);
+
+  useEffect(() => {
+    if (!route || !user?.id) return;
+    if (route.status === "completed") {
+      clearRouteDraft(user.id, route.id);
+      setDraftLoaded(true);
+      return;
+    }
+    const draft = readRouteDraft(user.id, route.id);
+    if (draft) {
+      setKmInitial(draft.kmInitial);
+      setKmFinal(draft.kmFinal);
+      setSelectedVehicleId((current) => route.vehicleId ? String(route.vehicleId) : current || draft.selectedVehicleId);
+      setCoveragePostId(draft.coveragePostId);
+      setCoverageReason(draft.coverageReason);
+      setFuelOdometer(draft.fuelOdometer);
+      setFuelAmount(draft.fuelAmount);
+      setFuelLiters(draft.fuelLiters);
+      setFuelType(draft.fuelType);
+    }
+    setDraftLoaded(true);
+  }, [route?.id, route?.status, route?.vehicleId, user?.id]);
+
+  useEffect(() => {
+    if (!route || !user?.id || !draftLoaded || route.status === "completed") return;
+    saveRouteDraft(user.id, route.id, { kmInitial, kmFinal, selectedVehicleId, coveragePostId, coverageReason, fuelOdometer, fuelAmount, fuelLiters, fuelType });
+  }, [coveragePostId, coverageReason, draftLoaded, fuelAmount, fuelLiters, fuelOdometer, fuelType, kmFinal, kmInitial, route?.id, route?.status, selectedVehicleId, user?.id]);
 
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: route?.routeId || 0 },
@@ -193,6 +222,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         vehicleId,
         kmInitial: initialKm,
       });
+      setKmInitial("");
       toast.success("Rota iniciada com sucesso!");
     } catch (error) {
       toast.error("Erro ao iniciar rota");
@@ -260,6 +290,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         id: supervisorRouteId,
         kmFinal: finalKm,
       });
+      if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
       await utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId });
       await utils.supervisorRoutes.getTodayRoute.invalidate();
       await utils.supervisorRoutes.getTodayHistory.invalidate();
@@ -389,7 +420,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                       disabled={!kmInitial || !selectedVehicleId || updateKmMutation.isPending}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                     >
-                      {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Registrar KM inicial"}
+                      {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Iniciar turno / registrar KM inicial"}
                     </Button>
                   </div>
                 ) : (
@@ -419,11 +450,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                       />
                       {kmFinal && <p className="text-sm text-slate-600">Total estimado: {(Number(kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>}
                       <Button onClick={handleEndRoute} disabled={!kmFinal || updateKmMutation.isPending} className="w-full bg-slate-900 hover:bg-slate-800">
-                        {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Registrar KM final"}
+                        {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Encerrar turno / informar KM final"}
                       </Button>
                     </div>
                   ) : (
-                    <Button onClick={() => setShowKmFinal(true)} variant="outline" className="mt-3 w-full">Informar KM final</Button>
+                    <Button onClick={() => setShowKmFinal(true)} variant="outline" className="mt-3 w-full">Encerrar turno / informar KM final</Button>
                   )
                 ) : (
                   <p className="mt-3 text-sm text-slate-600">Disponível depois do registro do KM inicial.</p>

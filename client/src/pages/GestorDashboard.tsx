@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
-import { Activity, AlertTriangle, Building2, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Plus, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, Building2, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileDown, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Plus, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
@@ -210,7 +210,7 @@ export default function GestorDashboard() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white">CT3</div><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Central operacional</p><h1 className="text-2xl font-bold tracking-tight">Painel do Gestor</h1></div></div>
-          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><Button variant="outline" onClick={() => setShowDailyReport(true)} className="gap-2"><FileText className="h-4 w-4" /> Relatório do dia</Button><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
+          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><Button variant="outline" onClick={() => navigate("/gestor/relatorios")} className="gap-2"><FileDown className="h-4 w-4" /> Relatórios</Button><Button variant="outline" onClick={() => setShowDailyReport(true)} className="gap-2"><FileText className="h-4 w-4" /> Relatório do dia</Button><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
         </div>
       </header>
 

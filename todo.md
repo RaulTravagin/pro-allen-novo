@@ -444,3 +444,14 @@
 - [x] Exibir no card detalhado do Gestor todos os registros de rota, postos, horários, checklist, observações, GPS e frota
 - [x] Criar testes de regressão para o consolidado completo e validar a interface em desktop e celular
 - [x] Publicar a atualização e orientar a conferência no Painel do Gestor: d623c93
+
+## Relatórios Executivos e Continuidade de Turno
+- [x] Auditar as datas de criação, a rota ativa e os dados de checklist, KM e abastecimento já persistidos
+- [x] Modelar o turno ativo com a rota em andamento, iniciada pelo KM inicial e encerrada pelo KM final; não foi necessária nova migração
+- [x] Salvar rascunhos locais de rota e checklist e restaurar a operação em andamento ao reabrir o aplicativo
+- [x] Criar área Relatórios restrita ao Gestor e Administrador com filtro padrão de últimos 30 dias, período, supervisor e placa
+- [x] Consolidar indicadores, abastecimentos e auditorias para o período selecionado
+- [x] Implementar exportação CSV/Excel com dados de frota, consumo, auditorias e checklists
+- [x] Implementar PDF executivo/impressão A4 com resumo, tabelas, status de ocorrências e quebra de página adequada
+- [x] Criar testes de persistência do turno, filtros, cálculos e exportações
+- [ ] Aplicar a migração PostgreSQL, publicar no Render e validar o fluxo completo

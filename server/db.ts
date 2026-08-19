@@ -1047,3 +1047,143 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     reportDate: today,
   };
 }
+
+export type OperationalReportFilters = {
+  startDate: Date;
+  endDate: Date;
+  supervisorId?: number | null;
+  vehicleId?: number | null;
+};
+
+/** Consolida o período solicitado pelo Gestor, sem depender do painel em tempo real. */
+export async function getOperationalManagementReport(input: OperationalReportFilters) {
+  const db = await getDb();
+  const startDate = new Date(input.startDate);
+  startDate.setHours(0, 0, 0, 0);
+  const endDate = new Date(input.endDate);
+  endDate.setHours(23, 59, 59, 999);
+  const empty = {
+    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null },
+    filterOptions: { supervisors: [], vehicles: [] },
+    summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, compliantItems: 0, nonCompliantItems: 0, complianceRate: null as number | null },
+    routes: [], fuelLogs: [], visits: [],
+  };
+  if (!db) return empty;
+
+  const routeConditions = [gte(supervisorRoutes.date, startDate), lte(supervisorRoutes.date, endDate)];
+  if (input.supervisorId) routeConditions.push(eq(supervisorRoutes.supervisorId, input.supervisorId));
+  if (input.vehicleId) routeConditions.push(eq(supervisorRoutes.vehicleId, input.vehicleId));
+
+  const fuelConditions = [] as ReturnType<typeof eq>[];
+  if (input.supervisorId) fuelConditions.push(eq(fuelLogs.supervisorId, input.supervisorId));
+  if (input.vehicleId) fuelConditions.push(eq(fuelLogs.vehicleId, input.vehicleId));
+
+  const [routeRows, visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles] = await Promise.all([
+    db.select({
+      id: supervisorRoutes.id,
+      date: supervisorRoutes.date,
+      status: supervisorRoutes.status,
+      supervisorId: supervisorRoutes.supervisorId,
+      supervisorName: users.name,
+      supervisorUsername: users.username,
+      routeName: routes.name,
+      routeRegion: routes.region,
+      kmInitial: supervisorRoutes.kmInitial,
+      kmFinal: supervisorRoutes.kmFinal,
+      startedAt: supervisorRoutes.startedAt,
+      completedAt: supervisorRoutes.completedAt,
+      vehicleId: supervisorRoutes.vehicleId,
+      vehiclePlate: vehicles.plate,
+      vehicleModel: vehicles.model,
+    }).from(supervisorRoutes)
+      .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+      .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
+      .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
+      .where(and(...routeConditions))
+      .orderBy(desc(supervisorRoutes.date), desc(supervisorRoutes.updatedAt)),
+    db.select({
+      id: visitChecklists.id,
+      supervisorRouteId: visitChecklists.supervisorRouteId,
+      postName: posts.name,
+      postRegion: posts.region,
+      status: visitChecklists.status,
+      arrivalTime: visitChecklists.arrivalTime,
+      departureTime: visitChecklists.departureTime,
+      observations: visitChecklists.observations,
+      isCoverage: visitChecklists.isCoverage,
+      coverageReason: visitChecklists.coverageReason,
+      supervisorId: supervisorRoutes.supervisorId,
+      supervisorName: users.name,
+      vehiclePlate: vehicles.plate,
+    }).from(visitChecklists)
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+      .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
+      .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
+      .where(and(...routeConditions))
+      .orderBy(desc(visitChecklists.updatedAt)),
+    db.select({
+      visitChecklistId: checklistItems.visitChecklistId,
+      isCompliant: checklistItems.isCompliant,
+    }).from(checklistItems)
+      .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .where(and(...routeConditions)),
+    db.select({
+      id: fuelLogs.id,
+      vehicleId: fuelLogs.vehicleId,
+      supervisorRouteId: fuelLogs.supervisorRouteId,
+      supervisorId: fuelLogs.supervisorId,
+      supervisorName: users.name,
+      vehiclePlate: vehicles.plate,
+      vehicleModel: vehicles.model,
+      odometerKm: fuelLogs.odometerKm,
+      amount: fuelLogs.amount,
+      liters: fuelLogs.liters,
+      fuelType: fuelLogs.fuelType,
+      createdAt: fuelLogs.createdAt,
+    }).from(fuelLogs)
+      .leftJoin(users, eq(users.id, fuelLogs.supervisorId))
+      .leftJoin(vehicles, eq(vehicles.id, fuelLogs.vehicleId))
+      .where(fuelConditions.length ? and(...fuelConditions) : undefined)
+      .orderBy(fuelLogs.vehicleId, fuelLogs.createdAt),
+    db.select({ id: users.id, name: users.name, username: users.username }).from(users)
+      .where(and(eq(users.role, "user"), eq(users.isOperational, true))).orderBy(users.name),
+    db.select({ id: vehicles.id, plate: vehicles.plate, model: vehicles.model }).from(vehicles)
+      .where(eq(vehicles.isActive, true)).orderBy(vehicles.plate),
+  ]);
+
+  const enrichedFuelRows = Array.from(new Set(fuelRows.map((row) => row.vehicleId))).flatMap((vehicleId) => enrichFuelHistory(fuelRows.filter((row) => row.vehicleId === vehicleId)));
+  const periodFuelLogs = enrichedFuelRows.filter((row) => row.createdAt >= startDate && row.createdAt <= endDate);
+  const itemStatsByVisit = new Map<number, { compliant: number; nonCompliant: number }>();
+  for (const item of itemRows) {
+    const current = itemStatsByVisit.get(item.visitChecklistId) ?? { compliant: 0, nonCompliant: 0 };
+    if (item.isCompliant === true) current.compliant += 1;
+    if (item.isCompliant === false) current.nonCompliant += 1;
+    itemStatsByVisit.set(item.visitChecklistId, current);
+  }
+  const visits = visitRows.map((visit) => ({ ...visit, ...(itemStatsByVisit.get(visit.id) ?? { compliant: 0, nonCompliant: 0 }) }));
+  const totalKm = routeRows.reduce((total, route) => route.kmInitial !== null && route.kmFinal !== null ? total + Math.max(0, Number(route.kmFinal) - Number(route.kmInitial)) : total, 0);
+  const totalFuelAmount = periodFuelLogs.reduce((total, log) => total + Number(log.amount), 0);
+  const totalConsumptionDistance = periodFuelLogs.reduce((total, log) => total + (log.distanceSincePrevious ?? 0), 0);
+  const totalConsumptionLiters = periodFuelLogs.reduce((total, log) => total + (log.distanceSincePrevious != null ? Number(log.liters) : 0), 0);
+  const compliantItems = visits.reduce((total, visit) => total + visit.compliant, 0);
+  const nonCompliantItems = visits.reduce((total, visit) => total + visit.nonCompliant, 0);
+
+  return {
+    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null },
+    filterOptions: { supervisors: reportSupervisors, vehicles: reportVehicles },
+    summary: {
+      totalKm: Number(totalKm.toFixed(2)),
+      totalFuelAmount: Number(totalFuelAmount.toFixed(2)),
+      averageConsumptionKmPerLiter: totalConsumptionLiters > 0 ? Number((totalConsumptionDistance / totalConsumptionLiters).toFixed(2)) : null,
+      inspections: visits.filter((visit) => visit.status === "visited").length,
+      compliantItems,
+      nonCompliantItems,
+      complianceRate: compliantItems + nonCompliantItems > 0 ? Number(((compliantItems / (compliantItems + nonCompliantItems)) * 100).toFixed(1)) : null,
+    },
+    routes: routeRows.map((route) => ({ ...route, kmCovered: route.kmInitial !== null && route.kmFinal !== null ? Number((Number(route.kmFinal) - Number(route.kmInitial)).toFixed(2)) : null })),
+    fuelLogs: periodFuelLogs,
+    visits,
+  };
+}

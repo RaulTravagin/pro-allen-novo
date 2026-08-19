@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { clearChecklistDraft, readChecklistDraft, saveChecklistDraft } from "@/lib/onlineOperationDraft";
 
 interface ChecklistPageProps {
   params: {
@@ -22,6 +23,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   
   const [observations, setObservations] = useState<string>("");
   const [itemStates, setItemStates] = useState<Record<number, { isCompliant: boolean; notes: string }>>({});
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // Queries
   const { data: checklist, isLoading: checklistLoading } = trpc.checklists.getById.useQuery({ id: checklistId });
@@ -32,12 +34,20 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
 
   useEffect(() => {
     if (!checklist) return;
-    setObservations(checklist.observations || "");
-    setItemStates(Object.fromEntries((checklist.items || []).map((item) => [item.id, {
+    const serverItems = Object.fromEntries((checklist.items || []).map((item) => [item.id, {
       isCompliant: item.isCompliant === true,
       notes: item.notes || "",
-    }])));
-  }, [checklist?.id]);
+    }]));
+    const draft = user?.id ? readChecklistDraft(user.id, checklist.id) : null;
+    setObservations(draft?.observations ?? checklist.observations ?? "");
+    setItemStates(draft?.itemStates ?? serverItems);
+    setDraftLoaded(true);
+  }, [checklist?.id, user?.id]);
+
+  useEffect(() => {
+    if (!checklist || !user?.id || !draftLoaded) return;
+    saveChecklistDraft(user.id, checklist.id, { observations, itemStates });
+  }, [checklist?.id, draftLoaded, itemStates, observations, user?.id]);
 
   const handleItemChange = async (itemId: number, isCompliant: boolean, notes?: string) => {
     setItemStates(prev => ({
@@ -59,6 +69,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   const handleSaveDetails = async () => {
     try {
       await updateDetailsMutation.mutateAsync({ checklistId, observations });
+      if (user?.id) clearChecklistDraft(user.id, checklistId);
       toast.success("Checklist salvo com sucesso");
     } catch (error) {
       toast.error("Não foi possível salvar as observações");
