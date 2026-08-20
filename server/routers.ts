@@ -302,6 +302,17 @@ export const appRouter = router({
       if (!route || route.supervisorId !== ctx.user.id) return null;
       return route;
     }),
+
+    cancelPending: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      const route = await db.getSupervisorRouteById(input.id);
+      if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (route.status !== 'pending' || route.kmInitial != null || route.startedAt != null) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma rota ainda não iniciada pode ser cancelada' });
+      }
+      await db.cancelPendingSupervisorRoute(input.id);
+      return { cancelled: true, supervisorRouteId: input.id };
+    }),
     
     updateKm: protectedProcedure
       .input(z.object({ id: z.number(), vehicleId: z.number().int().positive().optional(), kmInitial: z.number().optional(), kmFinal: z.number().optional() }))

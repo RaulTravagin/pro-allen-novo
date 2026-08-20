@@ -5,6 +5,8 @@ vi.mock("./db", () => ({
   getRouteById: vi.fn(),
   getSupervisorRoutesToday: vi.fn(),
   createSupervisorRoute: vi.fn(),
+  getSupervisorRouteById: vi.fn(),
+  cancelPendingSupervisorRoute: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -49,5 +51,23 @@ describe("supervisorRoutes.create", () => {
 
     await expect(caller.supervisorRoutes.create({ routeId: 1, date: new Date() })).resolves.toBe(45);
     expect(db.createSupervisorRoute).toHaveBeenCalledWith(1, 1, expect.any(Date));
+  });
+
+  it("ignora uma rota cancelada e permite preparar a rota correta", async () => {
+    vi.mocked(db.getSupervisorRoutesToday).mockResolvedValue([{ id: 44, status: "cancelled" }] as never);
+    vi.mocked(db.createSupervisorRoute).mockResolvedValue(45);
+    const caller = appRouter.createCaller(context);
+
+    await expect(caller.supervisorRoutes.create({ routeId: 1, date: new Date() })).resolves.toBe(45);
+    expect(db.createSupervisorRoute).toHaveBeenCalledWith(1, 1, expect.any(Date));
+  });
+
+  it("cancela somente a rota pendente do próprio supervisor", async () => {
+    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 44, supervisorId: 1, status: "pending", kmInitial: null, startedAt: null } as never);
+    vi.mocked(db.cancelPendingSupervisorRoute).mockResolvedValue(undefined as never);
+    const caller = appRouter.createCaller(context);
+
+    await expect(caller.supervisorRoutes.cancelPending({ id: 44 })).resolves.toEqual({ cancelled: true, supervisorRouteId: 44 });
+    expect(db.cancelPendingSupervisorRoute).toHaveBeenCalledWith(44);
   });
 });

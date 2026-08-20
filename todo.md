@@ -468,3 +468,10 @@
 - [x] Exibir no seletor e no card de pré-visualização os postos da rota escolhida antes da confirmação
 - [x] Criar regressões e validar a seleção, acessibilidade e build
 - [x] Publicar a melhoria no Render e orientar o novo fluxo: 759a35a
+
+## Cancelamento de Rota Não Iniciada
+- [x] Auditar os estados de rota e os registros dependentes antes do início da operação
+- [x] Criar API protegida que cancele somente a rota pendente do próprio supervisor e limpe os checklists preparados
+- [x] Adicionar confirmação de cancelamento e retorno ao Dashboard para nova seleção
+- [x] Criar regressões e validar autorização, interface e build
+- [ ] Publicar no Render e orientar o novo fluxo de correção de rota

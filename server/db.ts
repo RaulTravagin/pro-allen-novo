@@ -475,6 +475,22 @@ export async function updateSupervisorRoute(id: number, updates: any) {
     .where(eq(supervisorRoutes.id, id));
 }
 
+/** Cancela uma preparação ainda pendente e remove os checklists ainda não utilizados dela. */
+export async function cancelPendingSupervisorRoute(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.transaction(async (transaction) => {
+    const preparedChecklists = await transaction.select({ id: visitChecklists.id })
+      .from(visitChecklists)
+      .where(eq(visitChecklists.supervisorRouteId, id));
+    for (const checklist of preparedChecklists) {
+      await transaction.delete(checklistItems).where(eq(checklistItems.visitChecklistId, checklist.id));
+    }
+    await transaction.delete(visitChecklists).where(eq(visitChecklists.supervisorRouteId, id));
+    await transaction.update(supervisorRoutes).set({ status: "cancelled" }).where(eq(supervisorRoutes.id, id));
+  });
+}
+
 // Visit Checklists queries
 export async function createVisitChecklist(
   supervisorRouteId: number,

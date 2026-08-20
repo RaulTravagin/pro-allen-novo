@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus, XCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [coveragePostId, setCoveragePostId] = useState("");
   const [coverageReason, setCoverageReason] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
@@ -99,6 +101,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
+  const cancelPendingMutation = trpc.supervisorRoutes.cancelPending.useMutation();
   const saveVehicleMutation = trpc.fleet.saveVehicle.useMutation();
   const registerFuelMutation = trpc.fleet.registerFuel.useMutation();
   const recordLocationMutation = trpc.locations.record.useMutation();
@@ -302,6 +305,24 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     }
   };
 
+  const handleCancelPendingRoute = async () => {
+    try {
+      await cancelPendingMutation.mutateAsync({ id: supervisorRouteId });
+      if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
+      await Promise.all([
+        utils.supervisorRoutes.getTodayRoute.invalidate(),
+        utils.supervisorRoutes.getTodayHistory.invalidate(),
+        utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId }),
+      ]);
+      toast.success("Rota cancelada. Selecione a rota correta para continuar.");
+      navigate("/supervisor");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível cancelar a rota");
+    } finally {
+      setShowCancelConfirmation(false);
+    }
+  };
+
   if (routeLoading || checklistsLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -342,9 +363,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               <p className="text-gray-600 mt-1">{isBaseOperational ? "Atividade de apoio e operação interna" : "Status da rota"}: <span className="font-semibold text-blue-600">{route.status}</span></p>
             </div>
           </div>
-          <Button onClick={() => logout()} variant="outline">
-            Sair
-          </Button>
+          <div className="flex items-center gap-2">
+            {route.status === "pending" && <Button onClick={() => setShowCancelConfirmation(true)} variant="outline" className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"><XCircle className="mr-2 h-4 w-4" />Cancelar rota</Button>}
+            <Button onClick={() => logout()} variant="outline">Sair</Button>
+          </div>
         </div>
       </div>
 
@@ -632,6 +654,19 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         </div>}
 
       </div>
+
+      <AlertDialog open={showCancelConfirmation} onOpenChange={setShowCancelConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar esta rota?</AlertDialogTitle>
+            <AlertDialogDescription>Use esta ação somente se a rota foi selecionada por engano. Como o KM inicial ainda não foi registrado, a atividade será marcada como cancelada e você voltará ao Dashboard para selecionar a rota correta.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelPendingMutation.isPending}>Manter rota</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelPendingRoute} disabled={cancelPendingMutation.isPending} className="bg-rose-600 text-white hover:bg-rose-700">{cancelPendingMutation.isPending ? "Cancelando..." : "Sim, cancelar rota"}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
