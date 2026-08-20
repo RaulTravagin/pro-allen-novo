@@ -461,3 +461,10 @@
 - [x] Criar páginas de impressão com cabeçalho, resumo compacto, tabelas legíveis e quebras controladas
 - [x] Validar a estrutura de impressão, TypeScript, regressão do relatório e build de produção
 - [x] Publicar a correção no Render e orientar a geração do PDF: 878b95e
+
+## Pré-visualização de Postos por Rota
+- [x] Auditar o payload atual de rotas e a seleção no Dashboard do Supervisor
+- [x] Incluir no payload das rotas a lista resumida de postos associados e sua quantidade
+- [x] Exibir no seletor e no card de pré-visualização os postos da rota escolhida antes da confirmação
+- [x] Criar regressões e validar a seleção, acessibilidade e build
+- [ ] Publicar a melhoria no Render e orientar o novo fluxo

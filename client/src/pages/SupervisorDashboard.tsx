@@ -3,10 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, ListChecks, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+
+export function describeRoutePosts(route: { posts?: Array<{ name: string }> }) {
+  return route.posts?.length ? `Postos: ${route.posts.map((post) => post.name).join(", ")}` : "Postos: nenhum posto cadastrado";
+}
 
 export default function SupervisorDashboard() {
   const { user, logout } = useAuth();
@@ -19,13 +23,10 @@ export default function SupervisorDashboard() {
   const { data: todayRoute, isLoading: todayRouteLoading } = trpc.supervisorRoutes.getTodayRoute.useQuery();
   const { data: todayHistory, isLoading: todayHistoryLoading } = trpc.supervisorRoutes.getTodayHistory.useQuery();
   const selectedRoute = routes?.find((route) => route.id === Number(selectedRouteId));
+  const selectedRoutePosts = selectedRoute?.posts ?? [];
   const isBaseOperational = selectedRoute?.activityType === "operational_base";
   const completedBase = todayHistory?.find((route) => route.routeActivityType === "operational_base" && route.status === "completed");
   const selectableRoutes = routes?.filter((route) => route.activityType !== "operational_base" || !completedBase);
-  const { data: selectedPosts } = trpc.routes.getPostsByRoute.useQuery(
-    { routeId: Number(selectedRouteId) },
-    { enabled: Boolean(selectedRouteId) },
-  );
 
   const createRouteMutation = trpc.supervisorRoutes.create.useMutation();
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
@@ -139,7 +140,14 @@ export default function SupervisorDashboard() {
                     <SelectContent>
                       {selectableRoutes?.map((route) => (
                         <SelectItem key={route.id} value={route.id.toString()}>
-                          <span className="flex items-center gap-2">{route.activityType === "operational_base" ? <Building2 className="h-4 w-4 text-violet-700" /> : <MapPin className="h-4 w-4" />}{route.name} · {route.region}</span>
+                          <span className="flex max-w-[min(84vw,32rem)] items-start gap-2 py-0.5">
+                            {route.activityType === "operational_base" ? <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" /> : <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />}
+                            <span className="min-w-0">
+                              <span className="block font-medium text-slate-900">{route.name} · {route.region}</span>
+                              {route.activityType !== "operational_base" && <span className="mt-0.5 block truncate text-xs text-slate-500">{describeRoutePosts(route)}</span>}
+                              {route.activityType === "operational_base" && <span className="mt-0.5 block text-xs text-violet-700">Atividade interna, sem postos de cliente</span>}
+                            </span>
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -150,14 +158,17 @@ export default function SupervisorDashboard() {
                       <div className="flex items-start gap-3"><Building2 className="mt-0.5 h-5 w-5 text-violet-700" /><div className="min-w-0 flex-1"><p className="font-semibold text-violet-950">Atividade em Base Operacional</p><p className="mt-1 text-sm text-violet-800">Nenhum posto de cliente ou checklist será criado. Registre o KM da viatura e mantenha a localização ativa durante a atividade.</p></div></div>
                     </div>
                   ) : selectedRouteId && (
-                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
                       <div className="flex items-start gap-3">
-                        <ShieldCheck className="mt-0.5 h-5 w-5 text-blue-600" />
+                        <ListChecks className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-blue-950">{selectedPosts?.length ?? 0} postos nesta rota</p>
-                          <p className="mt-1 text-sm text-blue-800">Os endereços serão exibidos quando forem cadastrados. Confirme para preparar os checklists.</p>
+                          <p className="font-semibold text-blue-950">Pré-visualização da rota</p>
+                          <p className="mt-1 text-sm text-blue-800"><span className="font-semibold">{selectedRoutePosts.length} postos</span> serão preparados para a atividade. Confira abaixo antes de iniciar.</p>
                         </div>
                       </div>
+                      {selectedRoutePosts.length ? <ol className="mt-4 grid gap-2 sm:grid-cols-2" aria-label={`Postos da ${selectedRoute?.name}`}>
+                        {selectedRoutePosts.map((post, index) => <li key={post.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-blue-100 bg-white/80 px-3 py-2 text-sm text-slate-800"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700">{index + 1}</span><span className="truncate font-medium">{post.name}</span><span className="ml-auto shrink-0 text-xs text-slate-500">{post.region}</span></li>)}
+                      </ol> : <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Esta rota ainda não possui postos cadastrados. Confirme com o Gestor antes de iniciar.</p>}
                     </div>
                   )}
 
@@ -172,7 +183,7 @@ export default function SupervisorDashboard() {
 
         <section aria-label="Resumo da operação" className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600"><RouteIcon className="h-4 w-4" />Rotas disponíveis</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">{routes?.length ?? 0}</p><p className="mt-1 text-xs text-slate-500">Rotas cadastradas</p></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600">{isBaseOperational ? <Building2 className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}{isBaseOperational ? "Atividade selecionada" : "Postos na rota selecionada"}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">{selectedRouteId ? isBaseOperational ? "Base" : selectedPosts?.length ?? 0 : "—"}</p><p className="mt-1 text-xs text-slate-500">{isBaseOperational ? "Sem postos de cliente" : "Selecione uma rota para consultar"}</p></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600">{isBaseOperational ? <Building2 className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}{isBaseOperational ? "Atividade selecionada" : "Postos na rota selecionada"}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">{selectedRouteId ? isBaseOperational ? "Base" : selectedRoutePosts.length : "—"}</p><p className="mt-1 text-xs text-slate-500">{isBaseOperational ? "Sem postos de cliente" : selectedRouteId ? "Lista exibida antes da confirmação" : "Selecione uma rota para consultar"}</p></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-600"><Clock3 className="h-4 w-4" />KM do dia</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-slate-950">—</p><p className="mt-1 text-xs text-slate-500">Disponível após encerrar a rota</p></CardContent></Card>
         </section>
       </main>

@@ -228,7 +228,20 @@ export async function replaceGestorSchedule(input: { scheduleDate: Date; entries
 export async function getAllRoutes() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(routes);
+  const [routeRows, postRows] = await Promise.all([
+    db.select().from(routes),
+    db.select().from(posts).orderBy(posts.routeId, posts.order),
+  ]);
+  const postsByRoute = new Map<number, typeof postRows>();
+  for (const post of postRows) {
+    const grouped = postsByRoute.get(post.routeId) ?? [];
+    grouped.push(post);
+    postsByRoute.set(post.routeId, grouped);
+  }
+  return routeRows.map((route) => {
+    const routePosts = postsByRoute.get(route.id) ?? [];
+    return { ...route, posts: routePosts, postCount: routePosts.length };
+  });
 }
 
 export async function getRouteById(id: number) {
@@ -253,12 +266,7 @@ export async function getPostById(id: number) {
 }
 
 export async function getGestorPostsManagement() {
-  const routeRows = await getAllRoutes();
-  const routesWithPosts = await Promise.all(routeRows.map(async (route) => ({
-    ...route,
-    posts: await getPostsByRouteId(route.id),
-  })));
-  return { routes: routesWithPosts };
+  return { routes: await getAllRoutes() };
 }
 
 export async function createGestorPost(input: { routeId: number; name: string; region: string; address: string }) {

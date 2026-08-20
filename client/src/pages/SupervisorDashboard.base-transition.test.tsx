@@ -2,7 +2,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import SupervisorDashboard from "./SupervisorDashboard";
+import SupervisorDashboard, { describeRoutePosts } from "./SupervisorDashboard";
 
 const invalidate = vi.fn();
 
@@ -10,8 +10,7 @@ vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({ supervisorRoutes: { getTodayRoute: { invalidate }, getTodayHistory: { invalidate } }, checklists: { getByRoute: { invalidate } } }),
     routes: {
-      list: { useQuery: () => ({ data: [{ id: 1, name: "Rota 1", region: "Jundiaí", activityType: "field_route" }, { id: 50_001, name: "Base Operacional", region: "Operação Interna", activityType: "operational_base" }], isLoading: false, isError: false }) },
-      getPostsByRoute: { useQuery: () => ({ data: [], isLoading: false }) },
+      list: { useQuery: () => ({ data: [{ id: 1, name: "Rota 1", region: "Jundiaí", activityType: "field_route", postCount: 2, posts: [{ id: 11, name: "Carmel", region: "Cabreúva" }, { id: 12, name: "Bottcher", region: "Jundiaí" }] }, { id: 50_001, name: "Base Operacional", region: "Operação Interna", activityType: "operational_base", postCount: 0, posts: [] }], isLoading: false, isError: false }) },
     },
     supervisorRoutes: {
       getTodayRoute: { useQuery: () => ({ data: null, isLoading: false }) },
@@ -33,5 +32,6 @@ describe("SupervisorDashboard após Base Operacional", () => {
     expect(screen.getAllByText("Iniciar rota de campo").length).toBeGreaterThan(0);
     expect(screen.getByText(/Agora escolha uma rota de campo para continuar o turno/)).toBeTruthy();
     expect(screen.getByLabelText("Selecionar rota")).toBeTruthy();
+    expect(describeRoutePosts({ posts: [{ name: "Carmel" }, { name: "Bottcher" }] })).toBe("Postos: Carmel, Bottcher");
   });
 });
