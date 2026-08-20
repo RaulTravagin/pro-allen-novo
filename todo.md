@@ -467,4 +467,4 @@
 - [x] Incluir no payload das rotas a lista resumida de postos associados e sua quantidade
 - [x] Exibir no seletor e no card de pré-visualização os postos da rota escolhida antes da confirmação
 - [x] Criar regressões e validar a seleção, acessibilidade e build
-- [ ] Publicar a melhoria no Render e orientar o novo fluxo
+- [x] Publicar a melhoria no Render e orientar o novo fluxo: 759a35a
