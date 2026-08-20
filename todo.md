@@ -474,4 +474,4 @@
 - [x] Criar API protegida que cancele somente a rota pendente do próprio supervisor e limpe os checklists preparados
 - [x] Adicionar confirmação de cancelamento e retorno ao Dashboard para nova seleção
 - [x] Criar regressões e validar autorização, interface e build
-- [ ] Publicar no Render e orientar o novo fluxo de correção de rota
+- [x] Publicar no Render e orientar o novo fluxo de correção de rota: 794cb13
