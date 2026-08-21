@@ -1185,6 +1185,130 @@ export type OperationalReportFilters = {
   shiftType?: OperationShift | null;
 };
 
+export type GestorKpiFilters = {
+  startDate?: Date | null;
+  endDate?: Date | null;
+  shiftType?: OperationShift | null;
+  supervisorId?: number | null;
+};
+
+export type GestorKpiSummary = {
+  period: { start: Date; end: Date; shiftType: OperationShift | null; supervisorId: number | null };
+  inspections: { completed: number; audited: number; target: number; completionRate: number | null };
+  auditDuration: { averageMinutes: number | null; measuredVisits: number };
+  fleet: { totalKm: number; routesWithKm: number; routesPendingKm: number };
+  compliance: { rate: number | null; compliantVisits: number; evaluatedVisits: number; nonCompliantItems: number };
+};
+
+/**
+ * Indicadores do painel do Gestor calculados por agregação no PostgreSQL.
+ * Cada métrica é resolvida em uma única consulta agregada, evitando trazer linhas
+ * de rotas, visitas e itens para a aplicação apenas para contá-las.
+ */
+export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): Promise<GestorKpiSummary> {
+  const period = filters.startDate && filters.endDate
+    ? getOperationalRangeForCalendarDates(filters.startDate, filters.endDate)
+    : (() => {
+      const current = getCurrentOperationalPeriod();
+      return { start: current.start, end: current.end };
+    })();
+  const shiftType = filters.shiftType ?? null;
+  const supervisorId = filters.supervisorId ?? null;
+  const empty: GestorKpiSummary = {
+    period: { start: period.start, end: period.end, shiftType, supervisorId },
+    inspections: { completed: 0, audited: 0, target: 0, completionRate: null },
+    auditDuration: { averageMinutes: null, measuredVisits: 0 },
+    fleet: { totalKm: 0, routesWithKm: 0, routesPendingKm: 0 },
+    compliance: { rate: null, compliantVisits: 0, evaluatedVisits: 0, nonCompliantItems: 0 },
+  };
+
+  const db = await getDb();
+  if (!db) return empty;
+
+  const routeFilter = and(
+    gte(supervisorRoutes.shiftStartedAt, period.start),
+    lt(supervisorRoutes.shiftStartedAt, period.end),
+    shiftType ? eq(supervisorRoutes.shiftType, shiftType) : undefined,
+    supervisorId ? eq(supervisorRoutes.supervisorId, supervisorId) : undefined,
+  );
+
+  const [routeAggregate, visitAggregate, complianceAggregate] = await Promise.all([
+    // Frota e meta das rotas: KM percorrido e total de postos previstos nas rotas do período.
+    db.select({
+      totalKm: sql<string | null>`coalesce(sum(greatest(${supervisorRoutes.kmFinal} - ${supervisorRoutes.kmInitial}, 0)) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is not null), 0)`,
+      routesWithKm: sql<string | null>`count(*) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is not null)`,
+      routesPendingKm: sql<string | null>`count(*) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is null)`,
+      plannedPosts: sql<string | null>`coalesce(sum((select count(*) from ${posts} p where p."routeId" = ${supervisorRoutes.routeId} and p."isActive" = true)), 0)`,
+    }).from(supervisorRoutes).where(routeFilter),
+    // Vistorias e tempo médio por auditoria, medido entre chegada e saída do posto.
+    db.select({
+      completed: sql<string | null>`count(*) filter (where ${visitChecklists.status} = 'visited')`,
+      audited: sql<string | null>`count(*) filter (where ${visitChecklists.auditSubmittedAt} is not null or ${visitChecklists.status} = 'visited')`,
+      measuredVisits: sql<string | null>`count(*) filter (where ${visitChecklists.arrivalTime} is not null and ${visitChecklists.departureTime} is not null and ${visitChecklists.departureTime} >= ${visitChecklists.arrivalTime})`,
+      averageMinutes: sql<string | null>`avg(extract(epoch from (${visitChecklists.departureTime} - ${visitChecklists.arrivalTime})) / 60) filter (where ${visitChecklists.arrivalTime} is not null and ${visitChecklists.departureTime} is not null and ${visitChecklists.departureTime} >= ${visitChecklists.arrivalTime})`,
+    }).from(visitChecklists)
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .where(routeFilter),
+    // Índice de conformidade: percentual de auditorias respondidas sem nenhuma não conformidade.
+    db.select({
+      evaluatedVisits: sql<string | null>`count(*)`,
+      compliantVisits: sql<string | null>`count(*) filter (where "nonCompliantItems" = 0)`,
+      nonCompliantItems: sql<string | null>`coalesce(sum("nonCompliantItems"), 0)`,
+    }).from(
+      db.select({
+        visitId: visitChecklists.id,
+        answeredItems: sql<number>`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} is not null)`.as("answeredItems"),
+        nonCompliantItems: sql<number>`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} = false)`.as("nonCompliantItems"),
+      }).from(visitChecklists)
+        .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+        .innerJoin(checklistItems, eq(checklistItems.visitChecklistId, visitChecklists.id))
+        .where(routeFilter)
+        .groupBy(visitChecklists.id)
+        .having(sql`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} is not null) > 0`)
+        .as("answeredVisits"),
+    ),
+  ]);
+
+  const toNumber = (value: string | number | null | undefined) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const totalKm = Number(toNumber(routeAggregate[0]?.totalKm).toFixed(2));
+  const target = toNumber(routeAggregate[0]?.plannedPosts);
+  const completed = toNumber(visitAggregate[0]?.completed);
+  const audited = toNumber(visitAggregate[0]?.audited);
+  const measuredVisits = toNumber(visitAggregate[0]?.measuredVisits);
+  const rawAverage = visitAggregate[0]?.averageMinutes;
+  const evaluatedVisits = toNumber(complianceAggregate[0]?.evaluatedVisits);
+  const compliantVisits = toNumber(complianceAggregate[0]?.compliantVisits);
+
+  return {
+    period: { start: period.start, end: period.end, shiftType, supervisorId },
+    inspections: {
+      completed,
+      audited,
+      target,
+      completionRate: target > 0 ? Number(((audited / target) * 100).toFixed(1)) : null,
+    },
+    auditDuration: {
+      averageMinutes: measuredVisits > 0 && rawAverage !== null && rawAverage !== undefined ? Number(Number(rawAverage).toFixed(1)) : null,
+      measuredVisits,
+    },
+    fleet: {
+      totalKm,
+      routesWithKm: toNumber(routeAggregate[0]?.routesWithKm),
+      routesPendingKm: toNumber(routeAggregate[0]?.routesPendingKm),
+    },
+    compliance: {
+      rate: evaluatedVisits > 0 ? Number(((compliantVisits / evaluatedVisits) * 100).toFixed(1)) : null,
+      compliantVisits,
+      evaluatedVisits,
+      nonCompliantItems: toNumber(complianceAggregate[0]?.nonCompliantItems),
+    },
+  };
+}
+
 /** Consolida o período solicitado pelo Gestor, sem depender do painel em tempo real. */
 export async function getOperationalManagementReport(input: OperationalReportFilters) {
   const db = await getDb();

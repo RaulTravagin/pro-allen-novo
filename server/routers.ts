@@ -146,6 +146,22 @@ export const appRouter = router({
     schedule: gestorProcedure.input(z.object({ scheduleDate: z.date().optional() }).optional()).query(async ({ input }) => {
       return db.getGestorSchedule(input?.scheduleDate);
     }),
+    kpis: gestorProcedure.input(z.object({
+      startDate: z.date().optional().nullable(),
+      endDate: z.date().optional().nullable(),
+      shiftType: z.enum(["day", "night"]).optional().nullable(),
+      supervisorId: z.number().int().positive().optional().nullable(),
+    }).optional()).query(async ({ input }) => {
+      if (input?.startDate && input?.endDate && input.endDate < input.startDate) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A data final não pode ser anterior à data inicial" });
+      }
+      return db.getGestorOperationalKpis({
+        startDate: input?.startDate ?? null,
+        endDate: input?.endDate ?? null,
+        shiftType: input?.shiftType ?? null,
+        supervisorId: input?.supervisorId ?? null,
+      });
+    }),
     updateSchedule: gestorProcedure.input(z.object({
       scheduleDate: z.date(),
       entries: z.array(z.object({

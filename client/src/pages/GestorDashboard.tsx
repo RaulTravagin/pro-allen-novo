@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 const REFRESH_INTERVAL = 5_000;
+const KPI_REFRESH_INTERVAL = 30_000;
 
 function formatTime(value: Date | string | null | undefined) {
   return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
@@ -148,6 +149,8 @@ export default function GestorDashboard() {
   const [, navigate] = useLocation();
   const [showDailyReport, setShowDailyReport] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [reportDateValue, setReportDateValue] = useState(() => toDateInputValue(new Date()));
   const [reportShiftType, setReportShiftType] = useState<"" | "day" | "night">("");
   const [liveShiftType, setLiveShiftType] = useState<"" | "day" | "night">("");
@@ -161,6 +164,8 @@ export default function GestorDashboard() {
   const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
   const dashboardInput = useMemo(() => ({ shiftType: liveShiftType || null }), [liveShiftType]);
   const dashboard = trpc.gestor.dashboard.useQuery(dashboardInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
+  const kpiInput = useMemo(() => ({ shiftType: liveShiftType || null }), [liveShiftType]);
+  const kpis = trpc.gestor.kpis.useQuery(kpiInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: KPI_REFRESH_INTERVAL, refetchOnWindowFocus: true, placeholderData: (previous) => previous });
   const dailyReportInput = useMemo(() => ({ reportDate: new Date(`${reportDateValue}T12:00:00`), shiftType: reportShiftType || null }), [reportDateValue, reportShiftType]);
   const dailyReport = trpc.gestor.dailyReport.useQuery(dailyReportInput, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false });
   const scheduleInput = useMemo(() => ({ scheduleDate: new Date(`${scheduleDateValue}T12:00:00`) }), [scheduleDateValue]);
@@ -182,6 +187,59 @@ export default function GestorDashboard() {
     },
   });
   const logout = trpc.gestorAccess.logout.useMutation({ onSuccess: () => navigate("/gestor/acesso") });
+
+  const liveShiftLabel = liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente";
+
+  async function exportSupervisorPdf(supervisor: any) {
+    setPdfError(null);
+    setIsExportingPdf(`supervisor-${supervisor.supervisorId}`);
+    try {
+      const [{ downloadOperationalReportPdf }, { buildSupervisorPdfSection, slugifyFileName }] = await Promise.all([
+        import("@/lib/operationalReportPdf"),
+        import("@/lib/gestorPdfAdapters"),
+      ]);
+      const section = buildSupervisorPdfSection(supervisor);
+      await downloadOperationalReportPdf({
+        title: "Relatório de rota e auditorias",
+        periodLabel: liveShiftLabel,
+        sections: [section],
+        summaryLines: [
+          `Supervisor: ${section.supervisorName}${section.supervisorUsername ? ` (@${section.supervisorUsername})` : ""}.`,
+          `Rota: ${section.routeName ?? "—"}${section.routeRegion ? ` · ${section.routeRegion}` : ""} · Situação: ${section.statusLabel ?? "—"}.`,
+          `Postos registrados no período: ${section.visits.length}.`,
+        ],
+        fileName: `pro-allen-${slugifyFileName(section.supervisorName)}-${new Date().toISOString().slice(0, 10)}.pdf`,
+      });
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+    } finally {
+      setIsExportingPdf(null);
+    }
+  }
+
+  async function exportPeriodPdf() {
+    if (!dailyReport.data) return;
+    setPdfError(null);
+    setIsExportingPdf("periodo");
+    try {
+      const [{ downloadOperationalReportPdf }, { buildDailyReportPdfSections, buildDailyReportSummaryLines }] = await Promise.all([
+        import("@/lib/operationalReportPdf"),
+        import("@/lib/gestorPdfAdapters"),
+      ]);
+      const reportDate = new Date(dailyReport.data.reportDate);
+      await downloadOperationalReportPdf({
+        title: "Relatório operacional do período",
+        periodLabel: `${reportDate.toLocaleDateString("pt-BR")} · ${reportShiftType === "day" ? "Plantão Dia" : reportShiftType === "night" ? "Plantão Noite" : "Todos os turnos"}`,
+        sections: buildDailyReportPdfSections(dailyReport.data),
+        summaryLines: buildDailyReportSummaryLines(dailyReport.data),
+        fileName: `pro-allen-relatorio-${reportDate.toISOString().slice(0, 10)}.pdf`,
+      });
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+    } finally {
+      setIsExportingPdf(null);
+    }
+  }
 
   useEffect(() => {
     if (sessionQuery.isFetchedAfterMount && !isCheckingSession && !session?.authenticated) navigate("/gestor/acesso");
@@ -222,13 +280,16 @@ export default function GestorDashboard() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
 
+        <OperationalKpiBlock kpis={kpis.data} loading={kpis.isLoading} fetching={kpis.isFetching} error={kpis.error?.message} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
+
         <section className="space-y-4">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Acompanhamento em tempo real</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Supervisores, postos e tempo de atendimento</h2><p className="mt-1 text-sm text-slate-600">Cada supervisor permanece aberto para consulta imediata de posto atual, tempo no local, GPS, KM, checklist, observações, alertas e próximas ações.</p></div>
-          {dashboard.isLoading ? <LoadingRows /> : supervisors.length ? <div className="space-y-4">{supervisors.map((supervisor) => <SupervisorOperationalCard key={supervisor.supervisorId} supervisor={supervisor} />)}</div> : <EmptyState title="Nenhum supervisor cadastrado" description="Os supervisores aparecerão nesta área quando tiverem acesso operacional configurado." />}
+          {pdfError && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{pdfError}</p>}
+          {dashboard.isLoading ? <LoadingRows /> : supervisors.length ? <div className="space-y-4">{supervisors.map((supervisor) => <SupervisorOperationalCard key={supervisor.supervisorId} supervisor={supervisor} onExportPdf={() => exportSupervisorPdf(supervisor)} exporting={isExportingPdf === `supervisor-${supervisor.supervisorId}`} />)}</div> : <EmptyState title="Nenhum supervisor cadastrado" description="Os supervisores aparecerão nesta área quando tiverem acesso operacional configurado." />}
         </section>
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button variant="outline" onClick={exportPeriodPdf} disabled={!dailyReport.data || isExportingPdf === "periodo"} className="gap-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"><FileDown className="h-4 w-4" /> {isExportingPdf === "periodo" ? "Gerando PDF..." : "Exportar PDF"}</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
           {dailyReport.isLoading ? <LoadingRows /> : dailyReport.data ? <DailyOperationalReport report={dailyReport.data} /> : <EmptyState title="Relatório indisponível" description="Tente atualizar os dados do relatório diário." />}
         </section>}
 
@@ -315,7 +376,79 @@ function ReportMetric({ label, value, alert = false }: { label: string; value: s
   return <div className={`rounded-xl border p-4 ${alert ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}><p className="text-lg font-bold text-slate-950">{value}</p><p className="mt-1 text-xs font-medium text-slate-600">{label}</p></div>;
 }
 
-function SupervisorOperationalCard({ supervisor }: { supervisor: any }) {
+function OperationalKpiBlock({ kpis, loading, fetching, error, shiftLabel }: { kpis: any; loading: boolean; fetching: boolean; error?: string; shiftLabel: string }) {
+  const formatNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
+  const inspections = kpis?.inspections;
+  const duration = kpis?.auditDuration;
+  const fleet = kpis?.fleet;
+  const compliance = kpis?.compliance;
+  const periodLabel = kpis?.period ? `${new Date(kpis.period.start).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} até ${new Date(kpis.period.end).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Período em apuração";
+
+  return <section className="rounded-3xl border border-amber-200 bg-white p-6 shadow-sm">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="flex items-center gap-2 text-sm font-semibold text-amber-700"><Gauge className="h-4 w-4" /> Indicadores operacionais</p>
+        <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Desempenho do período selecionado</h2>
+        <p className="mt-1 text-sm text-slate-600">{shiftLabel} · {periodLabel}</p>
+      </div>
+      <p className="text-xs font-medium text-slate-500">{loading ? "Carregando indicadores..." : fetching ? "Atualizando indicadores..." : "Cálculo agregado direto no banco de dados"}</p>
+    </div>
+    {error && <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{error}</p>}
+    <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <KpiCard
+        icon={ClipboardCheck}
+        tone="blue"
+        label="Vistorias realizadas vs. meta"
+        value={loading && !kpis ? "—" : `${inspections?.audited ?? 0}/${inspections?.target ?? 0}`}
+        detail={inspections?.completionRate != null ? `${formatNumber(inspections.completionRate, "%")} da meta das rotas · ${inspections?.completed ?? 0} visitas encerradas` : "Meta indisponível: nenhuma rota preparada no período"}
+        progress={inspections?.completionRate ?? null}
+      />
+      <KpiCard
+        icon={Clock3}
+        tone="indigo"
+        label="Tempo médio por auditoria"
+        value={duration?.averageMinutes != null ? formatDuration(Math.round(duration.averageMinutes)) : "—"}
+        detail={duration?.measuredVisits ? `Base de cálculo: ${duration.measuredVisits} visita(s) com chegada e saída registradas` : "Ainda sem visitas com chegada e saída no período"}
+      />
+      <KpiCard
+        icon={Car}
+        tone="emerald"
+        label="KM rodado pela frota"
+        value={`${formatNumber(fleet?.totalKm ?? 0)} km`}
+        detail={fleet?.routesPendingKm ? `${fleet.routesWithKm} rota(s) fechada(s) · ${fleet.routesPendingKm} aguardando KM final` : `${fleet?.routesWithKm ?? 0} rota(s) com KM inicial e final informados`}
+      />
+      <KpiCard
+        icon={ShieldCheck}
+        tone={compliance?.rate != null && compliance.rate < 80 ? "red" : "amber"}
+        label="Índice de conformidade"
+        value={compliance?.rate != null ? formatNumber(compliance.rate, "%") : "—"}
+        detail={compliance?.evaluatedVisits ? `${compliance.compliantVisits} de ${compliance.evaluatedVisits} checklists sem ocorrência · ${compliance.nonCompliantItems} item(ns) em não conformidade` : "Nenhum checklist respondido no período"}
+        progress={compliance?.rate ?? null}
+      />
+    </div>
+  </section>;
+}
+
+function KpiCard({ icon: Icon, label, value, detail, tone, progress = null }: { icon: typeof Gauge; label: string; value: string; detail: string; tone: "blue" | "emerald" | "amber" | "indigo" | "red"; progress?: number | null }) {
+  const tones: Record<string, string> = {
+    blue: "bg-blue-50 text-blue-700",
+    emerald: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-700",
+    indigo: "bg-indigo-50 text-indigo-700",
+    red: "bg-rose-50 text-rose-700",
+  };
+  return <article className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{label}</p>
+      <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="h-4 w-4" /></span>
+    </div>
+    <p className="mt-3 text-2xl font-bold tracking-tight text-slate-950">{value}</p>
+    {progress != null && <Progress value={Math.max(0, Math.min(100, progress))} className="mt-3 h-1.5" />}
+    <p className="mt-3 text-xs leading-5 text-slate-600">{detail}</p>
+  </article>;
+}
+
+function SupervisorOperationalCard({ supervisor, onExportPdf, exporting = false }: { supervisor: any; onExportPdf?: () => void; exporting?: boolean }) {
   const route = supervisor.route;
   const activities = supervisor.activities ?? (route ? [route] : []);
   const status = operationStatus(supervisor.status);
@@ -323,7 +456,7 @@ function SupervisorOperationalCard({ supervisor }: { supervisor: any }) {
   const gpsDescription = supervisor.latestLocation ? `${formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude)} · ${supervisor.latestLocation.accuracy != null ? `precisão ${Number(supervisor.latestLocation.accuracy).toFixed(0)} m` : "precisão não informada"}` : "GPS ainda não recebido";
 
   return <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm" open>
-    <summary className="flex cursor-pointer list-none flex-col gap-4 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">{String(supervisor.supervisorName ?? "S").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-lg font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-0.5 truncate text-sm text-slate-500">{supervisor.supervisorUsername ? `@${supervisor.supervisorUsername}` : "Usuário operacional"} {route ? `· ${route.routeName}` : ""}</p></div></div><div className="flex flex-wrap items-center gap-2"><Badge className={status.className}>{status.label}</Badge>{route && <span className="text-sm font-medium text-slate-700">{route.routeActivityType === "operational_base" ? "Atividade interna" : `${route.auditedVisits}/${route.totalPosts} auditados`}</span>}<ChevronDown className="h-5 w-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" /></div></summary>
+    <summary className="flex cursor-pointer list-none flex-col gap-4 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">{String(supervisor.supervisorName ?? "S").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-lg font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-0.5 truncate text-sm text-slate-500">{supervisor.supervisorUsername ? `@${supervisor.supervisorUsername}` : "Usuário operacional"} {route ? `· ${route.routeName}` : ""}</p></div></div><div className="flex flex-wrap items-center gap-2"><Badge className={status.className}>{status.label}</Badge>{route && <span className="text-sm font-medium text-slate-700">{route.routeActivityType === "operational_base" ? "Atividade interna" : `${route.auditedVisits}/${route.totalPosts} auditados`}</span>}{onExportPdf && <Button type="button" size="sm" variant="outline" disabled={!route || exporting} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onExportPdf(); }} className="gap-2 border-slate-300"><FileDown className="h-4 w-4" /> {exporting ? "Gerando PDF..." : "Exportar PDF"}</Button>}<ChevronDown className="h-5 w-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" /></div></summary>
     <div className="border-t border-slate-100 p-5">
       {!route ? <EmptyState title="Nenhuma rota preparada hoje" description="Ainda não há registros de rota para este supervisor no dia de hoje." /> : <div className="space-y-6">
         <div className="grid gap-4 lg:grid-cols-4"><InfoBlock icon={Route} label={route.routeActivityType === "operational_base" ? "Atividade" : "Rota"} value={route.routeActivityType === "operational_base" ? "Base Operacional" : `${route.routeName} · ${route.routeRegion}`} detail={route.routeActivityType === "operational_base" ? "Atividade interna sem postos de cliente" : route.startedAt ? `Iniciada às ${formatTime(route.startedAt)}` : "Ainda não iniciada"} /><InfoBlock icon={Activity} label={route.routeActivityType === "operational_base" ? "Situação atual" : "Posto atual e tempo"} value={route.routeActivityType === "operational_base" ? "Em atividade na base" : route.activeVisit?.postName ?? "Em deslocamento"} detail={route.routeActivityType === "operational_base" ? "Sem checklist de visita previsto" : route.activeVisit ? `No posto há ${formatDuration(route.activeVisit.durationMinutes)} · chegada ${formatTime(route.activeVisit.arrivalTime)}` : route.nextPost ? `Próximo posto: ${route.nextPost.postName}` : "Sem próximos postos"} /><InfoBlock icon={Car} label="Viatura e KM" value={route.kmInitial != null ? `${Number(route.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM inicial pendente"} detail={route.kmFinal != null ? `${Number(route.kmFinal).toLocaleString("pt-BR")} km final · ${Number(route.kmCovered ?? 0).toLocaleString("pt-BR")} km rodados` : "KM final não informado"} /><InfoBlock icon={Crosshair} label="Último GPS" value={supervisor.latestLocation ? `${supervisor.latestLocation.recordedAt ? `há ${route.gpsAgeMinutes ?? 0} min` : "recebido"}` : "Sem localização"} detail={gpsDescription} /></div>

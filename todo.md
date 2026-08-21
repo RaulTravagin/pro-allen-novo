@@ -506,3 +506,12 @@
 - [x] Executar cenário controlado de rota em andamento com auditoria enviada sem KM final
 - [x] Confirmar no consolidado do Gestor o posto auditado, itens, observações e progresso atualizado
 - [x] Registrar e comunicar o resultado da validação
+
+## Indicadores Operacionais e Exportação em PDF no Painel do Gestor
+- [x] Criar agregação otimizada no PostgreSQL para vistorias realizadas, meta das rotas, tempo médio por auditoria, KM da frota e índice de conformidade
+- [x] Expor os indicadores em procedimento tRPC protegido pelo acesso do Gestor, respeitando o filtro de turno e período
+- [x] Exibir bloco com quatro cards de indicadores no topo do painel, sem bloquear o carregamento das demais seções
+- [x] Gerar PDF por supervisor com cabeçalho institucional, data e hora do plantão, supervisor, viatura e KM inicial e final
+- [x] Incluir no PDF a lista detalhada dos postos auditados com respostas do checklist, observações e registros fotográficos
+- [x] Disponibilizar exportação em PDF do período completo selecionado no painel
+- [x] Validar tipagem, testes automatizados e build, e publicar a versão

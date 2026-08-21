@@ -122,6 +122,20 @@ vi.mock("@/lib/trpc", () => ({
           data: scheduleFixture,
         }),
       },
+      kpis: {
+        useQuery: () => ({
+          isLoading: false,
+          isFetching: false,
+          error: null,
+          data: {
+            period: { start: new Date("2026-08-12T09:00:00.000Z"), end: new Date("2026-08-12T21:00:00.000Z"), shiftType: "day", supervisorId: null },
+            inspections: { completed: 1, audited: 2, target: 4, completionRate: 50 },
+            auditDuration: { averageMinutes: 32.5, measuredVisits: 2 },
+            fleet: { totalKm: 84.5, routesWithKm: 1, routesPendingKm: 1 },
+            compliance: { rate: 75, compliantVisits: 3, evaluatedVisits: 4, nonCompliantItems: 1 },
+          },
+        }),
+      },
       updateSchedule: { useMutation: () => ({ mutate: scheduleUpdate, isPending: false, error: null }) },
       postsManagement: { useQuery: () => ({ isLoading: false, data: postsManagementFixture }) },
       createPost: { useMutation: () => ({ mutate: postCreate, isPending: false, error: null }) },
