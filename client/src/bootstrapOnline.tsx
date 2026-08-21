@@ -6,7 +6,20 @@ import superjson from "superjson";
 import App from "./App";
 import { trpc } from "./lib/trpc";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5_000,
+      retry: (failureCount, error) => {
+        const message = error instanceof Error ? error.message.toLowerCase() : "";
+        const transient = /network|timeout|failed to fetch|connection/.test(message);
+        return transient && failureCount < 2;
+      },
+      refetchOnWindowFocus: true,
+    },
+    mutations: { retry: false },
+  },
+});
 
 queryClient.getQueryCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") console.error("[API Query Error]", event.query.state.error);

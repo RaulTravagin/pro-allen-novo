@@ -484,3 +484,12 @@
 - [x] Manter atividades abertas visíveis até o encerramento explícito, inclusive após fechar o navegador
 - [x] Criar regressões de turno noturno, persistência, filtros, extração e autorização
 - [x] Gerar a migração PostgreSQL, aplicar no deploy Render/Neon, publicar e validar o fluxo completo: a373550
+
+## Auditoria de Estabilidade e Regras Operacionais
+- [x] Auditar ciclo de vida do processo, conexão PostgreSQL, consultas de turno e mutações do supervisor
+- [x] Implementar tratamento global de exceções e pool PostgreSQL resiliente a falhas transitórias
+- [x] Confirmar consultas por janela de turno e persistência de atividades abertas após a meia-noite
+- [x] Invalidar e atualizar o cache de rota, KM e formulários após mutações bem-sucedidas
+- [x] Confirmar payload e pré-visualização de postos na seleção de rotas do supervisor
+- [x] Criar regressões de estabilidade, turno, invalidação de cache e rotas
+- [ ] Publicar a refatoração no Render e validar os fluxos críticos

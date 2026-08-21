@@ -9,6 +9,43 @@ import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOp
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
 
+const TRANSIENT_DATABASE_CODES = new Set([
+  "57P01", // admin_shutdown
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now
+  "08000", // connection_exception
+  "08001", // sqlclient_unable_to_establish_sqlconnection
+  "08003", // connection_does_not_exist
+  "08006", // connection_failure
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+
+export function isTransientDatabaseError(error: unknown) {
+  const candidate = error as { code?: unknown; message?: unknown } | undefined;
+  const code = typeof candidate?.code === "string" ? candidate.code : "";
+  const message = typeof candidate?.message === "string" ? candidate.message.toLowerCase() : "";
+  return TRANSIENT_DATABASE_CODES.has(code) || /connection terminated|connection closed|timeout|network|socket hang up/.test(message);
+}
+
+async function resetDatabasePool(reason: string) {
+  const pool = _pool;
+  _db = null;
+  _pool = null;
+  if (!pool) return;
+  try {
+    await pool.end();
+  } catch (error) {
+    console.warn(`[Database] Falha ao encerrar o pool após ${reason}:`, error);
+  }
+}
+
+export async function closeDatabasePool() {
+  await resetDatabasePool("encerramento controlado da aplicação");
+}
+
 /** Normaliza retornos PostgreSQL com cláusula RETURNING para obter o identificador inserido. */
 export function getInsertedId(result: unknown) {
   const row = Array.isArray(result) ? result[0] : result;
@@ -21,18 +58,34 @@ export function getInsertedId(result: unknown) {
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      const requiresSsl = process.env.DATABASE_SSL === "true" || process.env.DATABASE_URL.includes("neon.tech");
-      _pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
-      });
-      _db = drizzle({ client: _pool, schema });
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+  if (_db) return _db;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return null;
+
+  try {
+    const requiresSsl = process.env.DATABASE_SSL === "true" || databaseUrl.includes("neon.tech");
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
+      max: 6,
+      min: 0,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      allowExitOnIdle: false,
+      keepAlive: true,
+    });
+    pool.on("error", (error) => {
+      console.error("[Database] Erro em conexão ociosa do pool:", error);
+      if (isTransientDatabaseError(error)) {
+        void resetDatabasePool("falha transitória da conexão");
+      }
+    });
+    await pool.query("SELECT 1");
+    _pool = pool;
+    _db = drizzle({ client: pool, schema });
+  } catch (error) {
+    console.warn("[Database] Banco indisponível; uma nova tentativa será feita na próxima operação:", error);
+    await resetDatabasePool("falha de conexão inicial");
   }
   return _db;
 }

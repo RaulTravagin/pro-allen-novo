@@ -110,6 +110,18 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
   const createCoverageMutation = trpc.checklists.createCoverage.useMutation();
 
+  const refreshOperationalData = async () => {
+    await Promise.all([
+      utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId }),
+      utils.supervisorRoutes.getTodayRoute.invalidate(),
+      utils.supervisorRoutes.getTodayHistory.invalidate(),
+      utils.checklists.getByRoute.invalidate({ supervisorRouteId }),
+      utils.gestor.dashboard.invalidate(),
+      utils.gestor.dailyReport.invalidate(),
+      utils.gestor.operationalReport.invalidate(),
+    ]);
+  };
+
   useEffect(() => {
     if (!route || checklistsLoading || !posts?.length || (checklists?.length ?? 0) > 0 || createChecklistsMutation.isPending) {
       return;
@@ -169,7 +181,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     }
     try {
       await createCoverageMutation.mutateAsync({ supervisorRouteId, postId, coverageReason: reason });
-      await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+      await refreshOperationalData();
       setCoveragePostId("");
       setCoverageReason("");
       toast.success("Cobertura adicionada. Registre a chegada no novo card.");
@@ -225,6 +237,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         vehicleId,
         kmInitial: initialKm,
       });
+      await refreshOperationalData();
       setKmInitial("");
       toast.success("Rota iniciada com sucesso!");
     } catch (error) {
@@ -244,7 +257,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       setVehiclePlate("");
       setVehicleModel("");
       setShowNewVehicle(false);
-      await utils.fleet.listVehicles.invalidate();
+      await Promise.all([utils.fleet.listVehicles.invalidate(), utils.fleet.getFuelSummary.invalidate()]);
       toast.success("Viatura cadastrada e selecionada");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível cadastrar a viatura");
@@ -265,7 +278,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       setFuelAmount("");
       setFuelLiters("");
       setShowFuelForm(false);
-      if (effectiveVehicleId) await utils.fleet.getFuelSummary.invalidate({ vehicleId: effectiveVehicleId });
+      await Promise.all([
+        effectiveVehicleId ? utils.fleet.getFuelSummary.invalidate({ vehicleId: effectiveVehicleId }) : Promise.resolve(),
+        refreshOperationalData(),
+      ]);
       toast.success("Abastecimento registrado com sucesso");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível registrar o abastecimento");
@@ -294,9 +310,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         kmFinal: finalKm,
       });
       if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
-      await utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId });
-      await utils.supervisorRoutes.getTodayRoute.invalidate();
-      await utils.supervisorRoutes.getTodayHistory.invalidate();
+      await refreshOperationalData();
       setShowKmFinal(false);
       toast.success(isBaseOperational ? "Base Operacional encerrada. Agora escolha a rota de campo." : "Rota encerrada com sucesso!");
     } catch (error) {
@@ -309,11 +323,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     try {
       await cancelPendingMutation.mutateAsync({ id: supervisorRouteId });
       if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
-      await Promise.all([
-        utils.supervisorRoutes.getTodayRoute.invalidate(),
-        utils.supervisorRoutes.getTodayHistory.invalidate(),
-        utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId }),
-      ]);
+      await refreshOperationalData();
       toast.success("Rota cancelada. Selecione a rota correta para continuar.");
       navigate("/supervisor");
     } catch (error) {
@@ -624,7 +634,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   try {
                     const coordinates = await captureCoordinates();
                     await checkInMutation.mutateAsync({ checklistId, ...coordinates });
-                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+                    await refreshOperationalData();
                     toast.success("Chegada registrada com sucesso!");
                   } catch (error) {
                     toast.error("Erro ao registrar chegada");
@@ -635,7 +645,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   try {
                     const coordinates = await captureCoordinates();
                     await checkOutMutation.mutateAsync({ checklistId, ...coordinates });
-                    await utils.checklists.getByRoute.invalidate({ supervisorRouteId });
+                    await refreshOperationalData();
                     toast.success("Saída registrada com sucesso!");
                   } catch (error) {
                     toast.error("Erro ao registrar saída");
