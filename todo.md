@@ -531,3 +531,8 @@
 - [x] Reestruturar o PDF com resumo cronológico, vistorias detalhadas, fotos organizadas e alertas de ocorrência
 - [x] Renomear e ordenar as colunas da exportação Excel/CSV em português claro
 - [x] Validar geração, apresentação visual, testes, tipagem e build antes da publicação
+
+## Envio da Refatoração de Relatórios ao GitHub
+- [x] Conferir o estado do repositório e preparar o commit solicitado
+- [ ] Criar o commit das alterações de relatórios corporativos
+- [ ] Enviar o commit ao GitHub e confirmar a atualização remota
