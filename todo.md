@@ -483,4 +483,4 @@
 - [x] Adaptar consultas do Gestor e relatórios para intervalo, supervisor, viatura e turno, com padrão de 30 dias
 - [x] Manter atividades abertas visíveis até o encerramento explícito, inclusive após fechar o navegador
 - [x] Criar regressões de turno noturno, persistência, filtros, extração e autorização
-- [ ] Gerar e aplicar a migração PostgreSQL, publicar no Render e validar o fluxo completo
+- [x] Gerar a migração PostgreSQL, aplicar no deploy Render/Neon, publicar e validar o fluxo completo: a373550
