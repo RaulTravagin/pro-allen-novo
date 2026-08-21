@@ -211,7 +211,8 @@ export default function GestorDashboard() {
         fileName: `pro-allen-${slugifyFileName(section.supervisorName)}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch (error) {
-      setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+      console.error("[Relatório PDF] Falha ao gerar o documento:", error);
+      setPdfError("Não foi possível gerar o PDF agora. Tente novamente em instantes.");
     } finally {
       setIsExportingPdf(null);
     }
@@ -235,7 +236,8 @@ export default function GestorDashboard() {
         fileName: `pro-allen-relatorio-${reportDate.toISOString().slice(0, 10)}.pdf`,
       });
     } catch (error) {
-      setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+      console.error("[Relatório PDF] Falha ao gerar o documento:", error);
+      setPdfError("Não foi possível gerar o PDF agora. Tente novamente em instantes.");
     } finally {
       setIsExportingPdf(null);
     }
@@ -280,7 +282,7 @@ export default function GestorDashboard() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
 
-        <OperationalKpiBlock kpis={kpis.data} loading={kpis.isLoading} fetching={kpis.isFetching} error={kpis.error?.message} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
+        <OperationalKpiBlock kpis={kpis.data} loading={kpis.isLoading} fetching={kpis.isFetching} unavailable={Boolean(kpis.error)} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
 
         <section className="space-y-4">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Acompanhamento em tempo real</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Supervisores, postos e tempo de atendimento</h2><p className="mt-1 text-sm text-slate-600">Cada supervisor permanece aberto para consulta imediata de posto atual, tempo no local, GPS, KM, checklist, observações, alertas e próximas ações.</p></div>
@@ -376,7 +378,7 @@ function ReportMetric({ label, value, alert = false }: { label: string; value: s
   return <div className={`rounded-xl border p-4 ${alert ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}><p className="text-lg font-bold text-slate-950">{value}</p><p className="mt-1 text-xs font-medium text-slate-600">{label}</p></div>;
 }
 
-function OperationalKpiBlock({ kpis, loading, fetching, error, shiftLabel }: { kpis: any; loading: boolean; fetching: boolean; error?: string; shiftLabel: string }) {
+function OperationalKpiBlock({ kpis, loading, fetching, unavailable = false, shiftLabel }: { kpis: any; loading: boolean; fetching: boolean; unavailable?: boolean; shiftLabel: string }) {
   const formatNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
   const inspections = kpis?.inspections;
   const duration = kpis?.auditDuration;
@@ -391,15 +393,15 @@ function OperationalKpiBlock({ kpis, loading, fetching, error, shiftLabel }: { k
         <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Desempenho do período selecionado</h2>
         <p className="mt-1 text-sm text-slate-600">{shiftLabel} · {periodLabel}</p>
       </div>
-      <p className="text-xs font-medium text-slate-500">{loading ? "Carregando indicadores..." : fetching ? "Atualizando indicadores..." : "Cálculo agregado direto no banco de dados"}</p>
+      <p className="text-xs font-medium text-slate-500">{loading ? "Carregando indicadores..." : unavailable ? "Indicadores temporariamente indisponíveis" : fetching ? "Atualizando indicadores..." : "Cálculo agregado direto no banco de dados"}</p>
     </div>
-    {error && <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{error}</p>}
+    {unavailable && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Não foi possível calcular os indicadores neste momento. Os cards permanecem zerados e a próxima atualização automática tentará novamente.</p>}
     <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard
         icon={ClipboardCheck}
         tone="blue"
         label="Vistorias realizadas vs. meta"
-        value={loading && !kpis ? "—" : `${inspections?.audited ?? 0}/${inspections?.target ?? 0}`}
+        value={loading && !kpis ? "—" : unavailable ? "0/0" : `${inspections?.audited ?? 0}/${inspections?.target ?? 0}`}
         detail={inspections?.completionRate != null ? `${formatNumber(inspections.completionRate, "%")} da meta das rotas · ${inspections?.completed ?? 0} visitas encerradas` : "Meta indisponível: nenhuma rota preparada no período"}
         progress={inspections?.completionRate ?? null}
       />
@@ -407,23 +409,23 @@ function OperationalKpiBlock({ kpis, loading, fetching, error, shiftLabel }: { k
         icon={Clock3}
         tone="indigo"
         label="Tempo médio por auditoria"
-        value={duration?.averageMinutes != null ? formatDuration(Math.round(duration.averageMinutes)) : "—"}
+        value={!unavailable && duration?.averageMinutes != null ? formatDuration(Math.round(duration.averageMinutes)) : "—"}
         detail={duration?.measuredVisits ? `Base de cálculo: ${duration.measuredVisits} visita(s) com chegada e saída registradas` : "Ainda sem visitas com chegada e saída no período"}
       />
       <KpiCard
         icon={Car}
         tone="emerald"
         label="KM rodado pela frota"
-        value={`${formatNumber(fleet?.totalKm ?? 0)} km`}
+        value={`${formatNumber(unavailable ? 0 : fleet?.totalKm ?? 0)} km`}
         detail={fleet?.routesPendingKm ? `${fleet.routesWithKm} rota(s) fechada(s) · ${fleet.routesPendingKm} aguardando KM final` : `${fleet?.routesWithKm ?? 0} rota(s) com KM inicial e final informados`}
       />
       <KpiCard
         icon={ShieldCheck}
-        tone={compliance?.rate != null && compliance.rate < 80 ? "red" : "amber"}
+        tone={!unavailable && compliance?.rate != null && compliance.rate < 80 ? "red" : "amber"}
         label="Índice de conformidade"
-        value={compliance?.rate != null ? formatNumber(compliance.rate, "%") : "—"}
-        detail={compliance?.evaluatedVisits ? `${compliance.compliantVisits} de ${compliance.evaluatedVisits} checklists sem ocorrência · ${compliance.nonCompliantItems} item(ns) em não conformidade` : "Nenhum checklist respondido no período"}
-        progress={compliance?.rate ?? null}
+        value={!unavailable && compliance?.rate != null ? formatNumber(compliance.rate, "%") : "—"}
+        detail={!unavailable && compliance?.evaluatedVisits ? `${compliance.compliantVisits} de ${compliance.evaluatedVisits} checklists sem ocorrência · ${compliance.nonCompliantItems} item(ns) em não conformidade` : "Nenhum checklist respondido no período"}
+        progress={unavailable ? null : compliance?.rate ?? null}
       />
     </div>
   </section>;

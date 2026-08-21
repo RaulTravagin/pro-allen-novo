@@ -515,3 +515,10 @@
 - [x] Incluir no PDF a lista detalhada dos postos auditados com respostas do checklist, observações e registros fotográficos
 - [x] Disponibilizar exportação em PDF do período completo selecionado no painel
 - [x] Validar tipagem, testes automatizados e build, e publicar a versão
+
+## Correção Urgente dos Indicadores Operacionais
+- [x] Corrigir a ambiguidade de coluna na subconsulta de metas entre postos e rotas do supervisor
+- [x] Qualificar KM inicial, KM final, início do turno e rota com os aliases corretos das tabelas
+- [x] Retornar indicadores zerados quando a consulta falhar, sem propagar exceção pelo endpoint
+- [x] Remover a exibição do texto bruto de erro nos cards, mantendo valores neutros
+- [x] Criar regressão da consulta agregada e publicar a correção

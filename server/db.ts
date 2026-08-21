@@ -1201,9 +1201,32 @@ export type GestorKpiSummary = {
 };
 
 /**
+ * Resultado neutro dos indicadores, usado quando o banco está indisponível
+ * ou a consulta agregada falha. Mantém o mesmo formato do retorno normal.
+ */
+export function buildEmptyGestorKpis(filters: GestorKpiFilters = {}): GestorKpiSummary {
+  const period = filters.startDate && filters.endDate
+    ? getOperationalRangeForCalendarDates(filters.startDate, filters.endDate)
+    : (() => {
+      const current = getCurrentOperationalPeriod();
+      return { start: current.start, end: current.end };
+    })();
+  return {
+    period: { start: period.start, end: period.end, shiftType: filters.shiftType ?? null, supervisorId: filters.supervisorId ?? null },
+    inspections: { completed: 0, audited: 0, target: 0, completionRate: null },
+    auditDuration: { averageMinutes: null, measuredVisits: 0 },
+    fleet: { totalKm: 0, routesWithKm: 0, routesPendingKm: 0 },
+    compliance: { rate: null, compliantVisits: 0, evaluatedVisits: 0, nonCompliantItems: 0 },
+  };
+}
+
+/**
  * Indicadores do painel do Gestor calculados por agregação no PostgreSQL.
  * Cada métrica é resolvida em uma única consulta agregada, evitando trazer linhas
  * de rotas, visitas e itens para a aplicação apenas para contá-las.
+ * Toda coluna é referenciada pelo objeto de schema do Drizzle, que emite o nome
+ * qualificado da tabela e elimina ambiguidade nas subconsultas correlacionadas.
+ * Falhas de consulta retornam indicadores zerados em vez de propagar exceção.
  */
 export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): Promise<GestorKpiSummary> {
   const period = filters.startDate && filters.endDate
@@ -1214,13 +1237,7 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
     })();
   const shiftType = filters.shiftType ?? null;
   const supervisorId = filters.supervisorId ?? null;
-  const empty: GestorKpiSummary = {
-    period: { start: period.start, end: period.end, shiftType, supervisorId },
-    inspections: { completed: 0, audited: 0, target: 0, completionRate: null },
-    auditDuration: { averageMinutes: null, measuredVisits: 0 },
-    fleet: { totalKm: 0, routesWithKm: 0, routesPendingKm: 0 },
-    compliance: { rate: null, compliantVisits: 0, evaluatedVisits: 0, nonCompliantItems: 0 },
-  };
+  const empty = buildEmptyGestorKpis(filters);
 
   const db = await getDb();
   if (!db) return empty;
@@ -1232,47 +1249,71 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
     supervisorId ? eq(supervisorRoutes.supervisorId, supervisorId) : undefined,
   );
 
-  const [routeAggregate, visitAggregate, complianceAggregate] = await Promise.all([
-    // Frota e meta das rotas: KM percorrido e total de postos previstos nas rotas do período.
-    db.select({
-      totalKm: sql<string | null>`coalesce(sum(greatest(${supervisorRoutes.kmFinal} - ${supervisorRoutes.kmInitial}, 0)) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is not null), 0)`,
-      routesWithKm: sql<string | null>`count(*) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is not null)`,
-      routesPendingKm: sql<string | null>`count(*) filter (where ${supervisorRoutes.kmInitial} is not null and ${supervisorRoutes.kmFinal} is null)`,
-      plannedPosts: sql<string | null>`coalesce(sum((select count(*) from ${posts} p where p."routeId" = ${supervisorRoutes.routeId} and p."isActive" = true)), 0)`,
-    }).from(supervisorRoutes).where(routeFilter),
-    // Vistorias e tempo médio por auditoria, medido entre chegada e saída do posto.
-    db.select({
-      completed: sql<string | null>`count(*) filter (where ${visitChecklists.status} = 'visited')`,
-      audited: sql<string | null>`count(*) filter (where ${visitChecklists.auditSubmittedAt} is not null or ${visitChecklists.status} = 'visited')`,
-      measuredVisits: sql<string | null>`count(*) filter (where ${visitChecklists.arrivalTime} is not null and ${visitChecklists.departureTime} is not null and ${visitChecklists.departureTime} >= ${visitChecklists.arrivalTime})`,
-      averageMinutes: sql<string | null>`avg(extract(epoch from (${visitChecklists.departureTime} - ${visitChecklists.arrivalTime})) / 60) filter (where ${visitChecklists.arrivalTime} is not null and ${visitChecklists.departureTime} is not null and ${visitChecklists.departureTime} >= ${visitChecklists.arrivalTime})`,
-    }).from(visitChecklists)
-      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-      .where(routeFilter),
-    // Índice de conformidade: percentual de auditorias respondidas sem nenhuma não conformidade.
-    db.select({
-      evaluatedVisits: sql<string | null>`count(*)`,
-      compliantVisits: sql<string | null>`count(*) filter (where "nonCompliantItems" = 0)`,
-      nonCompliantItems: sql<string | null>`coalesce(sum("nonCompliantItems"), 0)`,
-    }).from(
-      db.select({
-        visitId: visitChecklists.id,
-        answeredItems: sql<number>`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} is not null)`.as("answeredItems"),
-        nonCompliantItems: sql<number>`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} = false)`.as("nonCompliantItems"),
-      }).from(visitChecklists)
-        .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-        .innerJoin(checklistItems, eq(checklistItems.visitChecklistId, visitChecklists.id))
-        .where(routeFilter)
-        .groupBy(visitChecklists.id)
-        .having(sql`count(${checklistItems.id}) filter (where ${checklistItems.isCompliant} is not null) > 0`)
-        .as("answeredVisits"),
-    ),
-  ]);
-
   const toNumber = (value: string | number | null | undefined) => {
     const parsed = Number(value ?? 0);
     return Number.isFinite(parsed) ? parsed : 0;
   };
+
+  let routeAggregate: Array<{ totalKm: string | null; routesWithKm: string | null; routesPendingKm: string | null; plannedPosts: string | null }> = [];
+  let visitAggregate: Array<{ completed: string | null; audited: string | null; measuredVisits: string | null; averageMinutes: string | null }> = [];
+  let complianceAggregate: Array<{ evaluatedVisits: string | null; compliantVisits: string | null; nonCompliantItems: string | null }> = [];
+
+  // Colunas qualificadas manualmente: dentro de `sql` cru o Drizzle emite apenas o nome
+  // da coluna, o que gera ambiguidade em subconsultas correlacionadas com `posts`.
+  const routeKmInitial = sql`"supervisorRoutes"."kmInitial"`;
+  const routeKmFinal = sql`"supervisorRoutes"."kmFinal"`;
+  const routeRouteId = sql`"supervisorRoutes"."routeId"`;
+  const postRouteId = sql`"posts"."routeId"`;
+  const visitStatus = sql`"visitChecklists"."status"`;
+  const visitAuditSubmittedAt = sql`"visitChecklists"."auditSubmittedAt"`;
+  const visitArrival = sql`"visitChecklists"."arrivalTime"`;
+  const visitDeparture = sql`"visitChecklists"."departureTime"`;
+  const itemId = sql`"checklistItems"."id"`;
+  const itemIsCompliant = sql`"checklistItems"."isCompliant"`;
+  const answeredNonCompliant = sql`"answeredVisits"."nonCompliantItems"`;
+
+  try {
+    // Subconsulta agregada por visita: conta itens respondidos e não conformes de cada auditoria.
+    const answeredVisits = db.select({
+      visitId: visitChecklists.id,
+      answeredItems: sql<number>`count(${itemId}) filter (where ${itemIsCompliant} is not null)`.as("answeredItems"),
+      nonCompliantItems: sql<number>`count(${itemId}) filter (where ${itemIsCompliant} = false)`.as("nonCompliantItems"),
+    }).from(visitChecklists)
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .innerJoin(checklistItems, eq(checklistItems.visitChecklistId, visitChecklists.id))
+      .where(routeFilter)
+      .groupBy(visitChecklists.id)
+      .having(sql`count(${itemId}) filter (where ${itemIsCompliant} is not null) > 0`)
+      .as("answeredVisits");
+
+    [routeAggregate, visitAggregate, complianceAggregate] = await Promise.all([
+      // Frota e meta das rotas: KM percorrido e total de postos previstos nas rotas do período.
+      db.select({
+        totalKm: sql<string | null>`coalesce(sum(greatest(${routeKmFinal} - ${routeKmInitial}, 0)) filter (where ${routeKmInitial} is not null and ${routeKmFinal} is not null), 0)`,
+        routesWithKm: sql<string | null>`count(*) filter (where ${routeKmInitial} is not null and ${routeKmFinal} is not null)`,
+        routesPendingKm: sql<string | null>`count(*) filter (where ${routeKmInitial} is not null and ${routeKmFinal} is null)`,
+        plannedPosts: sql<string | null>`coalesce(sum((select count(*) from ${posts} where ${postRouteId} = ${routeRouteId})), 0)`,
+      }).from(supervisorRoutes).where(routeFilter),
+      // Vistorias e tempo médio por auditoria, medido entre chegada e saída do posto.
+      db.select({
+        completed: sql<string | null>`count(*) filter (where ${visitStatus} = 'visited')`,
+        audited: sql<string | null>`count(*) filter (where ${visitAuditSubmittedAt} is not null or ${visitStatus} = 'visited')`,
+        measuredVisits: sql<string | null>`count(*) filter (where ${visitArrival} is not null and ${visitDeparture} is not null and ${visitDeparture} >= ${visitArrival})`,
+        averageMinutes: sql<string | null>`avg(extract(epoch from (${visitDeparture} - ${visitArrival})) / 60) filter (where ${visitArrival} is not null and ${visitDeparture} is not null and ${visitDeparture} >= ${visitArrival})`,
+      }).from(visitChecklists)
+        .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+        .where(routeFilter),
+      // Índice de conformidade: percentual de auditorias respondidas sem nenhuma não conformidade.
+      db.select({
+        evaluatedVisits: sql<string | null>`count(*)`,
+        compliantVisits: sql<string | null>`count(*) filter (where ${answeredNonCompliant} = 0)`,
+        nonCompliantItems: sql<string | null>`coalesce(sum(${answeredNonCompliant}), 0)`,
+      }).from(answeredVisits),
+    ]);
+  } catch (error) {
+    console.error("[Indicadores] Falha ao calcular os indicadores operacionais do Gestor:", error);
+    return empty;
+  }
 
   const totalKm = Number(toNumber(routeAggregate[0]?.totalKm).toFixed(2));
   const target = toNumber(routeAggregate[0]?.plannedPosts);

@@ -155,12 +155,23 @@ export const appRouter = router({
       if (input?.startDate && input?.endDate && input.endDate < input.startDate) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "A data final não pode ser anterior à data inicial" });
       }
-      return db.getGestorOperationalKpis({
-        startDate: input?.startDate ?? null,
-        endDate: input?.endDate ?? null,
-        shiftType: input?.shiftType ?? null,
-        supervisorId: input?.supervisorId ?? null,
-      });
+      // Indicadores nunca derrubam o painel: qualquer falha de consulta vira resultado zerado.
+      try {
+        return await db.getGestorOperationalKpis({
+          startDate: input?.startDate ?? null,
+          endDate: input?.endDate ?? null,
+          shiftType: input?.shiftType ?? null,
+          supervisorId: input?.supervisorId ?? null,
+        });
+      } catch (error) {
+        console.error("[Indicadores] Consulta de indicadores indisponível; retornando valores zerados:", error);
+        return db.buildEmptyGestorKpis({
+          startDate: input?.startDate ?? null,
+          endDate: input?.endDate ?? null,
+          shiftType: input?.shiftType ?? null,
+          supervisorId: input?.supervisorId ?? null,
+        });
+      }
     }),
     updateSchedule: gestorProcedure.input(z.object({
       scheduleDate: z.date(),
