@@ -500,4 +500,4 @@
 - [x] Remover filtros que excluam checklists de rotas em andamento da visão e do relatório do Gestor
 - [x] Exibir progresso de postos auditados e permitir abrir detalhes de auditorias concluídas durante o plantão
 - [x] Criar regressões de persistência imediata, rota em andamento, progresso e permissões
-- [ ] Publicar a correção no Render e validar a atualização no painel
+- [x] Publicar a correção no Render e validar a atualização no painel: b75a2dc
