@@ -501,3 +501,8 @@
 - [x] Exibir progresso de postos auditados e permitir abrir detalhes de auditorias concluídas durante o plantão
 - [x] Criar regressões de persistência imediata, rota em andamento, progresso e permissões
 - [x] Publicar a correção no Render e validar a atualização no painel: b75a2dc
+
+## Validação Simulada de Auditoria em Rota Aberta
+- [x] Executar cenário controlado de rota em andamento com auditoria enviada sem KM final
+- [x] Confirmar no consolidado do Gestor o posto auditado, itens, observações e progresso atualizado
+- [x] Registrar e comunicar o resultado da validação

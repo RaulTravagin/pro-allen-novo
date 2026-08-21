@@ -851,6 +851,23 @@ type OperationalAlert = {
   description: string;
 };
 
+export function deriveAuditProgress(checklists: Array<{
+  status: string;
+  auditSubmittedAt?: Date | string | null;
+  checklistSummary?: { total?: number; unanswered?: number };
+}>) {
+  const completedVisits = checklists.filter((checklist) => checklist.status === "visited").length;
+  const auditedVisits = checklists.filter((checklist) => {
+    if (checklist.auditSubmittedAt) return true;
+    const total = Number(checklist.checklistSummary?.total ?? 0);
+    const unanswered = Number(checklist.checklistSummary?.unanswered ?? total);
+    return checklist.status === "visited" && total > 0 && unanswered < total;
+  }).length;
+  const pendingVisits = checklists.filter((checklist) => checklist.status === "pending").length;
+  const skippedVisits = checklists.filter((checklist) => checklist.status === "skipped").length;
+  return { completedVisits, auditedVisits, pendingVisits, skippedVisits, totalPosts: checklists.length };
+}
+
 /** Converte dados de rota em um estado legível e em alertas acionáveis para o Gestor. */
 export function deriveGestorOperationalState(input: {
   routeStatus?: string | null;
@@ -1040,10 +1057,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       });
     const activeVisit = routeChecklists.find((checklist) => checklist.status === "in_progress") ?? null;
     const nextPost = routeChecklists.find((checklist) => checklist.status === "pending") ?? null;
-    const completedVisits = routeChecklists.filter((checklist) => checklist.status === "visited").length;
-    const auditedVisits = routeChecklists.filter((checklist) => checklist.auditSubmittedAt !== null || (checklist.status === "visited" && checklist.checklistSummary.total > 0 && checklist.checklistSummary.unanswered < checklist.checklistSummary.total)).length;
-    const pendingVisits = routeChecklists.filter((checklist) => checklist.status === "pending").length;
-    const skippedVisits = routeChecklists.filter((checklist) => checklist.status === "skipped").length;
+    const auditProgress = deriveAuditProgress(routeChecklists);
     const latestLocation = locationBySupervisor.get(route.supervisorId) ?? null;
     const state = deriveGestorOperationalState({
       routeStatus: route.status,
@@ -1067,11 +1081,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       } : null,
       fuelLogs: fuelHistory.filter((log) => log.supervisorRouteId === route.id),
       fuelHistory: fuelHistory.slice(0, 8),
-      totalPosts: routeChecklists.length,
-      completedVisits,
-      auditedVisits,
-      pendingVisits,
-      skippedVisits,
+      ...auditProgress,
       activeVisit,
       nextPost,
       checklistVisits: routeChecklists,

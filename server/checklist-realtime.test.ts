@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
-vi.mock("./db", () => ({
-  getVisitChecklistById: vi.fn(),
-  getSupervisorRouteById: vi.fn(),
-  updateVisitChecklist: vi.fn(),
-  touchSupervisorRouteFromChecklist: vi.fn(),
-}));
+vi.mock("./db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./db")>();
+  return {
+    ...actual,
+    getVisitChecklistById: vi.fn(),
+    getSupervisorRouteById: vi.fn(),
+    updateVisitChecklist: vi.fn(),
+    touchSupervisorRouteFromChecklist: vi.fn(),
+  };
+});
 
 import * as db from "./db";
+import { deriveAuditProgress } from "./db";
 import { appRouter } from "./routers";
 
 function supervisorContext(supervisorId = 17): TrpcContext {
@@ -34,5 +39,19 @@ describe("sincronização imediata de auditoria", () => {
       auditSubmittedAt: expect.any(Date),
     }));
     expect(db.touchSupervisorRouteFromChecklist).toHaveBeenCalledWith(33);
+  });
+
+  it("contabiliza o posto auditado no Gestor mesmo com a rota e a visita ainda em andamento", () => {
+    const progress = deriveAuditProgress([
+      {
+        status: "in_progress",
+        auditSubmittedAt: new Date("2026-08-21T22:15:00.000Z"),
+        checklistSummary: { total: 9, unanswered: 0 },
+      },
+      { status: "pending", auditSubmittedAt: null, checklistSummary: { total: 9, unanswered: 9 } },
+      { status: "pending", auditSubmittedAt: null, checklistSummary: { total: 9, unanswered: 9 } },
+    ]);
+
+    expect(progress).toEqual({ totalPosts: 3, auditedVisits: 1, completedVisits: 0, pendingVisits: 2, skippedVisits: 0 });
   });
 });
