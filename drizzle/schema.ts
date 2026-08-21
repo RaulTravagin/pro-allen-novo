@@ -8,6 +8,7 @@ export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const scheduleAssignmentEnum = pgEnum("schedule_assignment", ["day", "night", "reliever", "off"]);
 export const routeActivityTypeEnum = pgEnum("route_activity_type", ["field_route", "operational_base"]);
 export const supervisorRouteStatusEnum = pgEnum("supervisor_route_status", ["pending", "in_progress", "completed", "cancelled"]);
+export const operationShiftEnum = pgEnum("operation_shift", ["day", "night"]);
 export const visitChecklistStatusEnum = pgEnum("visit_checklist_status", ["pending", "in_progress", "visited", "skipped"]);
 export const fuelTypeEnum = pgEnum("fuel_type", ["gasoline", "ethanol", "diesel"]);
 
@@ -99,6 +100,8 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
   routeId: integer("routeId").notNull(),
   vehicleId: integer("vehicleId"),
   date: timestamp("date", { withTimezone: true }).notNull(),
+  shiftType: operationShiftEnum("shiftType").notNull(),
+  shiftStartedAt: timestamp("shiftStartedAt", { withTimezone: true }).notNull(),
   status: supervisorRouteStatusEnum("status").default("pending").notNull(),
   kmInitial: numeric("kmInitial", { precision: 10, scale: 2 }),
   kmFinal: numeric("kmFinal", { precision: 10, scale: 2 }),
@@ -110,6 +113,7 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
   supervisorIdIdx: index("idx_supervisorRoutes_supervisorId").on(table.supervisorId),
   vehicleIdIdx: index("idx_supervisorRoutes_vehicleId").on(table.vehicleId),
   dateIdx: index("idx_supervisorRoutes_date").on(table.date),
+  shiftWindowIdx: index("idx_supervisorRoutes_shift_window").on(table.shiftStartedAt, table.shiftType),
   statusIdx: index("idx_supervisorRoutes_status").on(table.status),
 }));
 

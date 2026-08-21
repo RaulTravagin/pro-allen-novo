@@ -15,6 +15,13 @@
       "when": 1787159158079,
       "tag": "0001_gorgeous_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787271481793,
+      "tag": "0002_redundant_master_chief",
+      "breakpoints": true
     }
   ]
 }

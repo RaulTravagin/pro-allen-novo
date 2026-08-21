@@ -71,11 +71,11 @@ describe("gestorAccess", () => {
     await expect(authorizedCaller.gestorAccess.session()).resolves.toEqual({ authenticated: true });
     await expect(authorizedCaller.gestor.dashboard()).resolves.toMatchObject({ activeRoutes: [] });
     const historicalDate = new Date("2026-08-14T12:00:00");
-    await expect(authorizedCaller.gestor.dailyReport({ reportDate: historicalDate })).resolves.toMatchObject({ summary: { supervisors: 0 } });
-    expect(db.getGestorOperationalSnapshot).toHaveBeenLastCalledWith(historicalDate, { includeHistoricalUsers: true });
+    await expect(authorizedCaller.gestor.dailyReport({ reportDate: historicalDate, shiftType: "night" })).resolves.toMatchObject({ summary: { supervisors: 0 } });
+    expect(db.getGestorOperationalSnapshot).toHaveBeenLastCalledWith(historicalDate, { includeHistoricalUsers: true, shiftType: "night" });
     vi.mocked(db.getOperationalManagementReport).mockResolvedValue({ summary: { totalKm: 0 }, filterOptions: { supervisors: [], vehicles: [] }, routes: [], fuelLogs: [], visits: [] } as never);
-    await expect(authorizedCaller.gestor.operationalReport({ startDate: new Date("2026-08-01"), endDate: historicalDate, supervisorId: 1, vehicleId: 8 })).resolves.toMatchObject({ summary: { totalKm: 0 } });
-    expect(db.getOperationalManagementReport).toHaveBeenCalledWith(expect.objectContaining({ supervisorId: 1, vehicleId: 8 }));
+    await expect(authorizedCaller.gestor.operationalReport({ startDate: new Date("2026-08-01"), endDate: historicalDate, supervisorId: 1, vehicleId: 8, shiftType: "night" })).resolves.toMatchObject({ summary: { totalKm: 0 } });
+    expect(db.getOperationalManagementReport).toHaveBeenCalledWith(expect.objectContaining({ supervisorId: 1, vehicleId: 8, shiftType: "night" }));
     vi.mocked(db.getGestorSchedule).mockResolvedValue({ scheduleDate: historicalDate, supervisors: [] } as never);
     vi.mocked(db.replaceGestorSchedule).mockResolvedValue({ scheduleDate: historicalDate, supervisors: [] } as never);
     await expect(authorizedCaller.gestor.schedule({ scheduleDate: historicalDate })).resolves.toMatchObject({ supervisors: [] });

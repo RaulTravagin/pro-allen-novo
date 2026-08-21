@@ -1,9 +1,10 @@
-import { eq, desc, and, gte, lte, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
 import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -290,11 +291,14 @@ export async function createGestorPost(input: { routeId: number; name: string; r
 export async function createSupervisorRoute(supervisorId: number, routeId: number, date: Date) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const shift = getOperationalShift(date);
   
   const result = await db.insert(supervisorRoutes).values({
     supervisorId,
     routeId,
     date,
+    shiftType: shift.shiftType,
+    shiftStartedAt: shift.shiftStartedAt,
     status: 'pending',
   }).returning({ id: supervisorRoutes.id });
 
@@ -409,6 +413,8 @@ export async function getSupervisorRouteById(id: number) {
     supervisorId: supervisorRoutes.supervisorId,
     routeId: supervisorRoutes.routeId,
     date: supervisorRoutes.date,
+    shiftType: supervisorRoutes.shiftType,
+    shiftStartedAt: supervisorRoutes.shiftStartedAt,
     status: supervisorRoutes.status,
     kmInitial: supervisorRoutes.kmInitial,
     kmFinal: supervisorRoutes.kmFinal,
@@ -432,17 +438,15 @@ export async function getSupervisorRouteById(id: number) {
 export async function getSupervisorRoutesToday(supervisorId: number) {
   const db = await getDb();
   if (!db) return [];
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const period = getCurrentOperationalPeriod();
   
   return await db.select({
     id: supervisorRoutes.id,
     supervisorId: supervisorRoutes.supervisorId,
     routeId: supervisorRoutes.routeId,
     date: supervisorRoutes.date,
+    shiftType: supervisorRoutes.shiftType,
+    shiftStartedAt: supervisorRoutes.shiftStartedAt,
     status: supervisorRoutes.status,
     kmInitial: supervisorRoutes.kmInitial,
     kmFinal: supervisorRoutes.kmFinal,
@@ -461,8 +465,10 @@ export async function getSupervisorRoutesToday(supervisorId: number) {
     .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
     .where(and(
       eq(supervisorRoutes.supervisorId, supervisorId),
-      gte(supervisorRoutes.date, today),
-      lte(supervisorRoutes.date, tomorrow)
+      or(
+        and(gte(supervisorRoutes.shiftStartedAt, period.start), lt(supervisorRoutes.shiftStartedAt, period.end)),
+        inArray(supervisorRoutes.status, ["pending", "in_progress"]),
+      ),
     ));
 }
 
@@ -805,7 +811,7 @@ export function deriveGestorOperationalState(input: {
 }
 
 /** Dados consolidados usados pelo painel protegido do Gestor. */
-export async function getGestorOperationalSnapshot(reportDate?: Date, options: { includeHistoricalUsers?: boolean } = {}) {
+export async function getGestorOperationalSnapshot(reportDate?: Date, options: { includeHistoricalUsers?: boolean; shiftType?: OperationShift | null } = {}) {
   const db = await getDb();
   const emptySnapshot = {
     activeRoutes: [],
@@ -819,10 +825,21 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
   if (!db) return emptySnapshot;
 
   const now = new Date();
-  const today = new Date(reportDate ?? now);
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const period = reportDate ? getOperationalPeriodForCalendarDate(reportDate) : getCurrentOperationalPeriod(now);
+  const periodRouteCondition = and(
+    gte(supervisorRoutes.shiftStartedAt, period.start),
+    lt(supervisorRoutes.shiftStartedAt, period.end),
+    options.shiftType ? eq(supervisorRoutes.shiftType, options.shiftType) : undefined,
+  );
+  const routeWindowCondition = reportDate
+    ? periodRouteCondition
+    : or(
+      periodRouteCondition,
+      and(
+        inArray(supervisorRoutes.status, ["pending", "in_progress"]),
+        options.shiftType ? eq(supervisorRoutes.shiftType, options.shiftType) : undefined,
+      ),
+    );
 
   const [todayRoutes, todayChecklists, latestLocations, todayChecklistItems, allUsers] = await Promise.all([
     db.select({
@@ -834,6 +851,8 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       routeName: routes.name,
       routeRegion: routes.region,
       routeActivityType: routes.activityType,
+      shiftType: supervisorRoutes.shiftType,
+      shiftStartedAt: supervisorRoutes.shiftStartedAt,
       status: supervisorRoutes.status,
       vehicleId: supervisorRoutes.vehicleId,
       vehiclePlate: vehicles.plate,
@@ -848,7 +867,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
       .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
       .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
-      .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow)))
+      .where(routeWindowCondition)
       .orderBy(desc(supervisorRoutes.updatedAt)),
     db.select({
       id: visitChecklists.id,
@@ -873,7 +892,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .from(visitChecklists)
       .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
       .innerJoin(posts, eq(posts.id, visitChecklists.postId))
-      .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow))),
+      .where(routeWindowCondition),
     getAllSupervisorsLatestLocations(),
     db.select({
       id: checklistItems.id,
@@ -886,7 +905,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .from(checklistItems)
       .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
       .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-      .where(and(gte(supervisorRoutes.date, today), lte(supervisorRoutes.date, tomorrow))),
+      .where(routeWindowCondition),
     db.select({ id: users.id, name: users.name, username: users.username, role: users.role, isOperational: users.isOperational }).from(users),
   ]);
 
@@ -1068,7 +1087,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       alerts: alerts.length,
     },
     lastUpdatedAt: now,
-    reportDate: today,
+    reportDate: period.start,
   };
 }
 
@@ -1077,26 +1096,25 @@ export type OperationalReportFilters = {
   endDate: Date;
   supervisorId?: number | null;
   vehicleId?: number | null;
+  shiftType?: OperationShift | null;
 };
 
 /** Consolida o período solicitado pelo Gestor, sem depender do painel em tempo real. */
 export async function getOperationalManagementReport(input: OperationalReportFilters) {
   const db = await getDb();
-  const startDate = new Date(input.startDate);
-  startDate.setHours(0, 0, 0, 0);
-  const endDate = new Date(input.endDate);
-  endDate.setHours(23, 59, 59, 999);
+  const { start: startDate, end: endDate } = getOperationalRangeForCalendarDates(input.startDate, input.endDate);
   const empty = {
-    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null },
+    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
     filterOptions: { supervisors: [], vehicles: [] },
     summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, compliantItems: 0, nonCompliantItems: 0, complianceRate: null as number | null },
     routes: [], fuelLogs: [], visits: [],
   };
   if (!db) return empty;
 
-  const routeConditions = [gte(supervisorRoutes.date, startDate), lte(supervisorRoutes.date, endDate)];
+  const routeConditions = [gte(supervisorRoutes.shiftStartedAt, startDate), lt(supervisorRoutes.shiftStartedAt, endDate)];
   if (input.supervisorId) routeConditions.push(eq(supervisorRoutes.supervisorId, input.supervisorId));
   if (input.vehicleId) routeConditions.push(eq(supervisorRoutes.vehicleId, input.vehicleId));
+  if (input.shiftType) routeConditions.push(eq(supervisorRoutes.shiftType, input.shiftType));
 
   const fuelConditions = [] as ReturnType<typeof eq>[];
   if (input.supervisorId) fuelConditions.push(eq(fuelLogs.supervisorId, input.supervisorId));
@@ -1106,6 +1124,8 @@ export async function getOperationalManagementReport(input: OperationalReportFil
     db.select({
       id: supervisorRoutes.id,
       date: supervisorRoutes.date,
+      shiftType: supervisorRoutes.shiftType,
+      shiftStartedAt: supervisorRoutes.shiftStartedAt,
       status: supervisorRoutes.status,
       supervisorId: supervisorRoutes.supervisorId,
       supervisorName: users.name,
@@ -1178,7 +1198,8 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   ]);
 
   const enrichedFuelRows = Array.from(new Set(fuelRows.map((row) => row.vehicleId))).flatMap((vehicleId) => enrichFuelHistory(fuelRows.filter((row) => row.vehicleId === vehicleId)));
-  const periodFuelLogs = enrichedFuelRows.filter((row) => row.createdAt >= startDate && row.createdAt <= endDate);
+  const reportRouteIds = new Set(routeRows.map((route) => route.id));
+  const periodFuelLogs = enrichedFuelRows.filter((row) => reportRouteIds.has(row.supervisorRouteId) && row.createdAt >= startDate && row.createdAt < endDate);
   const itemStatsByVisit = new Map<number, { compliant: number; nonCompliant: number }>();
   for (const item of itemRows) {
     const current = itemStatsByVisit.get(item.visitChecklistId) ?? { compliant: 0, nonCompliant: 0 };
@@ -1195,7 +1216,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   const nonCompliantItems = visits.reduce((total, visit) => total + visit.nonCompliant, 0);
 
   return {
-    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null },
+    filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
     filterOptions: { supervisors: reportSupervisors, vehicles: reportVehicles },
     summary: {
       totalKm: Number(totalKm.toFixed(2)),

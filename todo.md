@@ -475,3 +475,12 @@
 - [x] Adicionar confirmação de cancelamento e retorno ao Dashboard para nova seleção
 - [x] Criar regressões e validar autorização, interface e build
 - [x] Publicar no Render e orientar o novo fluxo de correção de rota: 794cb13
+
+## Persistência e Consultas por Plantão 12h
+- [x] Auditar os timestamps persistidos de rotas, checklists, itens, localização e abastecimentos
+- [x] Definir a janela de plantão diurno (06h–18h) e noturno (18h–06h), incluindo a virada da meia-noite
+- [x] Persistir a classificação de plantão da atividade para manter a referência estável no banco PostgreSQL
+- [x] Adaptar consultas do Gestor e relatórios para intervalo, supervisor, viatura e turno, com padrão de 30 dias
+- [x] Manter atividades abertas visíveis até o encerramento explícito, inclusive após fechar o navegador
+- [x] Criar regressões de turno noturno, persistência, filtros, extração e autorização
+- [ ] Gerar e aplicar a migração PostgreSQL, publicar no Render e validar o fluxo completo

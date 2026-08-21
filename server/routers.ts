@@ -127,15 +127,16 @@ export const appRouter = router({
   }),
 
   gestor: router({
-    dashboard: gestorProcedure.query(async () => db.getGestorOperationalSnapshot()),
-    dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional() }).optional()).query(async ({ input }) => {
-      return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true }));
+    dashboard: gestorProcedure.input(z.object({ shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => db.getGestorOperationalSnapshot(undefined, { shiftType: input?.shiftType ?? null })),
+    dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional(), shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
+      return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true, shiftType: input?.shiftType ?? null }));
     }),
     operationalReport: gestorOrAdminProcedure.input(z.object({
       startDate: z.date(),
       endDate: z.date(),
       supervisorId: z.number().int().positive().optional().nullable(),
       vehicleId: z.number().int().positive().optional().nullable(),
+      shiftType: z.enum(["day", "night"]).optional().nullable(),
     })).query(async ({ input }) => {
       if (input.endDate < input.startDate) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "A data final não pode ser anterior à data inicial" });
