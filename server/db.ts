@@ -615,6 +615,20 @@ export async function updateVisitChecklist(id: number, updates: any) {
     .where(eq(visitChecklists.id, id));
 }
 
+/** Marca a atividade da rota como atualizada quando um item ou uma auditoria é salvo. */
+export async function touchSupervisorRouteFromChecklist(visitChecklistId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [checklist] = await db.select({ supervisorRouteId: visitChecklists.supervisorRouteId })
+    .from(visitChecklists)
+    .where(eq(visitChecklists.id, visitChecklistId))
+    .limit(1);
+  if (!checklist) return;
+  await db.update(supervisorRoutes)
+    .set({ updatedAt: new Date() })
+    .where(eq(supervisorRoutes.id, checklist.supervisorRouteId));
+}
+
 // Checklist Items queries
 export async function createChecklistItem(visitChecklistId: number, category: string, description: string) {
   const db = await getDb();
@@ -640,10 +654,16 @@ export async function getChecklistItemsByVisit(visitChecklistId: number) {
 export async function updateChecklistItem(id: number, updates: any) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  return await db.update(checklistItems)
+  const [item] = await db.select({ visitChecklistId: checklistItems.visitChecklistId })
+    .from(checklistItems)
+    .where(eq(checklistItems.id, id))
+    .limit(1);
+  if (!item) throw new Error("Checklist item not found");
+  const result = await db.update(checklistItems)
     .set(updates)
     .where(eq(checklistItems.id, id));
+  await touchSupervisorRouteFromChecklist(item.visitChecklistId);
+  return result;
 }
 
 // Supervisor Locations queries
@@ -934,6 +954,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       arrivalTime: visitChecklists.arrivalTime,
       departureTime: visitChecklists.departureTime,
       visitedAt: visitChecklists.visitedAt,
+      auditSubmittedAt: visitChecklists.auditSubmittedAt,
       observations: visitChecklists.observations,
       isCoverage: visitChecklists.isCoverage,
       coverageReason: visitChecklists.coverageReason,
@@ -1020,6 +1041,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     const activeVisit = routeChecklists.find((checklist) => checklist.status === "in_progress") ?? null;
     const nextPost = routeChecklists.find((checklist) => checklist.status === "pending") ?? null;
     const completedVisits = routeChecklists.filter((checklist) => checklist.status === "visited").length;
+    const auditedVisits = routeChecklists.filter((checklist) => checklist.auditSubmittedAt !== null || (checklist.status === "visited" && checklist.checklistSummary.total > 0 && checklist.checklistSummary.unanswered < checklist.checklistSummary.total)).length;
     const pendingVisits = routeChecklists.filter((checklist) => checklist.status === "pending").length;
     const skippedVisits = routeChecklists.filter((checklist) => checklist.status === "skipped").length;
     const latestLocation = locationBySupervisor.get(route.supervisorId) ?? null;
@@ -1047,6 +1069,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       fuelHistory: fuelHistory.slice(0, 8),
       totalPosts: routeChecklists.length,
       completedVisits,
+      auditedVisits,
       pendingVisits,
       skippedVisits,
       activeVisit,

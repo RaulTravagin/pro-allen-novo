@@ -24,6 +24,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   const [observations, setObservations] = useState<string>("");
   const [itemStates, setItemStates] = useState<Record<number, { isCompliant: boolean; notes: string }>>({});
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const utils = trpc.useUtils();
 
   // Queries
   const { data: checklist, isLoading: checklistLoading } = trpc.checklists.getById.useQuery({ id: checklistId });
@@ -61,8 +62,15 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
         isCompliant,
         notes,
       });
+      await Promise.all([
+        utils.checklists.getById.invalidate({ id: checklistId }),
+        utils.gestor.dashboard.invalidate(),
+        utils.gestor.dailyReport.invalidate(),
+        utils.gestor.operationalReport.invalidate(),
+      ]);
     } catch (error) {
       console.error("Error updating item:", error);
+      toast.error("Não foi possível salvar este item do checklist");
     }
   };
 
@@ -70,7 +78,13 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
     try {
       await updateDetailsMutation.mutateAsync({ checklistId, observations });
       if (user?.id) clearChecklistDraft(user.id, checklistId);
-      toast.success("Checklist salvo com sucesso");
+      await Promise.all([
+        utils.checklists.getById.invalidate({ id: checklistId }),
+        utils.gestor.dashboard.invalidate(),
+        utils.gestor.dailyReport.invalidate(),
+        utils.gestor.operationalReport.invalidate(),
+      ]);
+      toast.success("Checklist enviado ao Gestor e salvo com sucesso");
     } catch (error) {
       toast.error("Não foi possível salvar as observações");
       console.error("Error saving checklist details:", error);
@@ -214,9 +228,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
         <Card className="mb-8">
           <CardHeader>
             <CardTitle>Observações Gerais da Visita</CardTitle>
-            <CardDescription>
-              Descreva o objetivo da visita e qualquer informação relevante
-            </CardDescription>
+            <CardDescription>Descreva o objetivo da visita e qualquer informação relevante. Ao salvar, a auditoria deste posto fica disponível ao Gestor mesmo com a rota em andamento.</CardDescription>
           </CardHeader>
           <CardContent>
             <Textarea
@@ -242,7 +254,7 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
             {updateDetailsMutation.isPending ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>
             ) : (
-              <><CheckCircle2 className="mr-2 h-4 w-4" />Salvar checklist</>
+              <><CheckCircle2 className="mr-2 h-4 w-4" />Enviar auditoria ao Gestor</>
             )}
           </Button>
         </div>

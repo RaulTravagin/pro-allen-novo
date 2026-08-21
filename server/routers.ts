@@ -486,7 +486,12 @@ export const appRouter = router({
         if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
         const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        return await db.updateVisitChecklist(input.checklistId, { observations: input.observations ?? null });
+        const result = await db.updateVisitChecklist(input.checklistId, {
+          observations: input.observations ?? null,
+          auditSubmittedAt: new Date(),
+        });
+        await db.touchSupervisorRouteFromChecklist(input.checklistId);
+        return result;
       }),
     
     markVisited: protectedProcedure

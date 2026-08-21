@@ -1,0 +1,1 @@
+ALTER TABLE "visitChecklists" ADD COLUMN "auditSubmittedAt" timestamp with time zone;

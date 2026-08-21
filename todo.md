@@ -493,3 +493,11 @@
 - [x] Confirmar payload e pré-visualização de postos na seleção de rotas do supervisor
 - [x] Criar regressões de estabilidade, turno, invalidação de cache e rotas
 - [x] Publicar a refatoração no Render e validar os fluxos críticos: fbea79b
+
+## Auditorias em Tempo Real no Painel do Gestor
+- [x] Auditar o salvamento de respostas, o encerramento de checklist e os filtros do consolidado do Gestor
+- [x] Persistir e disponibilizar a auditoria de cada posto independentemente do KM final ou da conclusão da rota
+- [x] Remover filtros que excluam checklists de rotas em andamento da visão e do relatório do Gestor
+- [x] Exibir progresso de postos auditados e permitir abrir detalhes de auditorias concluídas durante o plantão
+- [x] Criar regressões de persistência imediata, rota em andamento, progresso e permissões
+- [ ] Publicar a correção no Render e validar a atualização no painel

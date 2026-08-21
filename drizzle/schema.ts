@@ -146,6 +146,7 @@ export const visitChecklists = pgTable("visitChecklists", {
   arrivalTime: timestamp("arrivalTime", { withTimezone: true }),
   departureTime: timestamp("departureTime", { withTimezone: true }),
   visitedAt: timestamp("visitedAt", { withTimezone: true }),
+  auditSubmittedAt: timestamp("auditSubmittedAt", { withTimezone: true }),
   observations: text("observations"),
   isCoverage: boolean("isCoverage").default(false).notNull(),
   coverageReason: text("coverageReason"),
