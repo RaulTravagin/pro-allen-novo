@@ -12,10 +12,15 @@ function mapVisit(visit: any): PdfVisit {
     status: visit?.status ?? null,
     arrivalTime: visit?.arrivalTime ?? null,
     departureTime: visit?.departureTime ?? null,
+    auditSubmittedAt: visit?.auditSubmittedAt ?? null,
     durationMinutes: visit?.durationMinutes ?? null,
     observations: visit?.observations ?? null,
     isCoverage: Boolean(visit?.isCoverage),
     coverageReason: visit?.coverageReason ?? null,
+    arrivalLatitude: visit?.arrivalLatitude ?? null,
+    arrivalLongitude: visit?.arrivalLongitude ?? null,
+    departureLatitude: visit?.departureLatitude ?? null,
+    departureLongitude: visit?.departureLongitude ?? null,
     checklistItems: (visit?.checklistItems ?? []).map((item: any) => ({
       category: item?.category ?? null,
       description: item?.description ?? null,
@@ -43,6 +48,7 @@ export function buildSupervisorPdfSection(supervisor: any): PdfRouteSection {
     kmFinal: route?.kmFinal ?? null,
     kmCovered: route?.kmCovered ?? null,
     statusLabel: ROUTE_STATUS_LABEL[route?.routeStatus ?? ""] ?? null,
+    plannedPosts: route?.totalPosts ?? null,
     visits: (route?.checklistVisits ?? []).map(mapVisit),
   };
 }
@@ -65,6 +71,7 @@ export function buildDailyReportPdfSections(report: any): PdfRouteSection[] {
       kmFinal: route?.kmFinal ?? null,
       kmCovered: route?.kmCovered ?? null,
       statusLabel: supervisor?.operationalStatusLabel ?? null,
+      plannedPosts: route?.totalPosts ?? route?.visits?.length ?? null,
       visits: (route?.visits ?? []).map(mapVisit),
     };
   });

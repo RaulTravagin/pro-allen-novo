@@ -25,9 +25,12 @@ describe("adaptadores do relatório em PDF do Gestor", () => {
             status: "visited",
             arrivalTime: new Date("2026-08-21T10:00:00Z"),
             departureTime: new Date("2026-08-21T10:25:00Z"),
+            auditSubmittedAt: new Date("2026-08-21T10:27:00Z"),
             durationMinutes: 25,
             observations: "Ronda conferida",
             isCoverage: false,
+            arrivalLatitude: -23.18,
+            arrivalLongitude: -46.88,
             checklistItems: [{ category: "Uniforme", description: "Apresentação pessoal", isCompliant: true, notes: null }],
           },
         ],
@@ -41,6 +44,8 @@ describe("adaptadores do relatório em PDF do Gestor", () => {
     expect(section.statusLabel).toBe("Em andamento");
     expect(section.visits).toHaveLength(1);
     expect(section.visits[0]?.checklistItems?.[0]?.category).toBe("Uniforme");
+    expect(section.visits[0]?.auditSubmittedAt).toEqual(new Date("2026-08-21T10:27:00Z"));
+    expect(section.visits[0]?.arrivalLatitude).toBe(-23.18);
   });
 
   it("identifica a Base Operacional e mantém a seção sem postos", () => {

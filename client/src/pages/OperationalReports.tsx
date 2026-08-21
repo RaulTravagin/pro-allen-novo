@@ -24,31 +24,64 @@ function formatDateTime(value: Date | string | null | undefined) {
   return value ? new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—";
 }
 
+function formatDate(value: Date | string | null | undefined) {
+  return value ? new Date(value).toLocaleDateString("pt-BR") : "—";
+}
+
+function formatTime(value: Date | string | null | undefined) {
+  return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
+function formatCoordinates(latitude: unknown, longitude: unknown) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "Não registrado";
+}
+
 function formatFuelType(value: string | null | undefined) {
   return ({ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" } as Record<string, string>)[value ?? ""] ?? "—";
 }
 
+function shiftLabel(shiftType: string | null | undefined) {
+  return shiftType === "day" ? "Plantão Diurno · 06h às 18h" : shiftType === "night" ? "Plantão Noturno · 18h às 06h" : "Todos os plantões";
+}
+
+function reportContext(report: any) {
+  const selectedSupervisor = report.filterOptions?.supervisors?.find((supervisor: any) => supervisor.id === report.filters?.supervisorId);
+  const selectedVehicle = report.filterOptions?.vehicles?.find((vehicle: any) => vehicle.id === report.filters?.vehicleId);
+  return {
+    period: `${formatDate(report.filters?.startDate)} a ${formatDate(report.filters?.endDate)}`,
+    shift: shiftLabel(report.filters?.shiftType),
+    supervisor: selectedSupervisor?.name ?? selectedSupervisor?.username ?? "Todos os supervisores",
+    vehicle: selectedVehicle ? `${selectedVehicle.plate} · ${selectedVehicle.model}` : "Todas as viaturas",
+  };
+}
+
 export function buildOperationalReportCsv(report: any) {
-  const shiftLabel = report.filters.shiftType === "day" ? "Diurno · 06h às 18h" : report.filters.shiftType === "night" ? "Noturno · 18h às 06h" : "Todos os turnos";
+  const context = reportContext(report);
+  const routesById = new Map((report.routes ?? []).map((route: any) => [route.id, route]));
+  const visits = [...(report.visits ?? [])].sort((first: any, second: any) => new Date(first.arrivalTime ?? first.auditSubmittedAt ?? 0).getTime() - new Date(second.arrivalTime ?? second.auditSubmittedAt ?? 0).getTime());
   const rows: Array<Array<string | number>> = [
     ["Pro Allen — Relatório de Gestão Operacional"],
-    ["Período", `${new Date(report.filters.startDate).toLocaleDateString("pt-BR")} a ${new Date(report.filters.endDate).toLocaleDateString("pt-BR")}`],
-    ["Turno", shiftLabel],
+    ["Parâmetros aplicados", `Filtro: ${context.shift} | Supervisor: ${context.supervisor} | Viatura: ${context.vehicle} | Período: ${context.period}`],
     [],
     ["Resumo executivo"],
-    ["KM rodados", report.summary.totalKm],
-    ["Gasto com combustível", report.summary.totalFuelAmount],
-    ["Média geral Km/L", report.summary.averageConsumptionKmPerLiter ?? "—"],
-    ["Inspeções realizadas", report.summary.inspections],
+    ["Postos previstos", report.summary.plannedPosts ?? 0],
+    ["Postos auditados", report.summary.auditedPosts ?? report.summary.inspections ?? 0],
+    ["KM total percorrido", report.summary.totalKm],
+    ["Ocorrências marcadas", report.summary.nonCompliantItems ?? 0],
     ["Conformidade", report.summary.complianceRate == null ? "—" : `${report.summary.complianceRate}%`],
     [],
-    ["Frota e abastecimentos"],
-    ["Data/Hora", "Placa", "Modelo", "Supervisor", "Rota", "KM atual", "Combustível", "Litros", "Valor total (R$)", "Média (Km/L)", "Custo por KM (R$)"],
-    ...(report.fuelLogs ?? []).map((log: any) => [formatDateTime(log.createdAt), log.vehiclePlate ?? "—", log.vehicleModel ?? "—", log.supervisorName ?? "—", log.supervisorRouteId ?? "—", log.odometerKm, formatFuelType(log.fuelType), log.liters, log.amount, log.consumptionKmPerLiter ?? "—", log.costPerKm ?? "—"]),
+    ["Vistorias em ordem cronológica"],
+    ["Data", "Hora", "Supervisor", "Rota", "Turno", "Posto / Condomínio", "Status da Vistoria", "Início da Visita", "Fim da Visita", "Envio da Auditoria", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrências", "Observações", "GPS de Chegada", "GPS de Saída"],
+    ...visits.map((visit: any) => {
+      const route = routesById.get(visit.supervisorRouteId) as any;
+      return [formatDate(visit.arrivalTime ?? visit.auditSubmittedAt), formatTime(visit.arrivalTime ?? visit.auditSubmittedAt), visit.supervisorName ?? "—", route?.routeName ?? "—", shiftLabel(route?.shiftType), visit.postName ?? "—", visitStatusLabel(visit.status), formatDateTime(visit.arrivalTime), formatDateTime(visit.departureTime), formatDateTime(visit.auditSubmittedAt), formatNumber(route?.kmInitial, " km"), formatNumber(route?.kmFinal, " km"), formatNumber(route?.kmCovered, " km"), Number(visit.nonCompliant ?? 0) > 0 ? `${visit.nonCompliant} ocorrência(s)` : "Sem ocorrência", visit.observations ?? visit.coverageReason ?? "Sem observações", formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude), formatCoordinates(visit.departureLatitude, visit.departureLongitude)];
+    }),
     [],
-    ["Auditorias e checklists"],
-    ["Posto auditado", "Supervisor", "Placa", "Entrada", "Saída", "Status da visita", "Conformes", "Ocorrências", "Observações"],
-    ...(report.visits ?? []).map((visit: any) => [visit.postName, visit.supervisorName ?? "—", visit.vehiclePlate ?? "—", formatDateTime(visit.arrivalTime), formatDateTime(visit.departureTime), visit.status, visit.compliant, visit.nonCompliant, visit.observations ?? visit.coverageReason ?? "—"]),
+    ["Frota e abastecimentos"],
+    ["Data", "Hora", "Viatura", "Supervisor", "KM no Abastecimento", "Combustível", "Litros", "Valor do Abastecimento (R$)", "Média de Consumo (Km/L)", "Custo por KM (R$)"],
+    ...(report.fuelLogs ?? []).map((log: any) => [formatDate(log.createdAt), formatTime(log.createdAt), `${log.vehiclePlate ?? "—"}${log.vehicleModel ? ` · ${log.vehicleModel}` : ""}`, log.supervisorName ?? "—", formatNumber(log.odometerKm, " km"), formatFuelType(log.fuelType), log.liters, log.amount, log.consumptionKmPerLiter ?? "—", log.costPerKm ?? "—"]),
   ];
   return rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
 }
@@ -79,19 +112,19 @@ function visitStatusLabel(status: string) {
   return "Pendente";
 }
 
-function PrintHeader({ filters, page, totalPages }: { filters: any; page: number; totalPages: number }) {
-  const shiftLabel = filters.shiftType === "day" ? "Plantão diurno · 06h–18h" : filters.shiftType === "night" ? "Plantão noturno · 18h–06h" : "Todos os plantões";
+function PrintHeader({ report, page, totalPages }: { report: any; page: number; totalPages: number }) {
+  const context = reportContext(report);
   return <>
     <div className="print-header">
-      <div><p className="print-kicker">PRO ALLEN · GESTÃO OPERACIONAL</p><h1>Relatório Operacional de Campo</h1><p>Período operacional: {new Date(filters.startDate).toLocaleDateString("pt-BR")} a {new Date(filters.endDate).toLocaleDateString("pt-BR")} · {shiftLabel}</p></div>
-      <div className="print-stamp"><strong>DOCUMENTO DE GESTÃO</strong><span>Emissão: {new Date().toLocaleDateString("pt-BR")}</span></div>
+      <div><p className="print-kicker">PRO ALLEN · GESTÃO OPERACIONAL</p><h1>Relatório Operacional de Campo</h1><p>Filtro: {context.shift} · Supervisor: {context.supervisor} · Período: {context.period}</p></div>
+      <div className="print-stamp"><strong>DOCUMENTO DE GESTÃO</strong><span>Viatura: {context.vehicle}</span><span>Emissão: {new Date().toLocaleString("pt-BR")}</span></div>
     </div>
     <div className="print-rule" />
     <div className="print-page-meta"><span>Uso interno · Supervisão de campo</span><span>Página {page} de {totalPages}</span></div>
   </>;
 }
 
-function PrintOperationalReport({ data, filters }: { data: any; filters: any }) {
+function PrintOperationalReport({ data }: { data: any }) {
   const fuelPages = splitIntoPages<any>(data.fuelLogs ?? [], 14);
   const auditPages = splitIntoPages<any>(data.visits ?? [], 11);
   const totalPages = 1 + fuelPages.length + auditPages.length;
@@ -100,26 +133,26 @@ function PrintOperationalReport({ data, filters }: { data: any; filters: any }) 
 
   return <article className="print-document" aria-hidden="true">
     <section className="print-page">
-      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <PrintHeader report={data} page={pageNumber++} totalPages={totalPages} />
       <div className="print-title-block"><p>VISÃO EXECUTIVA</p><h2>Resumo do período</h2><span>Indicadores consolidados de rota, consumo e auditoria.</span></div>
       <div className="print-metric-grid">
-        <div><span>KM rodados</span><strong>{formatNumber(summary?.totalKm, " km")}</strong></div>
+        <div><span>Postos previstos / auditados</span><strong>{formatNumber(summary?.plannedPosts)} / {formatNumber(summary?.auditedPosts ?? summary?.inspections)}</strong></div>
+        <div><span>KM total percorrido</span><strong>{formatNumber(summary?.totalKm, " km")}</strong></div>
         <div><span>Combustível</span><strong>{formatCurrency(summary?.totalFuelAmount)}</strong></div>
         <div><span>Média de consumo</span><strong>{summary?.averageConsumptionKmPerLiter != null ? formatNumber(summary.averageConsumptionKmPerLiter, " km/L") : "Sem base"}</strong></div>
-        <div><span>Inspeções</span><strong>{formatNumber(summary?.inspections)}</strong></div>
-        <div><span>Conformidade</span><strong>{summary?.complianceRate != null ? `${formatNumber(summary.complianceRate)}%` : "Sem base"}</strong></div>
+        <div><span>Ocorrências marcadas</span><strong>{formatNumber(summary?.nonCompliantItems)}</strong></div>
       </div>
-      <div className="print-summary-box"><h3>Leitura gerencial</h3><p>Foram consolidados {data.fuelLogs?.length ?? 0} abastecimento(s) e {data.visits?.length ?? 0} auditoria(s) no período filtrado. Os detalhes das viaturas e dos postos seguem nas páginas subsequentes.</p></div>
+      <div className="print-summary-box"><h3>Leitura gerencial</h3><p>Foram consolidados {summary?.plannedPosts ?? 0} posto(s) previstos e {summary?.auditedPosts ?? summary?.inspections ?? 0} auditado(s), com {formatNumber(summary?.totalKm, " km")} percorridos e {summary?.nonCompliantItems ?? 0} ocorrência(s) marcada(s). Os detalhes das viaturas e dos postos seguem nas páginas subsequentes.</p></div>
       <footer className="print-footer"><span>Pro Allen · Relatório operacional</span><span>Gerado pelo sistema de gestão de supervisores</span></footer>
     </section>
     {fuelPages.map((logs, index) => <section className="print-page" key={`fuel-${index}`}>
-      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <PrintHeader report={data} page={pageNumber++} totalPages={totalPages} />
       <div className="print-title-block compact"><p>FROTA E ABASTECIMENTOS</p><h2>Controle de consumo</h2><span>{data.fuelLogs?.length ?? 0} registro(s) no período selecionado.</span></div>
       <table className="print-table print-fuel-table"><thead><tr><th>Data / hora</th><th>Viatura</th><th>Supervisor</th><th>KM</th><th>Comb.</th><th>Litros</th><th>Valor</th><th>Média</th><th>Custo/KM</th></tr></thead><tbody>{logs.length ? logs.map((log: any) => <tr key={log.id}><td>{formatDateTime(log.createdAt)}</td><td><strong>{log.vehiclePlate ?? "—"}</strong><br /><small>{log.vehicleModel ?? ""}</small></td><td>{log.supervisorName ?? "—"}</td><td>{formatNumber(log.odometerKm, " km")}</td><td>{formatFuelType(log.fuelType)}</td><td>{formatNumber(log.liters, " L")}</td><td>{formatCurrency(log.amount)}</td><td>{log.consumptionKmPerLiter != null ? formatNumber(log.consumptionKmPerLiter, " km/L") : "—"}</td><td>{log.costPerKm != null ? formatCurrency(log.costPerKm) : "—"}</td></tr>) : <tr><td colSpan={9} className="print-empty">Nenhum abastecimento no período selecionado.</td></tr>}</tbody></table>
       <footer className="print-footer"><span>Pro Allen · Controle de frota</span><span>Dados registrados pelos supervisores</span></footer>
     </section>)}
     {auditPages.map((visits, index) => <section className="print-page" key={`audit-${index}`}>
-      <PrintHeader filters={filters} page={pageNumber++} totalPages={totalPages} />
+      <PrintHeader report={data} page={pageNumber++} totalPages={totalPages} />
       <div className="print-title-block compact"><p>AUDITORIAS E CHECKLISTS</p><h2>Visitas aos postos</h2><span>Horários, situação da visita e observações operacionais.</span></div>
       <table className="print-table print-audit-table"><thead><tr><th>Posto / região</th><th>Supervisor / viatura</th><th>Entrada e saída</th><th>Status</th><th>Checklist</th><th>Ocorrências e observações</th></tr></thead><tbody>{visits.length ? visits.map((visit: any) => <tr key={visit.id}><td><strong>{visit.postName}</strong><br /><small>{visit.postRegion ?? ""}</small></td><td>{visit.supervisorName ?? "—"}<br /><small>{visit.vehiclePlate ?? "Sem placa"}</small></td><td>Entrada: {formatDateTime(visit.arrivalTime)}<br />Saída: {formatDateTime(visit.departureTime)}</td><td>{visitStatusLabel(visit.status)}</td><td>{visit.nonCompliant > 0 ? `${visit.nonCompliant} ocorrência(s)` : "Conforme"}<br /><small>{visit.compliant} item(ns) conforme(s)</small></td><td>{visit.observations || visit.coverageReason || "Sem observações"}</td></tr>) : <tr><td colSpan={6} className="print-empty">Nenhuma auditoria no período selecionado.</td></tr>}</tbody></table>
       <footer className="print-footer"><span>Pro Allen · Auditorias de postos</span><span>Informações preenchidas em campo</span></footer>
@@ -194,14 +227,14 @@ export default function OperationalReports() {
     `}</style>
     <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Auditorias, rotas, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && downloadCsv(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar CSV / Excel</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
     <div className="screen-report mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6">
-      <section className="print-avoid rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><p className="text-sm font-semibold text-amber-300">Pro Allen — Relatório de Gestão Operacional</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Visão executiva da operação de campo</h2><p className="mt-3 text-sm text-slate-300">Período: {new Date(filters.startDate).toLocaleDateString("pt-BR")} a {new Date(filters.endDate).toLocaleDateString("pt-BR")} · {shiftType === "day" ? "Plantão diurno (06h–18h)" : shiftType === "night" ? "Plantão noturno (18h–06h)" : "Todos os plantões"} · Emissão: {new Date().toLocaleString("pt-BR")}</p></section>
+      <section className="print-avoid rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><p className="text-sm font-semibold text-amber-300">Pro Allen — Relatório de Gestão Operacional</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Visão executiva da operação de campo</h2><p className="mt-3 text-sm text-slate-300">Parâmetros aplicados: Filtro: {shiftLabel(shiftType)} · Supervisor: {data ? reportContext(data).supervisor : "Carregando"} · Viatura: {data ? reportContext(data).vehicle : "Carregando"} · Período: {data ? reportContext(data).period : "Carregando"} · Emissão: {new Date().toLocaleString("pt-BR")}</p></section>
       <section className="no-print print-avoid rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"><label className="grid gap-1 text-xs font-semibold text-slate-600">Início<input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Fim<input type="date" value={endDate} min={startDate} max={toDateInput(new Date())} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select value={shiftType} onChange={(event) => setShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os turnos</option><option value="day">Diurno · 06h às 18h</option><option value="night">Noturno · 18h às 06h</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Supervisor<select value={supervisorId} onChange={(event) => setSupervisorId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os supervisores</option>{options.supervisors.map((supervisor: any) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name ?? supervisor.username}</option>)}</select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Placa / viatura<select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todas as viaturas</option>{options.vehicles.map((vehicle: any) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}</select></label></div><p className="mt-3 text-xs text-slate-500">O período inicial considera os últimos 30 dias. Cada data operacional vai de 06h até 06h do dia seguinte, mantendo o plantão noturno unido após a meia-noite.</p></section>
       {report.isLoading ? <div className="flex items-center justify-center p-12 text-sm text-slate-600"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Consolidando dados...</div> : report.error ? <Card className="border-rose-200 bg-rose-50"><CardContent className="flex gap-3 p-5 text-sm text-rose-950"><AlertTriangle className="h-5 w-5 shrink-0" />{report.error.message}</CardContent></Card> : data && <>
-        <section className="print-avoid grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><Metric icon={Route} label="KM rodados" value={formatNumber(summary?.totalKm, " km")} /><Metric icon={Fuel} label="Gasto em combustível" value={formatCurrency(summary?.totalFuelAmount)} /><Metric icon={Gauge} label="Média de consumo geral" value={summary?.averageConsumptionKmPerLiter != null ? formatNumber(summary.averageConsumptionKmPerLiter, " km/L") : "Sem base"} /><Metric icon={ClipboardCheck} label="Inspeções realizadas" value={formatNumber(summary?.inspections)} /><Metric icon={AlertTriangle} label="Conformidade / ocorrências" value={summary?.complianceRate != null ? `${formatNumber(summary.complianceRate)}%` : "Sem base"} alert={(summary?.nonCompliantItems ?? 0) > 0} /></section>
+        <section className="print-avoid grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={ClipboardCheck} label="Postos previstos vs. auditados" value={`${formatNumber(summary?.plannedPosts)} / ${formatNumber(summary?.auditedPosts ?? summary?.inspections)}`} /><Metric icon={Route} label="KM total percorrido" value={formatNumber(summary?.totalKm, " km")} /><Metric icon={AlertTriangle} label="Ocorrências marcadas" value={formatNumber(summary?.nonCompliantItems)} alert={(summary?.nonCompliantItems ?? 0) > 0} /><Metric icon={Gauge} label="Índice de conformidade" value={summary?.complianceRate != null ? `${formatNumber(summary.complianceRate)}%` : "Sem base"} /></section>
         <section className="print-avoid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><h3 className="flex items-center gap-2 text-lg font-semibold"><Car className="h-5 w-5 text-emerald-700" /> Frota e abastecimento</h3><p className="mt-1 text-sm text-slate-600">{data.fuelLogs.length} abastecimento(s) no período filtrado.</p></div><div className="overflow-x-auto"><table className="print-table min-w-[1040px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Data / hora</th><th className="px-4 py-3">Placa</th><th className="px-4 py-3">Supervisor</th><th className="px-4 py-3 text-right">KM atual</th><th className="px-4 py-3 text-right">Litros</th><th className="px-4 py-3 text-right">Valor</th><th className="px-4 py-3 text-right">Média</th></tr></thead><tbody className="divide-y divide-slate-100">{data.fuelLogs.length ? data.fuelLogs.map((log: any) => <tr key={log.id}><td className="px-4 py-3 text-slate-600">{formatDateTime(log.createdAt)}</td><td className="px-4 py-3 font-medium">{log.vehiclePlate} <span className="font-normal text-slate-500">· {log.vehicleModel}</span></td><td className="px-4 py-3 text-slate-600">{log.supervisorName ?? "—"}</td><td className="px-4 py-3 text-right">{formatNumber(log.odometerKm, " km")}</td><td className="px-4 py-3 text-right">{formatNumber(log.liters, " L")}</td><td className="px-4 py-3 text-right">{formatCurrency(log.amount)}</td><td className="px-4 py-3 text-right font-semibold text-emerald-800">{log.consumptionKmPerLiter != null ? formatNumber(log.consumptionKmPerLiter, " km/L") : "—"}</td></tr>) : <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Nenhum abastecimento no período selecionado.</td></tr>}</tbody></table></div></section>
         <section className="print-avoid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><h3 className="flex items-center gap-2 text-lg font-semibold"><FileText className="h-5 w-5 text-blue-700" /> Auditorias e checklists dos postos</h3><p className="mt-1 text-sm text-slate-600">Horários, situação da visita e ocorrências registradas em campo.</p></div><div className="overflow-x-auto"><table className="print-table min-w-[1080px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Posto auditado</th><th className="px-4 py-3">Supervisor</th><th className="px-4 py-3">Entrada / saída</th><th className="px-4 py-3">Situação</th><th className="px-4 py-3">Ocorrências</th></tr></thead><tbody className="divide-y divide-slate-100">{data.visits.length ? data.visits.map((visit: any) => <tr key={visit.id} className="align-top"><td className="px-4 py-3 font-medium">{visit.postName}<p className="mt-1 text-xs font-normal text-slate-500">{visit.postRegion}</p></td><td className="px-4 py-3 text-slate-600">{visit.supervisorName ?? "—"}<p className="mt-1 text-xs">{visit.vehiclePlate ?? "Sem placa"}</p></td><td className="px-4 py-3 text-xs text-slate-600">Entrada: {formatDateTime(visit.arrivalTime)}<br />Saída: {formatDateTime(visit.departureTime)}</td><td className="px-4 py-3"><span className={visit.status === "visited" ? "rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800" : visit.status === "in_progress" ? "rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800" : "rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"}>{visit.status === "visited" ? "Concluída" : visit.status === "in_progress" ? "Em andamento" : "Pendente"}</span></td><td className="max-w-[340px] px-4 py-3 text-xs leading-5 text-slate-600">{visit.nonCompliant > 0 ? <p className="mb-2 font-semibold text-rose-700">{visit.nonCompliant} ocorrência(s) no checklist</p> : <p className="mb-2 font-semibold text-emerald-700">Checklist conforme</p>}{visit.observations || visit.coverageReason || "Sem observações"}</td></tr>) : <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Nenhuma auditoria no período selecionado.</td></tr>}</tbody></table></div></section>
       </>}
     </div>
-    {data && <PrintOperationalReport data={data} filters={filters} />}
+    {data && <PrintOperationalReport data={data} />}
   </main>;
 }

@@ -522,3 +522,17 @@
 - [x] Retornar indicadores zerados quando a consulta falhar, sem propagar exceção pelo endpoint
 - [x] Remover a exibição do texto bruto de erro nos cards, mantendo valores neutros
 - [x] Criar regressão da consulta agregada e publicar a correção
+
+## Limpeza Final para Início da Operação Oficial
+- [x] Mapear tabelas operacionais, dependências e contagens antes da limpeza
+- [x] Apresentar o script de limpeza para validação explícita antes da conexão
+- [x] Excluir somente registros operacionais de teste e reiniciar as sequências correspondentes
+- [x] Confirmar a preservação dos cadastros de usuários, rotas e postos
+- [x] Validar históricos zerados e painéis prontos para novos lançamentos
+
+## Relatórios Corporativos do Painel do Gestor
+- [x] Mapear os fluxos atuais de PDF e Excel/CSV e os dados de contexto já disponíveis
+- [x] Adicionar bloco de contexto e resumo executivo ao relatório visual e às exportações
+- [x] Reestruturar o PDF com resumo cronológico, vistorias detalhadas, fotos organizadas e alertas de ocorrência
+- [x] Renomear e ordenar as colunas da exportação Excel/CSV em português claro
+- [x] Validar geração, apresentação visual, testes, tipagem e build antes da publicação

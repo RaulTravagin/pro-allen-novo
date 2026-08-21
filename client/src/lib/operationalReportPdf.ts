@@ -18,10 +18,15 @@ export type PdfVisit = {
   status?: string | null;
   arrivalTime?: Date | string | null;
   departureTime?: Date | string | null;
+  auditSubmittedAt?: Date | string | null;
   durationMinutes?: number | null;
   observations?: string | null;
   isCoverage?: boolean | null;
   coverageReason?: string | null;
+  arrivalLatitude?: number | string | null;
+  arrivalLongitude?: number | string | null;
+  departureLatitude?: number | string | null;
+  departureLongitude?: number | string | null;
   checklistItems?: PdfChecklistItem[] | null;
   photos?: Array<{ url?: string | null; caption?: string | null }> | null;
 };
@@ -40,6 +45,7 @@ export type PdfRouteSection = {
   kmFinal?: number | string | null;
   kmCovered?: number | string | null;
   statusLabel?: string | null;
+  plannedPosts?: number | null;
   visits: PdfVisit[];
 };
 
@@ -47,6 +53,8 @@ export type PdfReportInput = {
   title: string;
   periodLabel: string;
   generatedAt?: Date;
+  contextLines?: string[];
+  executiveMetrics?: Array<{ label: string; value: string; alert?: boolean }>;
   summaryLines?: string[];
   sections: PdfRouteSection[];
   fileName: string;
@@ -77,6 +85,13 @@ function formatKm(value: number | string | null | undefined) {
   if (value == null || value === "") return "—";
   const parsed = Number(value);
   return Number.isFinite(parsed) ? `${parsed.toLocaleString("pt-BR")} km` : "—";
+}
+
+function formatCoordinates(latitude: number | string | null | undefined, longitude: number | string | null | undefined) {
+  if (latitude == null || longitude == null) return "Não registrado";
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "Não registrado";
 }
 
 export function visitStatusLabel(status: string | null | undefined) {
@@ -144,6 +159,70 @@ function drawFooter(doc: jsPDF) {
   }
 }
 
+function drawContextBlock(doc: jsPDF, input: PdfReportInput, startY: number, pageWidth: number, marginX: number) {
+  let cursorY = startY;
+  if (input.contextLines?.length) {
+    const contextHeight = Math.max(17, 9 + input.contextLines.length * 4.5);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, contextHeight, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...BLACK);
+    doc.text("CONTEXTO DA EXTRAÇÃO", marginX + 4, cursorY + 5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...GRAY);
+    let lineY = cursorY + 10;
+    for (const line of input.contextLines) {
+      const wrapped = doc.splitTextToSize(line, pageWidth - marginX * 2 - 8);
+      doc.text(wrapped, marginX + 4, lineY);
+      lineY += wrapped.length * 3.8;
+    }
+    cursorY += contextHeight + 5;
+  }
+
+  if (input.executiveMetrics?.length) {
+    const metrics = input.executiveMetrics.slice(0, 4);
+    const gap = 3;
+    const cardWidth = (pageWidth - marginX * 2 - gap * (metrics.length - 1)) / metrics.length;
+    const cardHeight = 23;
+    for (let index = 0; index < metrics.length; index += 1) {
+      const metric = metrics[index]!;
+      const cardX = marginX + index * (cardWidth + gap);
+      doc.setFillColor(...(metric.alert ? [254, 242, 242] as [number, number, number] : [255, 255, 255] as [number, number, number]));
+      doc.setDrawColor(...(metric.alert ? [252, 165, 165] as [number, number, number] : [203, 213, 225] as [number, number, number]));
+      doc.roundedRect(cardX, cursorY, cardWidth, cardHeight, 2, 2, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.2);
+      doc.setTextColor(...(metric.alert ? [185, 28, 28] as [number, number, number] : GRAY));
+      doc.text(metric.label.toUpperCase(), cardX + 3, cursorY + 6);
+      doc.setFontSize(11);
+      doc.setTextColor(...BLACK);
+      doc.text(metric.value, cardX + 3, cursorY + 15);
+    }
+    cursorY += cardHeight + 6;
+  }
+  return cursorY;
+}
+
+function drawOccurrenceBlock(doc: jsPDF, lines: string[], startY: number, pageWidth: number, marginX: number) {
+  const wrappedLines = lines.flatMap((line) => doc.splitTextToSize(line, pageWidth - marginX * 2 - 10));
+  const height = Math.max(13, 8 + wrappedLines.length * 4);
+  doc.setFillColor(254, 242, 242);
+  doc.setDrawColor(248, 113, 113);
+  doc.roundedRect(marginX, startY, pageWidth - marginX * 2, height, 2, 2, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(185, 28, 28);
+  doc.text("OCORRÊNCIA / PENDÊNCIA REQUER ATENÇÃO", marginX + 4, startY + 5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...BLACK);
+  doc.setFontSize(8);
+  doc.text(wrappedLines, marginX + 4, startY + 10);
+  return height;
+}
+
 export async function downloadOperationalReportPdf(input: PdfReportInput) {
   const [{ default: JsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const generatedAt = input.generatedAt ?? new Date();
@@ -160,6 +239,8 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     drawHeader(doc, input, generatedAt);
     cursorY = 40;
   };
+
+  cursorY = drawContextBlock(doc, input, cursorY, pageWidth, marginX);
 
   if (input.summaryLines?.length) {
     ensureSpace(10 + input.summaryLines.length * 5);
@@ -199,16 +280,21 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     doc.text(`Início: ${formatDateTime(section.startedAt)} · Encerramento: ${formatDateTime(section.completedAt)}`, marginX + 4, cursorY + 20);
     cursorY += 30;
 
-    const visitRows = section.visits.map((visit) => [
+    const chronologicalVisits = [...section.visits].sort((first, second) => {
+      const firstTime = new Date(first.arrivalTime ?? first.auditSubmittedAt ?? 0).getTime();
+      const secondTime = new Date(second.arrivalTime ?? second.auditSubmittedAt ?? 0).getTime();
+      return firstTime - secondTime;
+    });
+    const visitRows = chronologicalVisits.map((visit) => [
       `${textOrDash(visit.postName)}${visit.isCoverage ? "\n(Cobertura)" : ""}${visit.region ? `\n${visit.region}` : ""}`,
       visitStatusLabel(visit.status),
       `Chegada: ${formatDateTime(visit.arrivalTime)}\nSaída: ${formatDateTime(visit.departureTime)}\nDuração: ${formatDuration(visit.durationMinutes)}`,
-      `${visit.isCoverage && visit.coverageReason ? `Cobertura: ${visit.coverageReason}\n` : ""}${textOrDash(visit.observations)}`,
+      `Envio: ${formatDateTime(visit.auditSubmittedAt)}\n${visit.isCoverage && visit.coverageReason ? `Cobertura: ${visit.coverageReason}\n` : ""}${textOrDash(visit.observations)}`,
     ]);
 
     autoTable(doc, {
       startY: cursorY,
-      head: [["Posto", "Situação", "Horários", "Observações da visita"]],
+      head: [["Posto", "Situação", "Atendimento", "Envio e observações"]],
       body: visitRows.length ? visitRows : [["Nenhum posto registrado", "—", "—", "—"]],
       theme: "grid",
       styles: { font: "helvetica", fontSize: 8, cellPadding: 2.2, textColor: BLACK, lineColor: [226, 232, 240] },
@@ -220,17 +306,36 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     });
     cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
-    for (const visit of section.visits) {
+    for (const visit of chronologicalVisits) {
       const items = visit.checklistItems ?? [];
       const photos = (visit.photos ?? []).filter((photo) => photo?.url);
-      if (!items.length && !photos.length) continue;
+      const nonCompliantItems = items.filter((item) => item.isCompliant === false);
+      const occurrenceLines = [
+        ...(nonCompliantItems.length ? [`${nonCompliantItems.length} item(ns) não conforme(s) identificado(s).`] : []),
+        ...nonCompliantItems.map((item) => `${textOrDash(item.description)}${item.notes ? `: ${item.notes}` : ""}`),
+        ...(visit.isCoverage && visit.coverageReason ? [`Cobertura justificada: ${visit.coverageReason}`] : []),
+      ];
+      if (!items.length && !photos.length && !occurrenceLines.length) continue;
 
-      ensureSpace(14);
+      ensureSpace(28);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, 20, 2, 2, "FD");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
+      doc.setFontSize(10);
       doc.setTextColor(...BLACK);
-      doc.text(`Auditoria do posto: ${textOrDash(visit.postName)}`, marginX, cursorY);
-      cursorY += 3;
+      doc.text(`VISTORIA DETALHADA · ${textOrDash(visit.postName)}`, marginX + 4, cursorY + 6);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...GRAY);
+      doc.text(`Envio: ${formatDateTime(visit.auditSubmittedAt)} · Chegada: ${formatDateTime(visit.arrivalTime)} · Saída: ${formatDateTime(visit.departureTime)}`, marginX + 4, cursorY + 11);
+      doc.text(`GPS chegada: ${formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude)} · GPS saída: ${formatCoordinates(visit.departureLatitude, visit.departureLongitude)}`, marginX + 4, cursorY + 15.5);
+      cursorY += 25;
+
+      if (occurrenceLines.length) {
+        ensureSpace(20 + occurrenceLines.length * 4);
+        cursorY += drawOccurrenceBlock(doc, occurrenceLines, cursorY, pageWidth, marginX) + 5;
+      }
 
       if (items.length) {
         autoTable(doc, {
@@ -254,19 +359,24 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
         doc.setTextColor(...BLACK);
         doc.text("Registro fotográfico", marginX, cursorY);
         cursorY += 4;
-        const imageWidth = 55;
-        const imageHeight = 41;
-        let columnX = marginX;
+        const imageWidth = (pageWidth - marginX * 2 - 6) / 2;
+        const imageHeight = 46;
+        const loadedPhotos: Array<{ dataUrl: string; caption?: string | null }> = [];
         for (const photo of photos) {
           const dataUrl = await loadImageAsDataUrl(String(photo.url));
           if (!dataUrl) continue;
-          if (columnX + imageWidth > pageWidth - marginX) {
-            columnX = marginX;
-            cursorY += imageHeight + 8;
-          }
-          ensureSpace(imageHeight + 10);
+          loadedPhotos.push({ dataUrl, caption: photo.caption });
+        }
+        const photoRows = Math.ceil(loadedPhotos.length / 2);
+        ensureSpace(photoRows * (imageHeight + 10) + 6);
+        for (let index = 0; index < loadedPhotos.length; index += 1) {
+          const photo = loadedPhotos[index]!;
+          const column = index % 2;
+          const row = Math.floor(index / 2);
+          const columnX = marginX + column * (imageWidth + 6);
+          const imageY = cursorY + row * (imageHeight + 10);
           try {
-            doc.addImage(dataUrl, "JPEG", columnX, cursorY, imageWidth, imageHeight, undefined, "FAST");
+            doc.addImage(photo.dataUrl, "JPEG", columnX, imageY, imageWidth, imageHeight, undefined, "FAST");
           } catch {
             continue;
           }
@@ -274,11 +384,10 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
             doc.setFont("helvetica", "normal");
             doc.setFontSize(7);
             doc.setTextColor(...GRAY);
-            doc.text(doc.splitTextToSize(photo.caption, imageWidth), columnX, cursorY + imageHeight + 3.5);
+            doc.text(doc.splitTextToSize(photo.caption, imageWidth), columnX, imageY + imageHeight + 3.5);
           }
-          columnX += imageWidth + 6;
         }
-        cursorY += imageHeight + 10;
+        cursorY += photoRows * (imageHeight + 10) + 4;
       }
     }
 

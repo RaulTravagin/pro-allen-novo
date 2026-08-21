@@ -123,15 +123,29 @@ function alertAppearance(severity: string) {
 }
 
 function downloadDailyReportCsv(report: any) {
-  const rows: Array<Array<string | number>> = [["Relatório diário", new Date(report.reportDate).toLocaleDateString("pt-BR")], [], ["Supervisor", "Situação", "Rota", "Posto", "Atendimento", "Chegada", "Saída", "Duração (min)", "Cobertura", "Motivo da cobertura", "Checklist conforme", "Não conformidades", "Sem resposta", "Observações", "KM percorridos", "GPS", "Alertas"]];
+  const shift = report.shiftType === "day" ? "Plantão Diurno · 06h às 18h" : report.shiftType === "night" ? "Plantão Noturno · 18h às 06h" : "Todos os turnos";
+  const summary = report.summary ?? {};
+  const rows: Array<Array<string | number>> = [
+    ["Pro Allen — Relatório Operacional Diário"],
+    ["Parâmetros aplicados", `Filtro: ${shift} | Supervisor: Todos os supervisores | Período: ${new Date(report.reportDate).toLocaleDateString("pt-BR")}`],
+    [],
+    ["Resumo executivo"],
+    ["Postos previstos", (report.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)],
+    ["Postos auditados", summary.completedVisits ?? 0],
+    ["KM total percorrido", summary.kmCovered ?? 0],
+    ["Ocorrências marcadas", summary.nonCompliantItems ?? 0],
+    [],
+    ["Vistorias em ordem cronológica"],
+    ["Data", "Hora", "Supervisor", "Rota / Turno", "Posto / Condomínio", "Status da Vistoria", "Início da Visita", "Fim da Visita", "Duração (min)", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrências", "Observações", "GPS de Chegada", "GPS de Saída", "Alertas"],
+  ];
   for (const supervisor of report.supervisors ?? []) {
     const visits = supervisor.route?.visits?.length ? supervisor.route.visits : [null];
     for (const visit of visits) {
+      const referenceTime = visit?.arrivalTime ?? visit?.auditSubmittedAt ?? supervisor.route?.startedAt ?? null;
       rows.push([
-        supervisor.supervisorName, supervisor.operationalStatusLabel, supervisor.route?.name ?? "Sem rota", visit?.postName ?? "—", visit ? checklistStatus(visit.status).label : "—",
+        referenceTime ? new Date(referenceTime).toLocaleDateString("pt-BR") : "—", referenceTime ? new Date(referenceTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", supervisor.supervisorName, `${supervisor.route?.name ?? "Sem rota"} · ${supervisor.route?.shiftType === "day" ? "Diurno" : supervisor.route?.shiftType === "night" ? "Noturno" : "Turno não informado"}`, visit?.postName ?? "—", visit ? checklistStatus(visit.status).label : "—",
         visit?.arrivalTime ? new Date(visit.arrivalTime).toLocaleString("pt-BR") : "—", visit?.departureTime ? new Date(visit.departureTime).toLocaleString("pt-BR") : "—", visit?.durationMinutes ?? "—",
-        visit?.isCoverage ? "Sim" : "Não", visit?.coverageReason ?? "—", visit?.checklist?.compliant ?? 0, visit?.checklist?.nonCompliant ?? 0, visit?.checklist?.unanswered ?? 0,
-        visit?.observations ?? "—", supervisor.route?.kmCovered ?? "—", supervisor.latestLocation ? formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude) : "Sem GPS",
+        supervisor.route?.kmInitial ?? "—", supervisor.route?.kmFinal ?? "—", supervisor.route?.kmCovered ?? "—", Number(visit?.checklist?.nonCompliant ?? 0) > 0 ? `${visit?.checklist?.nonCompliant} ocorrência(s)` : "Sem ocorrência", visit?.observations ?? visit?.coverageReason ?? "Sem observações", visit ? formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude) : "Não registrado", visit ? formatCoordinates(visit.departureLatitude, visit.departureLongitude) : "Não registrado",
         (supervisor.alerts ?? []).map((alert: any) => alert.title).join(" | ") || "Sem alertas",
       ]);
     }
@@ -203,6 +217,16 @@ export default function GestorDashboard() {
         title: "Relatório de rota e auditorias",
         periodLabel: liveShiftLabel,
         sections: [section],
+        contextLines: [
+          `Filtro: ${liveShiftLabel} | Supervisor: ${section.supervisorName} | Emissão: ${new Date().toLocaleString("pt-BR")}.`,
+          `Rota: ${section.routeName ?? "—"}${section.routeRegion ? ` · ${section.routeRegion}` : ""} | Viatura: ${section.vehiclePlate ?? "Não informada"}.`,
+        ],
+        executiveMetrics: [
+          { label: "Postos previstos", value: String(section.plannedPosts ?? section.visits.length) },
+          { label: "Auditados", value: String(section.visits.filter((visit) => visit.status === "visited" || visit.auditSubmittedAt).length) },
+          { label: "KM percorrido", value: section.kmCovered != null ? `${Number(section.kmCovered).toLocaleString("pt-BR")} km` : "Pendente" },
+          { label: "Ocorrências", value: String(section.visits.reduce((total, visit) => total + (visit.checklistItems ?? []).filter((item) => item.isCompliant === false).length, 0)), alert: section.visits.some((visit) => (visit.checklistItems ?? []).some((item) => item.isCompliant === false)) },
+        ],
         summaryLines: [
           `Supervisor: ${section.supervisorName}${section.supervisorUsername ? ` (@${section.supervisorUsername})` : ""}.`,
           `Rota: ${section.routeName ?? "—"}${section.routeRegion ? ` · ${section.routeRegion}` : ""} · Situação: ${section.statusLabel ?? "—"}.`,
@@ -232,6 +256,16 @@ export default function GestorDashboard() {
         title: "Relatório operacional do período",
         periodLabel: `${reportDate.toLocaleDateString("pt-BR")} · ${reportShiftType === "day" ? "Plantão Dia" : reportShiftType === "night" ? "Plantão Noite" : "Todos os turnos"}`,
         sections: buildDailyReportPdfSections(dailyReport.data),
+        contextLines: [
+          `Filtro: ${reportShiftType === "day" ? "Plantão Diurno" : reportShiftType === "night" ? "Plantão Noturno" : "Todos os turnos"} | Supervisor: Todos | Período: ${reportDate.toLocaleDateString("pt-BR")}.`,
+          `Emissão: ${new Date().toLocaleString("pt-BR")} | Dados organizados conforme a janela operacional selecionada.`,
+        ],
+        executiveMetrics: [
+          { label: "Postos previstos", value: String((dailyReport.data.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)) },
+          { label: "Auditados", value: String(dailyReport.data.summary?.completedVisits ?? 0) },
+          { label: "KM total", value: `${Number(dailyReport.data.summary?.kmCovered ?? 0).toLocaleString("pt-BR")} km` },
+          { label: "Ocorrências", value: String(dailyReport.data.summary?.nonCompliantItems ?? 0), alert: Number(dailyReport.data.summary?.nonCompliantItems ?? 0) > 0 },
+        ],
         summaryLines: buildDailyReportSummaryLines(dailyReport.data),
         fileName: `pro-allen-relatorio-${reportDate.toISOString().slice(0, 10)}.pdf`,
       });
@@ -291,7 +325,7 @@ export default function GestorDashboard() {
         </section>
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button variant="outline" onClick={exportPeriodPdf} disabled={!dailyReport.data || isExportingPdf === "periodo"} className="gap-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"><FileDown className="h-4 w-4" /> {isExportingPdf === "periodo" ? "Gerando PDF..." : "Exportar PDF"}</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button variant="outline" onClick={() => dailyReport.data && downloadDailyReportCsv(dailyReport.data)} disabled={!dailyReport.data} className="gap-2"><Download className="h-4 w-4" /> Exportar CSV</Button><Button variant="outline" onClick={exportPeriodPdf} disabled={!dailyReport.data || isExportingPdf === "periodo"} className="gap-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"><FileDown className="h-4 w-4" /> {isExportingPdf === "periodo" ? "Gerando PDF..." : "Exportar PDF"}</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
           {dailyReport.isLoading ? <LoadingRows /> : dailyReport.data ? <DailyOperationalReport report={dailyReport.data} /> : <EmptyState title="Relatório indisponível" description="Tente atualizar os dados do relatório diário." />}
         </section>}
 

@@ -1,4 +1,4 @@
-import { eq, desc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
@@ -1357,7 +1357,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   const empty = {
     filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
     filterOptions: { supervisors: [], vehicles: [] },
-    summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, compliantItems: 0, nonCompliantItems: 0, complianceRate: null as number | null },
+    summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, plannedPosts: 0, auditedPosts: 0, compliantItems: 0, nonCompliantItems: 0, complianceRate: null as number | null },
     routes: [], fuelLogs: [], visits: [],
   };
   if (!db) return empty;
@@ -1371,9 +1371,10 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   if (input.supervisorId) fuelConditions.push(eq(fuelLogs.supervisorId, input.supervisorId));
   if (input.vehicleId) fuelConditions.push(eq(fuelLogs.vehicleId, input.vehicleId));
 
-  const [routeRows, visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles] = await Promise.all([
+  const [routeRows, visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles, postRows] = await Promise.all([
     db.select({
       id: supervisorRoutes.id,
+      routeId: supervisorRoutes.routeId,
       date: supervisorRoutes.date,
       shiftType: supervisorRoutes.shiftType,
       shiftStartedAt: supervisorRoutes.shiftStartedAt,
@@ -1404,9 +1405,14 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       status: visitChecklists.status,
       arrivalTime: visitChecklists.arrivalTime,
       departureTime: visitChecklists.departureTime,
+      auditSubmittedAt: visitChecklists.auditSubmittedAt,
       observations: visitChecklists.observations,
       isCoverage: visitChecklists.isCoverage,
       coverageReason: visitChecklists.coverageReason,
+      arrivalLatitude: visitChecklists.arrivalLatitude,
+      arrivalLongitude: visitChecklists.arrivalLongitude,
+      departureLatitude: visitChecklists.departureLatitude,
+      departureLongitude: visitChecklists.departureLongitude,
       supervisorId: supervisorRoutes.supervisorId,
       supervisorName: users.name,
       vehiclePlate: vehicles.plate,
@@ -1416,7 +1422,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
       .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
       .where(and(...routeConditions))
-      .orderBy(desc(visitChecklists.updatedAt)),
+      .orderBy(asc(visitChecklists.arrivalTime), asc(visitChecklists.auditSubmittedAt), asc(visitChecklists.createdAt)),
     db.select({
       visitChecklistId: checklistItems.visitChecklistId,
       isCompliant: checklistItems.isCompliant,
@@ -1446,6 +1452,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       .where(and(eq(users.role, "user"), eq(users.isOperational, true))).orderBy(users.name),
     db.select({ id: vehicles.id, plate: vehicles.plate, model: vehicles.model }).from(vehicles)
       .where(eq(vehicles.isActive, true)).orderBy(vehicles.plate),
+    db.select({ routeId: posts.routeId }).from(posts),
   ]);
 
   const enrichedFuelRows = Array.from(new Set(fuelRows.map((row) => row.vehicleId))).flatMap((vehicleId) => enrichFuelHistory(fuelRows.filter((row) => row.vehicleId === vehicleId)));
@@ -1465,6 +1472,12 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   const totalConsumptionLiters = periodFuelLogs.reduce((total, log) => total + (log.distanceSincePrevious != null ? Number(log.liters) : 0), 0);
   const compliantItems = visits.reduce((total, visit) => total + visit.compliant, 0);
   const nonCompliantItems = visits.reduce((total, visit) => total + visit.nonCompliant, 0);
+  const plannedPostsByRoute = new Map<number, number>();
+  for (const post of postRows) {
+    plannedPostsByRoute.set(post.routeId, (plannedPostsByRoute.get(post.routeId) ?? 0) + 1);
+  }
+  const plannedPosts = routeRows.reduce((total, route) => total + (plannedPostsByRoute.get(route.routeId) ?? 0), 0);
+  const auditedPosts = visits.filter((visit) => visit.status === "visited" || visit.auditSubmittedAt !== null).length;
 
   return {
     filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
@@ -1474,6 +1487,8 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       totalFuelAmount: Number(totalFuelAmount.toFixed(2)),
       averageConsumptionKmPerLiter: totalConsumptionLiters > 0 ? Number((totalConsumptionDistance / totalConsumptionLiters).toFixed(2)) : null,
       inspections: visits.filter((visit) => visit.status === "visited").length,
+      plannedPosts,
+      auditedPosts,
       compliantItems,
       nonCompliantItems,
       complianceRate: compliantItems + nonCompliantItems > 0 ? Number(((compliantItems / (compliantItems + nonCompliantItems)) * 100).toFixed(1)) : null,
