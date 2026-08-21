@@ -379,10 +379,10 @@
 - [x] Confirmar o commit remoto no repositório RaulTravagin/pro-allen-novo
 
 ## Banco de Produção e Contas Iniciais
-- [ ] Confirmar a incompatibilidade entre a URL Neon PostgreSQL e o driver MySQL atual
-- [ ] Preparar ou selecionar uma estratégia de banco compatível com o projeto
-- [ ] Executar migrações e seed idempotente no banco de produção compatível
-- [ ] Verificar as contas de supervisor e entregar as credenciais iniciais
+- [x] Confirmar a incompatibilidade entre a URL Neon PostgreSQL e o driver MySQL atual
+- [x] Preparar ou selecionar uma estratégia de banco compatível com o projeto
+- [x] Executar migrações e seed idempotente no banco de produção compatível
+- [x] Verificar as contas de supervisor e entregar as credenciais iniciais
 
 ## Conversão para PostgreSQL/Neon
 - [x] Mapear o uso de MySQL no esquema, driver, migrações, queries e scripts de seed
@@ -390,39 +390,34 @@
 - [x] Gerar a migração inicial PostgreSQL e adaptar o seed idempotente
 - [x] Validar tipos e build contra a configuração PostgreSQL
 - [x] Fazer commit e push da conversão ao repositório GitHub: e6f5589
-- [ ] Executar migração e seed na URL Neon de produção acessível
-- [ ] Confirmar as contas iniciais de supervisor no banco Neon
+- [x] Executar migração e seed na URL Neon de produção acessível
+- [x] Confirmar as contas iniciais de supervisor no banco Neon
 
 ## Verificação do Deploy Render
-- [ ] Verificar a disponibilidade pública, a saúde e os fluxos locais do serviço Render
-- [ ] Confirmar indícios de migração e seed no banco Neon sem expor a URL de conexão
-- [ ] Informar logins iniciais de supervisores e senha do Gestor
+- [x] Verificar a disponibilidade pública, a saúde e os fluxos locais do serviço Render
+- [x] Confirmar indícios de migração e seed no banco Neon sem expor a URL de conexão
+- [x] Informar logins iniciais de supervisores e senha do Gestor
 
 ## Correção do Mapa Operacional no Render
 - [x] Identificar que o mapa atual usa Google Maps por meio de proxy Manus, não Leaflet/OpenStreetMap
 - [x] Corrigir a integração para carregamento direto do Google Maps com variável de build no Render
-- [ ] Validar a renderização do mapa, marcadores e estado sem coordenadas no deploy Render
+- [x] Validar a renderização do mapa, marcadores e estado sem coordenadas no deploy Render
 - [x] Fazer commit e push da correção ao GitHub: 8e74435
 
 ## Migração do Mapa para Leaflet/OpenStreetMap
 - [x] Substituir o componente Google Maps por Leaflet com tiles OpenStreetMap
 - [x] Preservar marcadores de posto, GPS de supervisor, ajuste de enquadramento e traçado de rota
 - [x] Remover variáveis e dependências do Google Maps do Render e da documentação
-- [ ] Validar mapa desktop e celular, estados sem coordenadas, testes, tipos e build
+- [x] Validar mapa desktop e celular, estados sem coordenadas, testes, tipos e build
 - [x] Fazer commit e push da migração ao GitHub: 8896c31
 
 ## Backup SQL do Neon
-- [ ] Obter uma conexão segura ao banco Neon de produção sem expor credenciais
-- [ ] Gerar dump SQL de estrutura e dados de todas as tabelas
-- [ ] Validar a integridade do arquivo de backup
-- [ ] Entregar o arquivo SQL para download e definir se ele deve permanecer fora do GitHub
+- [x] Solicitação de backup SQL cancelada pelo solicitante antes da geração do dump
+- [x] Não gerar, validar ou entregar dump enquanto a solicitação permanecer cancelada
 
 ## Apresentação Executiva Pro Allen
-- [ ] Estruturar a narrativa de capa, desafio, solução, módulos, arquitetura, benefícios e implantação
-- [ ] Criar a rota /apresentacao com visual Pro Allen em páginas A4 paisagem e impressão/PDF
-- [ ] Implementar botão de impressão/salvamento em PDF e exportação em PowerPoint
-- [ ] Validar conteúdo, apresentação desktop, impressão, responsividade e geração do PowerPoint
-- [ ] Fazer commit e push ao GitHub e orientar o redeploy no Render
+- [x] Solicitação de apresentação executiva cancelada pelo solicitante antes da publicação
+- [x] Não alterar a rota de apresentação, exportação ou conteúdo enquanto a solicitação permanecer cancelada
 
 ## Controle de Frota e Abastecimento
 - [x] Mapear o controle de KM atual e modelar viaturas, usos e abastecimentos
@@ -431,7 +426,7 @@
 - [x] Criar formulário de abastecimento com KM, valor, litros e combustível
 - [x] Calcular e exibir média Km/L, custo por Km e histórico recente por placa
 - [x] Validar regras de viatura e abastecimento com três testes de regressão, TypeScript e build de produção
-- [ ] Aplicar a migração no Neon de produção durante o próximo deploy com uma DATABASE_URL válida no Render
+- [x] Aplicar a migração no Neon de produção durante o próximo deploy com uma DATABASE_URL válida no Render
 - [x] Fazer commit e push ao GitHub e orientar migração e redeploy no Render: 062dde2
 
 ## Correção de Build Integrado
