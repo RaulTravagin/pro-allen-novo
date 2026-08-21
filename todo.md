@@ -534,5 +534,5 @@
 
 ## Envio da Refatoração de Relatórios ao GitHub
 - [x] Conferir o estado do repositório e preparar o commit solicitado
-- [ ] Criar o commit das alterações de relatórios corporativos
-- [ ] Enviar o commit ao GitHub e confirmar a atualização remota
+- [x] Criar o commit das alterações de relatórios corporativos
+- [x] Enviar o commit ao GitHub e confirmar a atualização remota
