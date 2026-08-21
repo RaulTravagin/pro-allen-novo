@@ -492,4 +492,4 @@
 - [x] Invalidar e atualizar o cache de rota, KM e formulários após mutações bem-sucedidas
 - [x] Confirmar payload e pré-visualização de postos na seleção de rotas do supervisor
 - [x] Criar regressões de estabilidade, turno, invalidação de cache e rotas
-- [ ] Publicar a refatoração no Render e validar os fluxos críticos
+- [x] Publicar a refatoração no Render e validar os fluxos críticos: fbea79b
