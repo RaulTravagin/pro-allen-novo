@@ -50,7 +50,7 @@ export type LocalRoute = {
   name: string;
   region: string;
   activityType: "field_route" | "operational_base";
-  posts: Array<{ id: string; name: string; region: string }>;
+  posts: Array<{ id: string; name: string; region: string; address?: string }>;
 };
 
 const STORAGE_KEY = "pro-allen:contingency:v1";
@@ -76,10 +76,10 @@ const LOCAL_USERS = [
 export const LOCAL_ROUTES: LocalRoute[] = [
   { id: "local-base", name: "Base Operacional", region: "Operação interna", activityType: "operational_base", posts: [] },
   { id: "local-r1", name: "Rota 1", region: "Jordanésia e Campo Limpo", activityType: "field_route", posts: [
-    { id: "kelvion", name: "Kelvion", region: "Jordanésia" }, { id: "supertec", name: "Supertec", region: "Campo Limpo" }, { id: "comtec-2", name: "Comtec 2", region: "Campo Limpo" }, { id: "galpao", name: "Galpão", region: "Campo Limpo" },
+    { id: "kelvion", name: "Kelvion", region: "Jordanésia" }, { id: "supertec", name: "Supertec", region: "Campo Limpo" }, { id: "comtec-2", name: "Comtec 2", region: "Campo Limpo" },
   ] },
   { id: "local-r2", name: "Rota 2", region: "Jundiaí", activityType: "field_route", posts: [
-    { id: "condominio-esmeralda", name: "Condomínio Esmeralda", region: "Jundiaí" }, { id: "caminhos-serra-1", name: "Caminhos da Serra 1", region: "Jundiaí" }, { id: "caminhos-serra-2", name: "Caminhos da Serra 2", region: "Jundiaí" }, { id: "instituto-luiz-braille", name: "Instituto Luiz Braille", region: "Jundiaí" }, { id: "flex-1", name: "Flex 1", region: "Jundiaí" }, { id: "flex-2", name: "Flex 2", region: "Jundiaí" }, { id: "cidade-vicentina", name: "Cidade Vicentina", region: "Jundiaí" }, { id: "condominio-tropical", name: "Condomínio Tropical I", region: "Jundiaí" }, { id: "shell", name: "Auto Posto Shell", region: "Jundiaí" },
+    { id: "condominio-esmeralda", name: "Condomínio Esmeralda", region: "Jundiaí" }, { id: "caminhos-serra-1", name: "Caminhos da Serra 1", region: "Jundiaí" }, { id: "caminhos-serra-2", name: "Caminhos da Serra 2", region: "Jundiaí" }, { id: "instituto-luiz-braille", name: "Instituto Luiz Braille", region: "Jundiaí" }, { id: "flex-1", name: "Flex 1", region: "Jundiaí" }, { id: "flex-2", name: "Flex 2", region: "Jundiaí" }, { id: "cidade-vicentina", name: "Cidade Vicentina", region: "Jundiaí" }, { id: "condominio-tropical", name: "Condomínio Tropical I", region: "Jundiaí" }, { id: "shell", name: "Auto Posto Shell", region: "Jundiaí" }, { id: "galpao", name: "Galpão", region: "Jundiaí", address: "Av. das Indústrias, 655" },
   ] },
   { id: "local-r3", name: "Rota 3", region: "Jundiaí", activityType: "field_route", posts: [
     { id: "open-view", name: "Open View", region: "Jundiaí" }, { id: "terras-genova", name: "Terras de Gênova", region: "Jundiaí" }, { id: "reserva-mata", name: "Reserva da Mata", region: "Jundiaí" }, { id: "saff", name: "Metalúrgica Saff", region: "Jundiaí" }, { id: "cma", name: "C.M.A.", region: "Jundiaí" }, { id: "sao-francisco", name: "São Francisco", region: "Jundiaí" },

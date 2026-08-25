@@ -38,7 +38,6 @@ try {
     { name: 'Kelvion', address: 'Jordanesia', region: 'Jordanesia', order: 1 },
     { name: 'Supertec', address: 'Campo Limpo', region: 'Campo Limpo', order: 2 },
     { name: 'Comtec 2', address: 'Campo Limpo', region: 'Campo Limpo', order: 3 },
-    { name: 'Galpão', address: 'Campo Limpo', region: 'Campo Limpo', order: 4 },
   ];
 
   for (const post of postsRota1) {
@@ -59,6 +58,7 @@ try {
     { name: 'Cidade vicentina', address: 'Jundiaí', region: 'Jundiaí', order: 7 },
     { name: 'Condomínio Tropical', address: 'Jundiaí', region: 'Jundiaí', order: 8 },
     { name: 'Auto posto Shell', address: 'Jundiaí', region: 'Jundiaí', order: 9 },
+    { name: 'Galpão', address: 'Av. das Indústrias, 655', region: 'Jundiaí', order: 10 },
   ];
 
   for (const post of postsRota2) {
