@@ -323,6 +323,40 @@ export const appRouter = router({
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       return await db.getSupervisorRoutesToday(ctx.user.id);
     }),
+
+    getShiftReport: protectedProcedure
+      .input(z.object({ supervisorRouteId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        const report = await db.getSupervisorShiftReport(ctx.user.id, input.supervisorRouteId);
+        if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Não foi possível consolidar o turno' });
+        return report;
+      }),
+
+    finishShift: protectedProcedure
+      .input(z.object({ supervisorRouteId: z.number().int().positive(), kmFinal: z.number().finite().nonnegative() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (route.status !== 'in_progress') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma rota em andamento pode encerrar o turno' });
+        }
+        const kmInitial = route.kmInitial == null ? null : Number(route.kmInitial);
+        if (kmInitial !== null && input.kmFinal < kmInitial) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'O KM final não pode ser menor que o KM inicial' });
+        }
+        await db.updateSupervisorRoute(input.supervisorRouteId, {
+          kmFinal: input.kmFinal,
+          status: 'completed',
+          completedAt: new Date(),
+        });
+        const report = await db.getSupervisorShiftReport(ctx.user.id, input.supervisorRouteId);
+        if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Turno encerrado, mas o relatório não pôde ser consolidado' });
+        return { closed: true, report };
+      }),
     
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });

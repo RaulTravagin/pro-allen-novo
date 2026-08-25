@@ -5,6 +5,7 @@ import * as schema from "../drizzle/schema";
 import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
+import { buildSupervisorShiftReport } from "./supervisor-shift-report";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -1540,4 +1541,10 @@ export async function getOperationalManagementReport(input: OperationalReportFil
     fuelLogs: periodFuelLogs,
     visits,
   };
+}
+
+/** Consolida todas as atividades do período operacional para o encerramento de um turno individual. */
+export async function getSupervisorShiftReport(supervisorId: number, supervisorRouteId: number) {
+  const snapshot = await getGestorOperationalSnapshot(undefined, { includeHistoricalUsers: true });
+  return buildSupervisorShiftReport(snapshot, supervisorId, supervisorRouteId);
 }

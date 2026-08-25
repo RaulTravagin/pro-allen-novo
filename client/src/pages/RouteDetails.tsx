@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ArrowLeft, Building2, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus, XCircle } from "lucide-react";
+import { Loader2, ArrowLeft, Building2, ClipboardList, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus, XCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import PostCard from "@/components/PostCard";
+import SupervisorShiftReportDialog from "@/components/SupervisorShiftReportDialog";
 import { clearRouteDraft, readRouteDraft, saveRouteDraft } from "@/lib/onlineOperationDraft";
 
 interface RouteDetailsProps {
@@ -27,7 +28,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   
   const [kmInitial, setKmInitial] = useState<string>("");
   const [kmFinal, setKmFinal] = useState<string>("");
-  const [showKmFinal, setShowKmFinal] = useState(false);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [showNewVehicle, setShowNewVehicle] = useState(false);
   const [vehiclePlate, setVehiclePlate] = useState("");
@@ -42,6 +42,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [coverageReason, setCoverageReason] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  const [showShiftReport, setShowShiftReport] = useState(false);
+  const [shiftReport, setShiftReport] = useState<any | null>(null);
   const OPERATIONAL_BASE_COVERAGE_VALUE = "operational_base";
 
   // Queries
@@ -55,10 +57,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   );
   const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
   const isBaseOperational = route?.routeActivityType === "operational_base";
-
-  useEffect(() => {
-    if (route?.status === 'completed') setShowKmFinal(false);
-  }, [route?.status]);
 
   useEffect(() => {
     if (route?.vehicleId) setSelectedVehicleId(String(route.vehicleId));
@@ -99,6 +97,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     { supervisorRouteId },
     { enabled: route?.status === "in_progress" },
   );
+  const shiftReportQuery = trpc.supervisorRoutes.getShiftReport.useQuery(
+    { supervisorRouteId },
+    { enabled: showShiftReport, retry: false },
+  );
 
   // Mutations
   const updateKmMutation = trpc.supervisorRoutes.updateKm.useMutation();
@@ -110,12 +112,14 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
   const createCoverageMutation = trpc.checklists.createCoverage.useMutation();
+  const finishShiftMutation = trpc.supervisorRoutes.finishShift.useMutation();
 
   const refreshOperationalData = async () => {
     await Promise.all([
       utils.supervisorRoutes.getById.invalidate({ id: supervisorRouteId }),
       utils.supervisorRoutes.getTodayRoute.invalidate(),
       utils.supervisorRoutes.getTodayHistory.invalidate(),
+      utils.supervisorRoutes.getShiftReport.invalidate({ supervisorRouteId }),
       utils.checklists.getByRoute.invalidate({ supervisorRouteId }),
       utils.gestor.dashboard.invalidate(),
       utils.gestor.dailyReport.invalidate(),
@@ -295,31 +299,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const formatCurrency = (value: number | null | undefined) => value == null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const formatNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}${suffix}`;
 
-  const handleEndRoute = async () => {
-    const finalKm = Number(kmFinal);
-    const initialKm = Number(kmInitial || route?.kmInitial);
-    if (!Number.isFinite(finalKm) || finalKm < 0) {
-      toast.error("Por favor, informe o KM final");
-      return;
-    }
-    
-    if (Number.isFinite(initialKm) && finalKm < initialKm) {
-      toast.error("O KM final não pode ser menor que o KM inicial");
-      return;
-    }
+  const handleOpenShiftReport = () => {
+    setShowShiftReport(true);
+  };
 
+  const handleFinishShift = async (finalKm: number) => {
     try {
-      await updateKmMutation.mutateAsync({
-        id: supervisorRouteId,
-        kmFinal: finalKm,
-      });
+      const result = await finishShiftMutation.mutateAsync({ supervisorRouteId, kmFinal: finalKm });
+      setShiftReport(result.report);
       if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
       await refreshOperationalData();
-      setShowKmFinal(false);
-      toast.success(isBaseOperational ? "Base Operacional encerrada. Agora escolha a rota de campo." : "Rota encerrada com sucesso!");
+      toast.success("Turno encerrado e relatório gerado com sucesso");
     } catch (error) {
-      toast.error("Erro ao encerrar rota");
-      console.error("Error ending route:", error);
+      toast.error(error instanceof Error ? error.message : "Não foi possível encerrar o turno");
+      console.error("Error finishing supervisor shift:", error);
     }
   };
 
@@ -473,25 +466,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     {isBaseOperational && <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-950">Base Operacional encerrada</p><p className="mt-1 text-xs leading-5 text-violet-800">Você já pode selecionar uma rota de campo para continuar o turno.</p><Button type="button" onClick={() => navigate("/supervisor")} className="mt-3 w-full bg-violet-700 hover:bg-violet-800">Selecionar rota de campo <ArrowLeft className="ml-2 h-4 w-4 rotate-180" /></Button></div>}
                   </div>
                 ) : route.status === "in_progress" ? (
-                  showKmFinal ? (
-                    <div className="mt-3 space-y-3">
-                      <Label htmlFor="kmFinal">Leitura ao devolver a viatura</Label>
-                      <Input
-                        id="kmFinal"
-                        type="number"
-                        inputMode="decimal"
-                        placeholder="Ex.: 15050"
-                        value={kmFinal}
-                        onChange={(e) => setKmFinal(e.target.value)}
-                      />
-                      {kmFinal && <p className="text-sm text-slate-600">Total estimado: {(Number(kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>}
-                      <Button onClick={handleEndRoute} disabled={!kmFinal || updateKmMutation.isPending} className="w-full bg-slate-900 hover:bg-slate-800">
-                        {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Encerrar turno / informar KM final"}
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button onClick={() => setShowKmFinal(true)} variant="outline" className="mt-3 w-full">Encerrar turno / informar KM final</Button>
-                  )
+                  <Button onClick={handleOpenShiftReport} className="mt-3 w-full bg-slate-900 hover:bg-slate-800"><ClipboardList className="mr-2 h-4 w-4" />Encerrar turno e gerar relatório</Button>
                 ) : (
                   <p className="mt-3 text-sm text-slate-600">Disponível depois do registro do KM inicial.</p>
                 )}
@@ -677,6 +652,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         </div>}
 
       </div>
+
+      <SupervisorShiftReportDialog
+        open={showShiftReport}
+        onOpenChange={(open) => {
+          setShowShiftReport(open);
+          if (!open) setShiftReport(null);
+        }}
+        report={shiftReport ?? shiftReportQuery.data ?? null}
+        isLoading={shiftReportQuery.isLoading && !shiftReport}
+        isClosing={finishShiftMutation.isPending}
+        initialKmFinal={kmFinal}
+        canClose={route.status === "in_progress"}
+        onConfirmClose={handleFinishShift}
+      />
 
       <AlertDialog open={showCancelConfirmation} onOpenChange={setShowCancelConfirmation}>
         <AlertDialogContent>
