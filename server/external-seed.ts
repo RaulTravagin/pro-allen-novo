@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import { posts, routes, users } from "../drizzle/schema";
+import { postVisitHistory, posts, routes, users, visitChecklists } from "../drizzle/schema";
 import { getDb, getInsertedId } from "./db";
 import { hashSupervisorPassword } from "./local-supervisor-auth";
 
 const routeCatalog = [
-  { name: "Rota 1", region: "Jordanésia e Campo Limpo", posts: [["Kelvion", "Jordanésia"], ["Supertec", "Campo Limpo"], ["Comtec 2", "Campo Limpo"], ["Coco Leve", "Campo Limpo"]] },
+  { name: "Rota 1", region: "Jordanésia e Campo Limpo", posts: [["Kelvion", "Jordanésia"], ["Supertec", "Campo Limpo"], ["Comtec 2", "Campo Limpo"], ["Galpão", "Campo Limpo"]] },
   { name: "Rota 2", region: "Jundiaí", posts: [["Condomínio Esmeralda", "Jundiaí"], ["Caminhos da Serra 1", "Jundiaí"], ["Caminhos da Serra 2", "Jundiaí"], ["Instituto Luiz Braille", "Jundiaí"], ["Flex 1", "Jundiaí"], ["Flex 2", "Jundiaí"], ["Cidade Vicentina", "Jundiaí"], ["Condomínio Tropical I", "Jundiaí"], ["Auto Posto Shell", "Jundiaí"]] },
   { name: "Rota 3", region: "Jundiaí", posts: [["Open View", "Jundiaí"], ["Terras de Gênova", "Jundiaí"], ["Reserva da Mata", "Jundiaí"], ["Metalúrgica Saff", "Jundiaí"], ["C.M.A", "Jundiaí"], ["São Francisco", "Jundiaí"]] },
   { name: "Rota 4", region: "Jundiaí e Cabreúva", posts: [["Brasimet", "Jundiaí"], ["Bottcher", "Jundiaí"], ["Magnera", "Jundiaí"], ["G.A.G", "Jundiaí"], ["Eco Village", "Jundiaí"], ["C.P.Q", "Jundiaí"], ["Carmel", "Cabreúva"]] },
@@ -27,9 +27,25 @@ async function seed() {
       await db.insert(routes).values({ name: route.name, region: route.region, description: "Rota operacional inicial", activityType: "field_route" });
       [routeRecord] = await db.select().from(routes).where(eq(routes.name, route.name)).limit(1);
     }
+    if (route.name === "Rota 1") {
+      const [galpaoPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, "Galpão"))).limit(1);
+      const [legacyCocoPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, "Coco Leve"))).limit(1);
+      if (galpaoPost && legacyCocoPost) {
+        await db.update(visitChecklists).set({ postId: galpaoPost.id }).where(eq(visitChecklists.postId, legacyCocoPost.id));
+        await db.update(postVisitHistory).set({ postId: galpaoPost.id }).where(eq(postVisitHistory.postId, legacyCocoPost.id));
+        await db.delete(posts).where(eq(posts.id, legacyCocoPost.id));
+      }
+    }
     for (let index = 0; index < route.posts.length; index += 1) {
       const [postName, region] = route.posts[index];
-      const [existingPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, postName))).limit(1);
+      let [existingPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, postName))).limit(1);
+      if (!existingPost && route.name === "Rota 1" && postName === "Galpão") {
+        const [legacyPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, "Coco Leve"))).limit(1);
+        if (legacyPost) {
+          await db.update(posts).set({ name: "Galpão", region, address: "Endereço pendente de cadastro", order: index + 1 }).where(eq(posts.id, legacyPost.id));
+          existingPost = { ...legacyPost, name: "Galpão", region, address: "Endereço pendente de cadastro", order: index + 1 };
+        }
+      }
       if (!existingPost) {
         await db.insert(posts).values({ routeId: routeRecord.id, name: postName, region, address: "Endereço pendente de cadastro", order: index + 1 });
       }

@@ -38,7 +38,7 @@ try {
     { name: 'Kelvion', address: 'Jordanesia', region: 'Jordanesia', order: 1 },
     { name: 'Supertec', address: 'Campo Limpo', region: 'Campo Limpo', order: 2 },
     { name: 'Comtec 2', address: 'Campo Limpo', region: 'Campo Limpo', order: 3 },
-    { name: 'Coco Leve', address: 'Campo Limpo', region: 'Campo Limpo', order: 4 },
+    { name: 'Galpão', address: 'Campo Limpo', region: 'Campo Limpo', order: 4 },
   ];
 
   for (const post of postsRota1) {
