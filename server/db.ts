@@ -592,11 +592,54 @@ export async function getCoveragePostsBySupervisorRoute(supervisorRouteId: numbe
     region: posts.region,
     routeId: posts.routeId,
     routeName: routes.name,
+    routeActivityType: routes.activityType,
   })
     .from(posts)
     .innerJoin(routes, eq(routes.id, posts.routeId))
     .where(sql`${posts.routeId} <> ${supervisorRoute.routeId}`)
     .orderBy(routes.name, posts.order);
+}
+
+/** Garante um posto persistível para registrar atividade realizada na Base Operacional. */
+export async function getOrCreateOperationalBasePost() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let baseRoute: typeof routes.$inferSelect | undefined = (await db.select().from(routes)
+    .where(eq(routes.activityType, "operational_base"))
+    .limit(1))[0];
+
+  if (!baseRoute) {
+    const result = await db.insert(routes).values({
+      name: "Base Operacional",
+      region: "Operação interna",
+      description: "Atividade sem posto de cliente",
+      activityType: "operational_base",
+    }).returning({ id: routes.id });
+    const baseRouteId = getInsertedId(result);
+    baseRoute = await getRouteById(baseRouteId) ?? undefined;
+  }
+
+  if (!baseRoute) throw new Error("Não foi possível preparar a Base Operacional");
+
+  let basePost: typeof posts.$inferSelect | undefined = (await db.select().from(posts)
+    .where(and(eq(posts.routeId, baseRoute.id), eq(posts.name, "Base Operacional")))
+    .limit(1))[0];
+
+  if (!basePost) {
+    const result = await db.insert(posts).values({
+      routeId: baseRoute.id,
+      name: "Base Operacional",
+      region: "Operação interna",
+      address: "Atividade interna sem posto de cliente",
+      order: 1,
+    }).returning({ id: posts.id });
+    const basePostId = getInsertedId(result);
+    basePost = await getPostById(basePostId) ?? undefined;
+  }
+
+  if (!basePost) throw new Error("Não foi possível preparar o posto da Base Operacional");
+  return basePost;
 }
 
 export async function getVisitChecklistById(id: number) {

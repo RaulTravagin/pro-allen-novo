@@ -452,7 +452,7 @@ export const appRouter = router({
     createCoverage: protectedProcedure
       .input(z.object({
         supervisorRouteId: z.number(),
-        postId: z.number(),
+        postId: z.union([z.number().int().positive(), z.literal("operational_base")]),
         coverageReason: z.string().trim().min(8, 'Informe uma justificativa com pelo menos 8 caracteres').max(2000),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -462,7 +462,9 @@ export const appRouter = router({
         if (route.status !== 'in_progress') {
           throw new TRPCError({ code: 'CONFLICT', message: 'Inicie a rota pelo KM inicial antes de registrar uma cobertura' });
         }
-        const post = await db.getPostById(input.postId);
+        const post = input.postId === "operational_base"
+          ? await db.getOrCreateOperationalBasePost()
+          : await db.getPostById(input.postId);
         if (!post) throw new TRPCError({ code: 'NOT_FOUND', message: 'Posto não encontrado' });
         if (post.routeId === route.routeId) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este posto já faz parte da rota planejada' });
@@ -471,7 +473,7 @@ export const appRouter = router({
         if (routeChecklists.some((item) => item.status === 'in_progress')) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de registrar uma cobertura' });
         }
-        const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, input.postId, {
+        const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, post.id, {
           isCoverage: true,
           coverageReason: input.coverageReason,
         });

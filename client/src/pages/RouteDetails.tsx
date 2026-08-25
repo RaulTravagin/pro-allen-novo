@@ -42,6 +42,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [coverageReason, setCoverageReason] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  const OPERATIONAL_BASE_COVERAGE_VALUE = "operational_base";
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
@@ -163,20 +164,23 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     return latestChecklist ? [{ post, checklist: latestChecklist }] : [];
   });
   const coveragePostById = new Map((coveragePosts ?? []).map((post) => [post.id, post]));
+  const selectableCoveragePosts = (coveragePosts ?? []).filter((post) => post.routeActivityType !== "operational_base");
   const coveragePostCards = (checklists ?? [])
     .filter((checklist) => checklist.isCoverage)
     .map((checklist) => ({ post: coveragePostById.get(checklist.postId), checklist }));
   const postCards = [...plannedPostCards, ...coveragePostCards];
 
   const handleCreateCoverage = async () => {
-    const postId = Number(coveragePostId);
+    const postId = coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE
+      ? OPERATIONAL_BASE_COVERAGE_VALUE
+      : Number(coveragePostId);
     const reason = coverageReason.trim();
-    if (!Number.isSafeInteger(postId) || postId <= 0) {
+    if (postId !== OPERATIONAL_BASE_COVERAGE_VALUE && (!Number.isSafeInteger(postId) || postId <= 0)) {
       toast.error("Selecione o posto que receberá a cobertura");
       return;
     }
     if (reason.length < 8) {
-      toast.error("Justifique a cobertura com pelo menos 8 caracteres");
+      toast.error("Informe o motivo da cobertura com pelo menos 8 caracteres");
       return;
     }
     try {
@@ -184,7 +188,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       await refreshOperationalData();
       setCoveragePostId("");
       setCoverageReason("");
-      toast.success("Cobertura adicionada. Registre a chegada no novo card.");
+      toast.success(coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE ? "Atividade na Base Operacional adicionada. Registre a chegada no novo card." : "Cobertura adicionada. Registre a chegada no novo card.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível registrar a cobertura");
     }
@@ -522,36 +526,44 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             <CardHeader>
               <CardTitle id="coverage-title" className="flex items-center gap-2 text-violet-950">
                 <Route className="h-5 w-5 text-violet-700" />
-                Cobertura fora da rota
+                Cobertura ou atividade na Base Operacional
               </CardTitle>
               <CardDescription>
-                Use somente quando for necessário atender um posto não previsto nesta rota. A justificativa ficará disponível para o Gestor.
+                Use para atender um posto não previsto nesta rota ou registrar uma atividade realizada na Base Operacional. A justificativa ficará disponível para o Gestor.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
               <div className="space-y-2">
-                <Label htmlFor="coverage-post">Posto para cobertura</Label>
+                <Label htmlFor="coverage-post">Posto ou atividade</Label>
                 <select
                   id="coverage-post"
                   value={coveragePostId}
                   onChange={(event) => setCoveragePostId(event.target.value)}
                   disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  required
+                  aria-required="true"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="">Selecione um posto fora da rota</option>
-                  {(coveragePosts ?? []).map((post) => <option key={post.id} value={post.id}>{post.name} · {post.region} ({post.routeName})</option>)}
+                  <option value="">Selecione um posto ou a Base Operacional</option>
+                  <option value={OPERATIONAL_BASE_COVERAGE_VALUE}>Base Operacional · Operação interna</option>
+                  {selectableCoveragePosts.map((post) => <option key={post.id} value={post.id}>{post.name} · {post.region} ({post.routeName})</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="coverage-reason">Motivo da cobertura</Label>
+                <Label htmlFor="coverage-reason">Motivo da cobertura <span className="text-rose-700">(obrigatório)</span></Label>
                 <Textarea
                   id="coverage-reason"
                   value={coverageReason}
                   onChange={(event) => setCoverageReason(event.target.value)}
-                  placeholder="Ex.: Cobertura emergencial por ausência no posto"
+                  placeholder="Ex.: Cobertura emergencial por ausência no posto ou permanência na base"
                   disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  required
+                  aria-required="true"
+                  minLength={8}
+                  maxLength={2000}
                   className="min-h-10 resize-none"
                 />
+                <p className="text-xs text-violet-800">Informe pelo menos 8 caracteres para registrar a atividade selecionada.</p>
               </div>
               <Button
                 type="button"
@@ -559,7 +571,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 disabled={route.status !== "in_progress" || !coveragePostId || coverageReason.trim().length < 8 || createCoverageMutation.isPending || Boolean(activeChecklist)}
                 className="bg-violet-700 hover:bg-violet-800"
               >
-                {createCoverageMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Adicionar cobertura"}
+                {createCoverageMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE ? "Registrar atividade na base" : "Adicionar cobertura"}
               </Button>
             </CardContent>
             {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar coberturas.</CardContent>}
@@ -623,6 +635,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 status={checklist.status as 'pending' | 'in_progress' | 'visited'}
                 observations={checklist.observations || undefined}
                 isCoverage={checklist.isCoverage}
+                isOperationalBaseCoverage={Boolean(post && "routeActivityType" in post && post.routeActivityType === "operational_base")}
                 coverageReason={checklist.coverageReason}
                 arrivalTime={checklist.arrivalTime}
                 departureTime={checklist.departureTime}

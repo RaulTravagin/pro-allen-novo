@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { posts, routes, users } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getDb, getInsertedId } from "./db";
 import { hashSupervisorPassword } from "./local-supervisor-auth";
 
 const routeCatalog = [
@@ -36,8 +36,17 @@ async function seed() {
     }
   }
 
-  const [base] = await db.select().from(routes).where(eq(routes.name, "Base Operacional")).limit(1);
-  if (!base) await db.insert(routes).values({ name: "Base Operacional", region: "Operação interna", description: "Atividade sem posto de cliente", activityType: "operational_base" });
+  let [base] = await db.select().from(routes).where(eq(routes.activityType, "operational_base")).limit(1);
+  if (!base) {
+    const result = await db.insert(routes).values({ name: "Base Operacional", region: "Operação interna", description: "Atividade sem posto de cliente", activityType: "operational_base" }).returning({ id: routes.id });
+    [base] = await db.select().from(routes).where(eq(routes.id, getInsertedId(result))).limit(1);
+  }
+  if (base) {
+    const [basePost] = await db.select().from(posts).where(and(eq(posts.routeId, base.id), eq(posts.name, "Base Operacional"))).limit(1);
+    if (!basePost) {
+      await db.insert(posts).values({ routeId: base.id, name: "Base Operacional", region: "Operação interna", address: "Atividade interna sem posto de cliente", order: 1 });
+    }
+  }
 
   for (const supervisor of supervisorCatalog) {
     const password = process.env[supervisor.passwordEnv];
