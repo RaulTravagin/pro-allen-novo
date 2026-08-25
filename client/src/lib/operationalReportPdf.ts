@@ -63,7 +63,11 @@ export type PdfReportInput = {
 const BRAND = { name: "PRO ALLEN", subtitle: "Gestão e Fiscalização Operacional em Campo", credit: "CT3 Chults Travagin" };
 const YELLOW: [number, number, number] = [250, 204, 21];
 const BLACK: [number, number, number] = [15, 23, 42];
+const BLUE: [number, number, number] = [29, 78, 216];
 const GRAY: [number, number, number] = [100, 116, 139];
+const GREEN: [number, number, number] = [22, 101, 52];
+const AMBER: [number, number, number] = [180, 83, 9];
+const RED: [number, number, number] = [185, 28, 28];
 
 function textOrDash(value: unknown) {
   return value == null || value === "" ? "—" : String(value);
@@ -190,12 +194,15 @@ function drawContextBlock(doc: jsPDF, input: PdfReportInput, startY: number, pag
     for (let index = 0; index < metrics.length; index += 1) {
       const metric = metrics[index]!;
       const cardX = marginX + index * (cardWidth + gap);
+      const metricAccent = metric.alert ? RED : index === 0 ? BLUE : index === 1 ? GREEN : index === 2 ? AMBER : GRAY;
       doc.setFillColor(...(metric.alert ? [254, 242, 242] as [number, number, number] : [255, 255, 255] as [number, number, number]));
       doc.setDrawColor(...(metric.alert ? [252, 165, 165] as [number, number, number] : [203, 213, 225] as [number, number, number]));
       doc.roundedRect(cardX, cursorY, cardWidth, cardHeight, 2, 2, "FD");
+      doc.setFillColor(...metricAccent);
+      doc.roundedRect(cardX, cursorY, cardWidth, 2.2, 2, 2, "F");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.2);
-      doc.setTextColor(...(metric.alert ? [185, 28, 28] as [number, number, number] : GRAY));
+      doc.setTextColor(...metricAccent);
       doc.text(metric.label.toUpperCase(), cardX + 3, cursorY + 6);
       doc.setFontSize(11);
       doc.setTextColor(...BLACK);
@@ -261,23 +268,38 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     cursorY += 4;
   }
 
-  for (const section of input.sections) {
+  for (let sectionIndex = 0; sectionIndex < input.sections.length; sectionIndex += 1) {
+    const section = input.sections[sectionIndex]!;
     ensureSpace(34);
+    const isCompleted = section.statusLabel === "Encerrada";
+    const statusColor = isCompleted ? GREEN : section.statusLabel === "Em andamento" ? AMBER : GRAY;
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
     doc.roundedRect(marginX, cursorY - 4, pageWidth - marginX * 2, 26, 2, 2, "FD");
+    doc.setFillColor(...YELLOW);
+    doc.roundedRect(marginX, cursorY - 4, 3, 26, 2, 2, "F");
     doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...BLUE);
+    doc.text(`ATIVIDADE ${String(sectionIndex + 1).padStart(2, "0")}`, marginX + 6, cursorY + 1);
     doc.setFontSize(12);
     doc.setTextColor(...BLACK);
-    doc.text(section.supervisorName, marginX + 4, cursorY + 3);
+    doc.text(section.supervisorName, marginX + 6, cursorY + 7);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...GRAY);
-    const routeLine = `${textOrDash(section.routeName)}${section.routeRegion ? ` · ${section.routeRegion}` : ""} · ${textOrDash(section.shiftLabel)}${section.statusLabel ? ` · ${section.statusLabel}` : ""}`;
-    doc.text(routeLine, marginX + 4, cursorY + 9);
+    const routeLine = `${textOrDash(section.routeName)}${section.routeRegion ? ` · ${section.routeRegion}` : ""} · ${textOrDash(section.shiftLabel)}`;
+    doc.text(routeLine, marginX + 6, cursorY + 13);
+    if (section.statusLabel) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...statusColor);
+      doc.text(section.statusLabel.toUpperCase(), pageWidth - marginX - 6, cursorY + 7, { align: "right" });
+    }
     const vehicleLine = `Viatura: ${textOrDash(section.vehiclePlate)}${section.vehicleModel ? ` (${section.vehicleModel})` : ""} · KM inicial: ${formatKm(section.kmInitial)} · KM final: ${formatKm(section.kmFinal)} · Percorrido: ${formatKm(section.kmCovered)}`;
-    doc.text(vehicleLine, marginX + 4, cursorY + 14.5);
-    doc.text(`Início: ${formatDateTime(section.startedAt)} · Encerramento: ${formatDateTime(section.completedAt)}`, marginX + 4, cursorY + 20);
+    doc.setTextColor(...GRAY);
+    doc.text(vehicleLine, marginX + 6, cursorY + 18);
+    doc.text(`Início: ${formatDateTime(section.startedAt)} · Encerramento: ${formatDateTime(section.completedAt)}`, marginX + 6, cursorY + 23);
     cursorY += 30;
 
     const chronologicalVisits = [...section.visits].sort((first, second) => {
@@ -286,7 +308,7 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       return firstTime - secondTime;
     });
     const visitRows = chronologicalVisits.map((visit) => [
-      `${textOrDash(visit.postName)}${visit.isCoverage ? "\n(Cobertura)" : ""}${visit.region ? `\n${visit.region}` : ""}`,
+      `${textOrDash(visit.postName)}${visit.isCoverage ? `\n(${visit.postName === "Base Operacional" ? "BASE OPERACIONAL" : "COBERTURA"})` : ""}${visit.region ? `\n${visit.region}` : ""}`,
       visitStatusLabel(visit.status),
       `Chegada: ${formatDateTime(visit.arrivalTime)}\nSaída: ${formatDateTime(visit.departureTime)}\nDuração: ${formatDuration(visit.durationMinutes)}`,
       `Envio: ${formatDateTime(visit.auditSubmittedAt)}\n${visit.isCoverage && visit.coverageReason ? `Cobertura: ${visit.coverageReason}\n` : ""}${textOrDash(visit.observations)}`,
@@ -298,7 +320,7 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       body: visitRows.length ? visitRows : [["Nenhum posto registrado", "—", "—", "—"]],
       theme: "grid",
       styles: { font: "helvetica", fontSize: 8, cellPadding: 2.2, textColor: BLACK, lineColor: [226, 232, 240] },
-      headStyles: { fillColor: BLACK, textColor: YELLOW, fontStyle: "bold" },
+      headStyles: { fillColor: BLACK, textColor: YELLOW, fontStyle: "bold", lineColor: YELLOW },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 24 }, 2: { cellWidth: 48 }, 3: { cellWidth: "auto" } },
       margin: { left: marginX, right: marginX },
@@ -331,6 +353,22 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       doc.text(`Envio: ${formatDateTime(visit.auditSubmittedAt)} · Chegada: ${formatDateTime(visit.arrivalTime)} · Saída: ${formatDateTime(visit.departureTime)}`, marginX + 4, cursorY + 11);
       doc.text(`GPS chegada: ${formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude)} · GPS saída: ${formatCoordinates(visit.departureLatitude, visit.departureLongitude)}`, marginX + 4, cursorY + 15.5);
       cursorY += 25;
+
+      if (visit.isCoverage && visit.coverageReason) {
+        ensureSpace(14);
+        doc.setFillColor(255, 251, 235);
+        doc.setDrawColor(245, 158, 11);
+        doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, 12, 2, 2, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8);
+        doc.setTextColor(...AMBER);
+        doc.text(visit.postName === "Base Operacional" ? "BASE OPERACIONAL · MOTIVO" : "COBERTURA · JUSTIFICATIVA", marginX + 4, cursorY + 4.5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...BLACK);
+        const reason = doc.splitTextToSize(visit.coverageReason, pageWidth - marginX * 2 - 65);
+        doc.text(reason, marginX + 62, cursorY + 4.5);
+        cursorY += Math.max(12, reason.length * 3.8 + 5);
+      }
 
       if (occurrenceLines.length) {
         ensureSpace(20 + occurrenceLines.length * 4);
