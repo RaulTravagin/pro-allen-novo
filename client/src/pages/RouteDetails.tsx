@@ -38,13 +38,13 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [fuelLiters, setFuelLiters] = useState("");
   const [fuelType, setFuelType] = useState<"gasoline" | "ethanol" | "diesel">("gasoline");
   const [gpsError, setGpsError] = useState<string>("");
-  const [coveragePostId, setCoveragePostId] = useState("");
-  const [coverageReason, setCoverageReason] = useState("");
+  const [occurrencePostId, setOccurrencePostId] = useState("");
+  const [occurrenceReason, setOccurrenceReason] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [showShiftReport, setShowShiftReport] = useState(false);
   const [shiftReport, setShiftReport] = useState<any | null>(null);
-  const OPERATIONAL_BASE_COVERAGE_VALUE = "operational_base";
+  const OPERATIONAL_BASE_OCCURRENCE_VALUE = "operational_base";
 
   // Queries
   const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
@@ -74,8 +74,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       setKmInitial(draft.kmInitial);
       setKmFinal(draft.kmFinal);
       setSelectedVehicleId((current) => route.vehicleId ? String(route.vehicleId) : current || draft.selectedVehicleId);
-      setCoveragePostId(draft.coveragePostId);
-      setCoverageReason(draft.coverageReason);
+      setOccurrencePostId(draft.coveragePostId);
+      setOccurrenceReason(draft.coverageReason);
       setFuelOdometer(draft.fuelOdometer);
       setFuelAmount(draft.fuelAmount);
       setFuelLiters(draft.fuelLiters);
@@ -86,14 +86,14 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   useEffect(() => {
     if (!route || !user?.id || !draftLoaded || route.status === "completed") return;
-    saveRouteDraft(user.id, route.id, { kmInitial, kmFinal, selectedVehicleId, coveragePostId, coverageReason, fuelOdometer, fuelAmount, fuelLiters, fuelType });
-  }, [coveragePostId, coverageReason, draftLoaded, fuelAmount, fuelLiters, fuelOdometer, fuelType, kmFinal, kmInitial, route?.id, route?.status, selectedVehicleId, user?.id]);
+    saveRouteDraft(user.id, route.id, { kmInitial, kmFinal, selectedVehicleId, coveragePostId: occurrencePostId, coverageReason: occurrenceReason, fuelOdometer, fuelAmount, fuelLiters, fuelType });
+  }, [occurrencePostId, occurrenceReason, draftLoaded, fuelAmount, fuelLiters, fuelOdometer, fuelType, kmFinal, kmInitial, route?.id, route?.status, selectedVehicleId, user?.id]);
 
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: route?.routeId || 0 },
     { enabled: !!route?.routeId }
   );
-  const { data: coveragePosts } = trpc.checklists.getCoveragePosts.useQuery(
+  const { data: occurrencePosts } = trpc.checklists.getCoveragePosts.useQuery(
     { supervisorRouteId },
     { enabled: route?.status === "in_progress" },
   );
@@ -111,7 +111,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
   const checkOutMutation = trpc.checklists.checkOut.useMutation();
-  const createCoverageMutation = trpc.checklists.createCoverage.useMutation();
+  const createOccurrenceMutation = trpc.checklists.createCoverage.useMutation();
   const finishShiftMutation = trpc.supervisorRoutes.finishShift.useMutation();
 
   const refreshOperationalData = async () => {
@@ -167,34 +167,34 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       .sort((a, b) => b.id - a.id)[0];
     return latestChecklist ? [{ post, checklist: latestChecklist }] : [];
   });
-  const coveragePostById = new Map((coveragePosts ?? []).map((post) => [post.id, post]));
-  const selectableCoveragePosts = (coveragePosts ?? []).filter((post) => post.routeActivityType !== "operational_base");
-  const coveragePostCards = (checklists ?? [])
+  const occurrencePostById = new Map((occurrencePosts ?? []).map((post) => [post.id, post]));
+  const selectableOccurrencePosts = (occurrencePosts ?? []).filter((post) => post.routeActivityType !== "operational_base");
+  const occurrencePostCards = (checklists ?? [])
     .filter((checklist) => checklist.isCoverage)
-    .map((checklist) => ({ post: coveragePostById.get(checklist.postId), checklist }));
-  const postCards = [...plannedPostCards, ...coveragePostCards];
+    .map((checklist) => ({ post: occurrencePostById.get(checklist.postId), checklist }));
+  const postCards = [...plannedPostCards, ...occurrencePostCards];
 
-  const handleCreateCoverage = async () => {
-    const postId = coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE
-      ? OPERATIONAL_BASE_COVERAGE_VALUE
-      : Number(coveragePostId);
-    const reason = coverageReason.trim();
-    if (postId !== OPERATIONAL_BASE_COVERAGE_VALUE && (!Number.isSafeInteger(postId) || postId <= 0)) {
-      toast.error("Selecione o posto que receberá a cobertura");
+  const handleCreateOccurrence = async () => {
+    const postId = occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE
+      ? OPERATIONAL_BASE_OCCURRENCE_VALUE
+      : Number(occurrencePostId);
+    const reason = occurrenceReason.trim();
+    if (postId !== OPERATIONAL_BASE_OCCURRENCE_VALUE && (!Number.isSafeInteger(postId) || postId <= 0)) {
+      toast.error("Selecione o posto relacionado à ocorrência");
       return;
     }
     if (reason.length < 8) {
-      toast.error("Informe o motivo da cobertura com pelo menos 8 caracteres");
+      toast.error("Informe o motivo da ocorrência com pelo menos 8 caracteres");
       return;
     }
     try {
-      await createCoverageMutation.mutateAsync({ supervisorRouteId, postId, coverageReason: reason });
+      await createOccurrenceMutation.mutateAsync({ supervisorRouteId, postId, coverageReason: reason });
       await refreshOperationalData();
-      setCoveragePostId("");
-      setCoverageReason("");
-      toast.success(coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE ? "Atividade na Base Operacional adicionada. Registre a chegada no novo card." : "Cobertura adicionada. Registre a chegada no novo card.");
+      setOccurrencePostId("");
+      setOccurrenceReason("");
+      toast.success(occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE ? "Atividade na Base Operacional adicionada. Registre a chegada no novo card." : "Ocorrência adicionada. Registre a chegada no novo card.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível registrar a cobertura");
+      toast.error(error instanceof Error ? error.message : "Não foi possível registrar a ocorrência");
     }
   };
 
@@ -496,42 +496,42 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         </section>
 
-        {!isBaseOperational && <section className="mb-8" aria-labelledby="coverage-title">
+        {!isBaseOperational && <section className="mb-8" aria-labelledby="occurrence-title">
           <Card className="border-violet-200 bg-violet-50/40 shadow-sm">
             <CardHeader>
-              <CardTitle id="coverage-title" className="flex items-center gap-2 text-violet-950">
+              <CardTitle id="occurrence-title" className="flex items-center gap-2 text-violet-950">
                 <Route className="h-5 w-5 text-violet-700" />
-                Cobertura ou atividade na Base Operacional
+                Ocorrência ou atividade na Base Operacional
               </CardTitle>
               <CardDescription>
-                Use para atender um posto não previsto nesta rota ou registrar uma atividade realizada na Base Operacional. A justificativa ficará disponível para o Gestor.
+                Use para registrar uma ocorrência em um posto não previsto nesta rota ou uma atividade realizada na Base Operacional. A justificativa ficará disponível para o Gestor.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
               <div className="space-y-2">
-                <Label htmlFor="coverage-post">Posto ou atividade</Label>
+                <Label htmlFor="occurrence-post">Posto ou atividade</Label>
                 <select
-                  id="coverage-post"
-                  value={coveragePostId}
-                  onChange={(event) => setCoveragePostId(event.target.value)}
-                  disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  id="occurrence-post"
+                  value={occurrencePostId}
+                  onChange={(event) => setOccurrencePostId(event.target.value)}
+                  disabled={route.status !== "in_progress" || createOccurrenceMutation.isPending}
                   required
                   aria-required="true"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">Selecione um posto ou a Base Operacional</option>
-                  <option value={OPERATIONAL_BASE_COVERAGE_VALUE}>Base Operacional · Operação interna</option>
-                  {selectableCoveragePosts.map((post) => <option key={post.id} value={post.id}>{post.name} · {post.region} ({post.routeName})</option>)}
+                  <option value={OPERATIONAL_BASE_OCCURRENCE_VALUE}>Base Operacional · Operação interna</option>
+                  {selectableOccurrencePosts.map((post) => <option key={post.id} value={post.id}>{post.name} · {post.region} ({post.routeName})</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="coverage-reason">Motivo da cobertura <span className="text-rose-700">(obrigatório)</span></Label>
+                <Label htmlFor="occurrence-reason">Motivo da ocorrência <span className="text-rose-700">(obrigatório)</span></Label>
                 <Textarea
-                  id="coverage-reason"
-                  value={coverageReason}
-                  onChange={(event) => setCoverageReason(event.target.value)}
-                  placeholder="Ex.: Cobertura emergencial por ausência no posto ou permanência na base"
-                  disabled={route.status !== "in_progress" || createCoverageMutation.isPending}
+                  id="occurrence-reason"
+                  value={occurrenceReason}
+                  onChange={(event) => setOccurrenceReason(event.target.value)}
+                  placeholder="Ex.: Ocorrência emergencial por ausência no posto ou permanência na base"
+                  disabled={route.status !== "in_progress" || createOccurrenceMutation.isPending}
                   required
                   aria-required="true"
                   minLength={8}
@@ -542,11 +542,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               </div>
               <Button
                 type="button"
-                onClick={handleCreateCoverage}
-                disabled={route.status !== "in_progress" || !coveragePostId || coverageReason.trim().length < 8 || createCoverageMutation.isPending || Boolean(activeChecklist)}
+                onClick={handleCreateOccurrence}
+                disabled={route.status !== "in_progress" || !occurrencePostId || occurrenceReason.trim().length < 8 || createOccurrenceMutation.isPending || Boolean(activeChecklist)}
                 className="bg-violet-700 hover:bg-violet-800"
               >
-                {createCoverageMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : coveragePostId === OPERATIONAL_BASE_COVERAGE_VALUE ? "Registrar atividade na base" : "Adicionar cobertura"}
+                {createOccurrenceMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE ? "Registrar atividade na base" : "Adicionar ocorrência"}
               </Button>
             </CardContent>
             {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar coberturas.</CardContent>}
