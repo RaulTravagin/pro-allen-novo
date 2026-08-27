@@ -747,15 +747,18 @@ export async function getLatestSupervisorLocation(supervisorId: number) {
 export async function getAllSupervisorsLatestLocations() {
   const db = await getDb();
   if (!db) return [];
-
   // O mapa precisa de uma posição por supervisor; não carregue todo o histórico
   // de GPS para deduplicar em memória a cada ciclo de polling.
-  const result = await db.execute(sql`
-    SELECT DISTINCT ON ("supervisorId") *
-    FROM "supervisorLocations"
-    ORDER BY "supervisorId", "recordedAt" DESC, "id" DESC
-  `);
-  return result.rows as Array<typeof supervisorLocations.$inferSelect>;
+  try {
+    return await db.selectDistinctOn([supervisorLocations.supervisorId])
+      .from(supervisorLocations)
+      .orderBy(supervisorLocations.supervisorId, desc(supervisorLocations.recordedAt), desc(supervisorLocations.id));
+  } catch (error) {
+    // GPS é complementar ao acompanhamento. Uma falha nessa consulta não deve
+    // ocultar rotas e supervisores que continuam disponíveis no banco.
+    console.error("[GPS] Falha ao consultar a última posição dos supervisores:", error);
+    return [];
+  }
 }
 
 // Post Visit History queries
