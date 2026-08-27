@@ -15,6 +15,8 @@ const now = new Date("2026-08-12T15:00:00.000Z");
 const wordExport = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const scheduleUpdate = vi.hoisted(() => vi.fn());
 const postCreate = vi.hoisted(() => vi.fn());
+const postUpdate = vi.hoisted(() => vi.fn());
+const postDelete = vi.hoisted(() => vi.fn());
 const route = {
   id: 30001,
   routeName: "Rota 1",
@@ -60,7 +62,7 @@ const scheduleFixture = {
 
 const postsManagementFixture = {
   routes: [
-    { id: 1, name: "Rota 1", region: "Jundiaí", posts: [{ id: 101, name: "Kelvion", region: "Jundiaí", address: "Jundiaí", order: 1 }] },
+    { id: 1, name: "Rota 1", region: "Jundiaí", posts: [{ id: 101, routeId: 1, name: "Kelvion", region: "Jundiaí", address: "Rua Central, 10 — Centro, Jundiaí — CEP 13200-000", addressStreet: "Rua Central", addressNumber: "10", addressNeighborhood: "Centro", addressCity: "Jundiaí", addressPostalCode: "13200-000", latitude: null, longitude: null, order: 1, isActive: true }] },
     { id: 2, name: "Rota 2", region: "Cabreúva", posts: [] },
   ],
 };
@@ -139,8 +141,10 @@ vi.mock("@/lib/trpc", () => ({
       updateSchedule: { useMutation: () => ({ mutate: scheduleUpdate, isPending: false, error: null }) },
       postsManagement: { useQuery: () => ({ isLoading: false, data: postsManagementFixture }) },
       createPost: { useMutation: () => ({ mutate: postCreate, isPending: false, error: null }) },
+      updatePost: { useMutation: () => ({ mutate: postUpdate, isPending: false, error: null }) },
+      deletePost: { useMutation: () => ({ mutate: postDelete, isPending: false, error: null }) },
     },
-    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() } } }),
+    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() }, dashboard: { invalidate: vi.fn() } } }),
   },
 }));
 
@@ -201,18 +205,44 @@ describe("GestorDashboard", () => {
     })));
   });
 
-  it("permite que o Gestor cadastre um novo posto vinculado à rota", async () => {
+  it("permite cadastrar um novo posto com endereço estruturado", async () => {
     postCreate.mockReset();
     render(<GestorDashboard />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Novo posto" }));
-    await waitFor(() => expect((screen.getByLabelText("Rota vinculada") as HTMLSelectElement).value).toBe("1"));
-    fireEvent.change(screen.getByLabelText("Nome do posto"), { target: { value: "Novo Cliente" } });
-    fireEvent.change(screen.getByLabelText("Região do posto"), { target: { value: "Jundiaí" } });
-    fireEvent.change(screen.getByLabelText("Endereço do posto"), { target: { value: "Rua das Flores, 100" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar Novo Posto" }));
+    await waitFor(() => expect((screen.getByLabelText("Rota vinculada do posto") as HTMLSelectElement).value).toBe("1"));
+    fireEvent.change(screen.getByLabelText("Nome do Posto"), { target: { value: "Novo Cliente" } });
+    fireEvent.change(screen.getByLabelText("Rua do posto"), { target: { value: "Rua das Flores" } });
+    fireEvent.change(screen.getByLabelText("Número do posto"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Bairro do posto"), { target: { value: "Centro" } });
+    fireEvent.change(screen.getByLabelText("Cidade do posto"), { target: { value: "Jundiaí" } });
+    fireEvent.change(screen.getByLabelText("CEP do posto"), { target: { value: "13200-000" } });
     fireEvent.click(screen.getByRole("button", { name: "Cadastrar posto" }));
 
-    await waitFor(() => expect(postCreate).toHaveBeenCalledWith({ routeId: 1, name: "Novo Cliente", region: "Jundiaí", address: "Rua das Flores, 100" }));
+    await waitFor(() => expect(postCreate).toHaveBeenCalledWith({ routeId: 1, name: "Novo Cliente", addressStreet: "Rua das Flores", addressNumber: "100", addressNeighborhood: "Centro", addressCity: "Jundiaí", addressPostalCode: "13200-000" }));
+  });
+
+  it("permite editar o endereço de um posto existente", async () => {
+    postUpdate.mockReset();
+    render(<GestorDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar Posto" }));
+    expect((screen.getByLabelText("Nome do Posto") as HTMLInputElement).value).toBe("Kelvion");
+    fireEvent.change(screen.getByLabelText("Número do posto"), { target: { value: "101" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
+
+    await waitFor(() => expect(postUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 101, routeId: 1, addressNumber: "101" })));
+  });
+
+  it("exige confirmação antes de excluir um posto", async () => {
+    postDelete.mockReset();
+    render(<GestorDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Excluir Posto" }));
+    expect(screen.getByText("Excluir este Posto?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sim, excluir Posto" }));
+
+    await waitFor(() => expect(postDelete).toHaveBeenCalledWith({ id: 101 }));
   });
 
   it("gera a visualização clara do relatório diário e disponibiliza a exportação Word", async () => {

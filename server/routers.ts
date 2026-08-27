@@ -42,6 +42,16 @@ const gestorOrAdminProcedure = publicProcedure.use(async ({ ctx, next }) => {
   throw new TRPCError({ code: "FORBIDDEN", message: "Acesso do Gestor ou Administrador necessário" });
 });
 
+const gestorPostInput = z.object({
+  routeId: z.number().int().positive(),
+  name: z.string().trim().min(2, "Informe o nome do posto").max(255),
+  addressStreet: z.string().trim().min(2, "Informe a rua do posto").max(255),
+  addressNumber: z.string().trim().min(1, "Informe o número do posto").max(32),
+  addressNeighborhood: z.string().trim().min(2, "Informe o bairro do posto").max(255),
+  addressCity: z.string().trim().min(2, "Informe a cidade do posto").max(255),
+  addressPostalCode: z.string().trim().regex(/^\d{5}-?\d{3}$/, "Informe um CEP válido"),
+});
+
 const DEFAULT_CHECKLIST_ITEMS = [
   { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
   { category: 'Pontualidade', description: 'Pontualidade e escala' },
@@ -201,18 +211,29 @@ export const appRouter = router({
       }
     }),
     postsManagement: gestorProcedure.query(async () => db.getGestorPostsManagement()),
-    createPost: gestorProcedure.input(z.object({
-      routeId: z.number().int().positive(),
-      name: z.string().trim().min(2, "Informe o nome do posto").max(255),
-      region: z.string().trim().min(2, "Informe a região").max(255),
-      address: z.string().trim().min(3, "Informe o endereço").max(255),
-    })).mutation(async ({ input }) => {
+    createPost: gestorProcedure.input(gestorPostInput).mutation(async ({ input }) => {
       try {
         const post = await db.createGestorPost(input);
         if (!post) throw new Error("Não foi possível localizar o posto criado");
         return post;
       } catch (error) {
         throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar o posto" });
+      }
+    }),
+    updatePost: gestorProcedure.input(gestorPostInput.extend({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+      try {
+        const post = await db.updateGestorPost(input.id, input);
+        if (!post) throw new Error("Não foi possível localizar o posto atualizado");
+        return post;
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível atualizar o posto" });
+      }
+    }),
+    deletePost: gestorProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+      try {
+        return await db.deleteGestorPost(input.id);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível excluir o posto" });
       }
     }),
   }),

@@ -6,6 +6,7 @@ import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, ch
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
+import { makeRequest, type GeocodingResult } from "./_core/map";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -285,7 +286,7 @@ export async function getAllRoutes() {
   if (!db) return [];
   const [routeRows, postRows] = await Promise.all([
     db.select().from(routes),
-    db.select().from(posts).orderBy(posts.routeId, posts.order),
+    db.select().from(posts).where(eq(posts.isActive, true)).orderBy(posts.routeId, posts.order),
   ]);
   const postsByRoute = new Map<number, typeof postRows>();
   for (const post of postRows) {
@@ -310,7 +311,7 @@ export async function getRouteById(id: number) {
 export async function getPostsByRouteId(routeId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(posts).where(eq(posts.routeId, routeId)).orderBy(posts.order);
+  return await db.select().from(posts).where(and(eq(posts.routeId, routeId), eq(posts.isActive, true))).orderBy(posts.order);
 }
 
 export async function getPostById(id: number) {
@@ -324,21 +325,126 @@ export async function getGestorPostsManagement() {
   return { routes: await getAllRoutes() };
 }
 
-export async function createGestorPost(input: { routeId: number; name: string; region: string; address: string }) {
+export type GestorPostInput = {
+  routeId: number;
+  name: string;
+  addressStreet: string;
+  addressNumber: string;
+  addressNeighborhood: string;
+  addressCity: string;
+  addressPostalCode: string;
+};
+
+function normalizePostInput(input: GestorPostInput) {
+  const name = input.name.trim();
+  const addressStreet = input.addressStreet.trim();
+  const addressNumber = input.addressNumber.trim();
+  const addressNeighborhood = input.addressNeighborhood.trim();
+  const addressCity = input.addressCity.trim();
+  const postalDigits = input.addressPostalCode.replace(/\D/g, "");
+  if (postalDigits.length !== 8) throw new Error("Informe um CEP válido com 8 dígitos");
+  const addressPostalCode = `${postalDigits.slice(0, 5)}-${postalDigits.slice(5)}`;
+  const address = `${addressStreet}, ${addressNumber} — ${addressNeighborhood}, ${addressCity} — CEP ${addressPostalCode}`;
+  if (name.length < 2) throw new Error("Informe o nome do posto");
+  if (addressStreet.length < 2) throw new Error("Informe a rua do posto");
+  if (addressNumber.length < 1) throw new Error("Informe o número do posto");
+  if (addressNeighborhood.length < 2) throw new Error("Informe o bairro do posto");
+  if (addressCity.length < 2) throw new Error("Informe a cidade do posto");
+  if (address.length > 255) throw new Error("O endereço completo excede o limite permitido");
+  return { name, addressStreet, addressNumber, addressNeighborhood, addressCity, addressPostalCode, address };
+}
+
+export function buildPostAddress(input: Pick<GestorPostInput, "addressStreet" | "addressNumber" | "addressNeighborhood" | "addressCity" | "addressPostalCode">) {
+  return normalizePostInput({ routeId: 1, name: "Posto", ...input }).address;
+}
+
+async function geocodePostAddress(address: string) {
+  try {
+    const response = await makeRequest<GeocodingResult>("/maps/api/geocode/json", { address, region: "br" });
+    const location = response.status === "OK" ? response.results[0]?.geometry.location : undefined;
+    if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
+    return { latitude: location.lat.toFixed(8), longitude: location.lng.toFixed(8) };
+  } catch (error) {
+    console.warn("[Postos] Não foi possível geocodificar o endereço; o posto ficará pendente de localização:", error);
+    return null;
+  }
+}
+
+async function getNextPostOrder(routeId: number) {
+  const routePosts = await getPostsByRouteId(routeId);
+  return routePosts.reduce((maximum, post) => Math.max(maximum, post.order), 0) + 1;
+}
+
+export async function createGestorPost(input: GestorPostInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const route = await getRouteById(input.routeId);
   if (!route) throw new Error("Rota não encontrada");
-  const routePosts = await getPostsByRouteId(input.routeId);
-  const order = routePosts.reduce((maximum, post) => Math.max(maximum, post.order), 0) + 1;
+  const normalized = normalizePostInput(input);
+  const coordinates = await geocodePostAddress(normalized.address);
   const result = await db.insert(posts).values({
     routeId: input.routeId,
-    name: input.name.trim(),
-    region: input.region.trim(),
-    address: input.address.trim(),
-    order,
+    name: normalized.name,
+    region: normalized.addressCity,
+    address: normalized.address,
+    addressStreet: normalized.addressStreet,
+    addressNumber: normalized.addressNumber,
+    addressNeighborhood: normalized.addressNeighborhood,
+    addressCity: normalized.addressCity,
+    addressPostalCode: normalized.addressPostalCode,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    order: await getNextPostOrder(input.routeId),
   }).returning({ id: posts.id });
-  return getPostById(getInsertedId(result));
+  const post = await getPostById(getInsertedId(result));
+  return post ? { ...post, geocodingStatus: coordinates ? "updated" as const : "pending" as const } : null;
+}
+
+export async function updateGestorPost(id: number, input: GestorPostInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  const post = current[0];
+  if (!post || !post.isActive) throw new Error("Posto não encontrado");
+  const route = await getRouteById(input.routeId);
+  if (!route) throw new Error("Rota não encontrada");
+  if (route.activityType === "operational_base" || post.name === "Base Operacional") {
+    throw new Error("O posto da Base Operacional não pode ser editado por este formulário");
+  }
+  const normalized = normalizePostInput(input);
+  const coordinates = await geocodePostAddress(normalized.address);
+  const order = post.routeId === input.routeId ? post.order : await getNextPostOrder(input.routeId);
+  await db.update(posts).set({
+    routeId: input.routeId,
+    name: normalized.name,
+    region: normalized.addressCity,
+    address: normalized.address,
+    addressStreet: normalized.addressStreet,
+    addressNumber: normalized.addressNumber,
+    addressNeighborhood: normalized.addressNeighborhood,
+    addressCity: normalized.addressCity,
+    addressPostalCode: normalized.addressPostalCode,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    order,
+    updatedAt: new Date(),
+  }).where(eq(posts.id, id));
+  const updated = await getPostById(id);
+  return updated ? { ...updated, geocodingStatus: coordinates ? "updated" as const : "pending" as const } : null;
+}
+
+export async function deleteGestorPost(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await db.select({ id: posts.id, name: posts.name, isActive: posts.isActive, routeId: posts.routeId }).from(posts).where(eq(posts.id, id)).limit(1);
+  const post = current[0];
+  if (!post || !post.isActive) throw new Error("Posto não encontrado");
+  const route = await getRouteById(post.routeId);
+  if (route?.activityType === "operational_base" || post.name === "Base Operacional") {
+    throw new Error("O posto da Base Operacional não pode ser excluído");
+  }
+  await db.update(posts).set({ isActive: false, updatedAt: new Date() }).where(eq(posts.id, id));
+  return { id, deleted: true as const };
 }
 
 // Supervisor Routes queries
@@ -597,7 +703,7 @@ export async function getCoveragePostsBySupervisorRoute(supervisorRouteId: numbe
   })
     .from(posts)
     .innerJoin(routes, eq(routes.id, posts.routeId))
-    .where(sql`${posts.routeId} <> ${supervisorRoute.routeId}`)
+    .where(and(sql`${posts.routeId} <> ${supervisorRoute.routeId}`, eq(posts.isActive, true)))
     .orderBy(routes.name, posts.order);
 }
 

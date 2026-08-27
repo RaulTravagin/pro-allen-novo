@@ -8,6 +8,8 @@ vi.mock("./db", () => ({
   replaceGestorSchedule: vi.fn(),
   getGestorPostsManagement: vi.fn(),
   createGestorPost: vi.fn(),
+  updateGestorPost: vi.fn(),
+  deleteGestorPost: vi.fn(),
   getOperationalManagementReport: vi.fn(),
 }));
 
@@ -15,6 +17,15 @@ import * as db from "./db";
 import { appRouter } from "./routers";
 
 const configuredGestorPassword = process.env.GESTOR_ACCESS_PASSWORD;
+const validPostInput = {
+  routeId: 1,
+  name: "Novo posto",
+  addressStreet: "Rua das Flores",
+  addressNumber: "100",
+  addressNeighborhood: "Centro",
+  addressCity: "Jundiaí",
+  addressPostalCode: "13200-000",
+};
 
 function createContext(cookie?: string) {
   const cookies: Array<{ name: string; value: string; options: Record<string, unknown> }> = [];
@@ -61,7 +72,9 @@ describe("gestorAccess", () => {
     await expect(appRouter.createCaller(invalid.context).gestor.schedule()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.updateSchedule({ scheduleDate: new Date("2026-08-15T12:00:00"), entries: [{ supervisorId: 1, assignment: "day" }] })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.postsManagement()).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(appRouter.createCaller(invalid.context).gestor.createPost({ routeId: 1, name: "Novo posto", region: "Jundiaí", address: "Rua das Flores, 100" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.createPost(validPostInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.updatePost({ id: 99, ...validPostInput })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.deletePost({ id: 99 })).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const login = createContext();
     await appRouter.createCaller(login.context).gestorAccess.login({ password: configuredGestorPassword! });
@@ -87,7 +100,13 @@ describe("gestorAccess", () => {
     expect(db.replaceGestorSchedule).toHaveBeenCalledWith(expect.objectContaining({ entries: [expect.objectContaining({ assignment: "day" })] }));
     vi.mocked(db.getGestorPostsManagement).mockResolvedValue({ routes: [] } as never);
     vi.mocked(db.createGestorPost).mockResolvedValue({ id: 99, routeId: 1, name: "Novo posto" } as never);
+    vi.mocked(db.updateGestorPost).mockResolvedValue({ id: 99, routeId: 1, name: "Novo posto" } as never);
+    vi.mocked(db.deleteGestorPost).mockResolvedValue({ id: 99, deleted: true } as never);
     await expect(authorizedCaller.gestor.postsManagement()).resolves.toEqual({ routes: [] });
-    await expect(authorizedCaller.gestor.createPost({ routeId: 1, name: "Novo posto", region: "Jundiaí", address: "Rua das Flores, 100" })).resolves.toMatchObject({ id: 99 });
+    await expect(authorizedCaller.gestor.createPost(validPostInput)).resolves.toMatchObject({ id: 99 });
+    await expect(authorizedCaller.gestor.updatePost({ id: 99, ...validPostInput })).resolves.toMatchObject({ id: 99 });
+    await expect(authorizedCaller.gestor.deletePost({ id: 99 })).resolves.toEqual({ id: 99, deleted: true });
+    expect(db.updateGestorPost).toHaveBeenCalledWith(99, expect.objectContaining({ addressCity: "Jundiaí" }));
+    expect(db.deleteGestorPost).toHaveBeenCalledWith(99);
   });
 });

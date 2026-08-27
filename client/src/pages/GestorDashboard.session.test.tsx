@@ -19,8 +19,8 @@ vi.mock("@/lib/trpc", () => ({
       },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, schedule: { useQuery: mocks.scheduleQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
-    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() } } }),
+    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, schedule: { useQuery: mocks.scheduleQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, updatePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, deletePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
+    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() }, dashboard: { invalidate: vi.fn() } } }),
   },
 }));
 

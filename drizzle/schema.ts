@@ -69,12 +69,21 @@ export const posts = pgTable("posts", {
   name: varchar("name", { length: 255 }).notNull(),
   address: varchar("address", { length: 255 }).notNull(),
   region: varchar("region", { length: 255 }).notNull(),
+  addressStreet: varchar("addressStreet", { length: 255 }),
+  addressNumber: varchar("addressNumber", { length: 32 }),
+  addressNeighborhood: varchar("addressNeighborhood", { length: 255 }),
+  addressCity: varchar("addressCity", { length: 255 }),
+  addressPostalCode: varchar("addressPostalCode", { length: 16 }),
   latitude: numeric("latitude", { precision: 10, scale: 8 }),
   longitude: numeric("longitude", { precision: 11, scale: 8 }),
   order: integer("order").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: updatedAt(),
-}, (table) => ({ routeIdIdx: index("idx_posts_routeId").on(table.routeId) }));
+}, (table) => ({
+  routeIdIdx: index("idx_posts_routeId").on(table.routeId),
+  routeActiveOrderIdx: index("idx_posts_route_active_order").on(table.routeId, table.isActive, table.order),
+}));
 
 export type Post = typeof posts.$inferSelect;
 export type InsertPost = typeof posts.$inferInsert;
