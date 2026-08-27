@@ -7,6 +7,7 @@ import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, ListChecks, L
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { supervisorErrorMessage } from "@/lib/networkFeedback";
 
 export function describeRoutePosts(route: { posts?: Array<{ name: string }> }) {
   return route.posts?.length ? `Postos: ${route.posts.map((post) => post.name).join(", ")}` : "Postos: nenhum posto cadastrado";
@@ -19,9 +20,13 @@ export default function SupervisorDashboard() {
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
   const [hasAttemptedAutomaticResume, setHasAttemptedAutomaticResume] = useState(false);
 
-  const { data: routes, isLoading: routesLoading, isError: routesError } = trpc.routes.list.useQuery();
-  const { data: todayRoute, isLoading: todayRouteLoading } = trpc.supervisorRoutes.getTodayRoute.useQuery();
-  const { data: todayHistory, isLoading: todayHistoryLoading } = trpc.supervisorRoutes.getTodayHistory.useQuery();
+  const routesQuery = trpc.routes.list.useQuery(undefined, { retry: false });
+  const todayRouteQuery = trpc.supervisorRoutes.getTodayRoute.useQuery(undefined, { retry: false });
+  const todayHistoryQuery = trpc.supervisorRoutes.getTodayHistory.useQuery(undefined, { retry: false });
+  const { data: routes, isLoading: routesLoading } = routesQuery;
+  const { data: todayRoute, isLoading: todayRouteLoading } = todayRouteQuery;
+  const { data: todayHistory, isLoading: todayHistoryLoading } = todayHistoryQuery;
+  const routeLoadError = routesQuery.error ?? todayRouteQuery.error ?? todayHistoryQuery.error;
   const selectedRoute = routes?.find((route) => route.id === Number(selectedRouteId));
   const selectedRoutePosts = selectedRoute?.posts ?? [];
   const isBaseOperational = selectedRoute?.activityType === "operational_base";
@@ -131,8 +136,8 @@ export default function SupervisorDashboard() {
               {completedBase && <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950"><p className="font-semibold">Base Operacional encerrada</p><p className="mt-1">KM final registrado às {completedBase.completedAt ? new Date(completedBase.completedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}. Agora escolha uma rota de campo para continuar o turno.</p></div>}
               {routesLoading || todayRouteLoading || todayHistoryLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando rotas...</div>
-              ) : routesError ? (
-                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle className="h-4 w-4" />Não foi possível carregar as rotas.</div>
+              ) : routeLoadError ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{supervisorErrorMessage(routeLoadError, "Não foi possível carregar as informações da operação.")}</span><Button type="button" size="sm" variant="outline" onClick={() => void Promise.all([routesQuery.refetch(), todayRouteQuery.refetch(), todayHistoryQuery.refetch()])} className="border-red-300 bg-white text-red-900">Tentar novamente</Button></div>
               ) : (
                 <>
                   <Select value={selectedRouteId} onValueChange={setSelectedRouteId}>

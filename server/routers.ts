@@ -127,7 +127,14 @@ export const appRouter = router({
   }),
 
   gestor: router({
-    dashboard: gestorProcedure.input(z.object({ shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => db.getGestorOperationalSnapshot(undefined, { shiftType: input?.shiftType ?? null })),
+    dashboard: gestorProcedure.input(z.object({ shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
+      const shiftType = input?.shiftType ?? null;
+      const [snapshot, kpis] = await Promise.all([
+        db.getGestorOperationalSnapshot(undefined, { shiftType }),
+        db.getGestorOperationalKpis({ shiftType }),
+      ]);
+      return { ...snapshot, kpis };
+    }),
     dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional(), shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true, shiftType: input?.shiftType ?? null }));
     }),

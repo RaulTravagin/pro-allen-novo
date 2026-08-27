@@ -747,20 +747,15 @@ export async function getLatestSupervisorLocation(supervisorId: number) {
 export async function getAllSupervisorsLatestLocations() {
   const db = await getDb();
   if (!db) return [];
-  
-  // Get the latest location for each supervisor
-  const allLocations = await db.select().from(supervisorLocations)
-    .orderBy(desc(supervisorLocations.recordedAt));
-  
-  // Group by supervisor and keep only the latest
-  const latestBySuper: Record<number, any> = {};
-  for (const loc of allLocations) {
-    if (!latestBySuper[loc.supervisorId]) {
-      latestBySuper[loc.supervisorId] = loc;
-    }
-  }
-  
-  return Object.values(latestBySuper);
+
+  // O mapa precisa de uma posição por supervisor; não carregue todo o histórico
+  // de GPS para deduplicar em memória a cada ciclo de polling.
+  const result = await db.execute(sql`
+    SELECT DISTINCT ON ("supervisorId") *
+    FROM "supervisorLocations"
+    ORDER BY "supervisorId", "recordedAt" DESC, "id" DESC
+  `);
+  return result.rows as Array<typeof supervisorLocations.$inferSelect>;
 }
 
 // Post Visit History queries
@@ -1411,12 +1406,11 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   if (input.vehicleId) routeConditions.push(eq(supervisorRoutes.vehicleId, input.vehicleId));
   if (input.shiftType) routeConditions.push(eq(supervisorRoutes.shiftType, input.shiftType));
 
-  const fuelConditions = [] as ReturnType<typeof eq>[];
+  const fuelConditions = [gte(fuelLogs.createdAt, startDate), lt(fuelLogs.createdAt, endDate)];
   if (input.supervisorId) fuelConditions.push(eq(fuelLogs.supervisorId, input.supervisorId));
   if (input.vehicleId) fuelConditions.push(eq(fuelLogs.vehicleId, input.vehicleId));
 
-  const [routeRows, visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles, postRows] = await Promise.all([
-    db.select({
+  const routeRows = await db.select({
       id: supervisorRoutes.id,
       routeId: supervisorRoutes.routeId,
       date: supervisorRoutes.date,
@@ -1440,7 +1434,12 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
       .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
       .where(and(...routeConditions))
-      .orderBy(desc(supervisorRoutes.date), desc(supervisorRoutes.updatedAt)),
+      .orderBy(desc(supervisorRoutes.date), desc(supervisorRoutes.updatedAt));
+
+  const reportRouteIds = new Set(routeRows.map((route) => route.id));
+  fuelConditions.push(inArray(fuelLogs.supervisorRouteId, Array.from(reportRouteIds)));
+
+  const [visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles, postRows] = await Promise.all([
     db.select({
       id: visitChecklists.id,
       supervisorRouteId: visitChecklists.supervisorRouteId,
@@ -1500,7 +1499,6 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   ]);
 
   const enrichedFuelRows = Array.from(new Set(fuelRows.map((row) => row.vehicleId))).flatMap((vehicleId) => enrichFuelHistory(fuelRows.filter((row) => row.vehicleId === vehicleId)));
-  const reportRouteIds = new Set(routeRows.map((route) => route.id));
   const periodFuelLogs = enrichedFuelRows.filter((row) => reportRouteIds.has(row.supervisorRouteId) && row.createdAt >= startDate && row.createdAt < endDate);
   const itemStatsByVisit = new Map<number, { compliant: number; nonCompliant: number }>();
   for (const item of itemRows) {

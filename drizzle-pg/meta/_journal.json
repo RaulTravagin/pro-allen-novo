@@ -29,6 +29,13 @@
       "when": 1787286496502,
       "tag": "0003_fast_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787865260842,
+      "tag": "0004_performance_indexes",
+      "breakpoints": true
     }
   ]
 }

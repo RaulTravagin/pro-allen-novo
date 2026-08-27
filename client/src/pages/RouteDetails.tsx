@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import PostCard from "@/components/PostCard";
 import SupervisorShiftReportDialog from "@/components/SupervisorShiftReportDialog";
 import { clearRouteDraft, readRouteDraft, saveRouteDraft } from "@/lib/onlineOperationDraft";
+import { notifySupervisorError, supervisorErrorMessage } from "@/lib/networkFeedback";
 
 interface RouteDetailsProps {
   params: {
@@ -47,8 +48,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const OPERATIONAL_BASE_OCCURRENCE_VALUE = "operational_base";
 
   // Queries
-  const { data: route, isLoading: routeLoading } = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId });
-  const { data: checklists, isLoading: checklistsLoading } = trpc.checklists.getByRoute.useQuery({ supervisorRouteId });
+  const routeQuery = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId }, { retry: false });
+  const { data: route, isLoading: routeLoading, error: routeError } = routeQuery;
+  const checklistsQuery = trpc.checklists.getByRoute.useQuery({ supervisorRouteId }, { retry: false });
+  const { data: checklists, isLoading: checklistsLoading, error: checklistsError } = checklistsQuery;
   const { data: vehicles } = trpc.fleet.listVehicles.useQuery();
   const effectiveVehicleId = Number(route?.vehicleId ?? selectedVehicleId);
   const { data: fuelSummary } = trpc.fleet.getFuelSummary.useQuery(
@@ -121,9 +124,6 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       utils.supervisorRoutes.getTodayHistory.invalidate(),
       utils.supervisorRoutes.getShiftReport.invalidate({ supervisorRouteId }),
       utils.checklists.getByRoute.invalidate({ supervisorRouteId }),
-      utils.gestor.dashboard.invalidate(),
-      utils.gestor.dailyReport.invalidate(),
-      utils.gestor.operationalReport.invalidate(),
     ]);
   };
 
@@ -135,8 +135,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     void createChecklistsMutation.mutateAsync({ supervisorRouteId })
       .then(() => utils.checklists.getByRoute.invalidate({ supervisorRouteId }))
       .catch((error) => {
-        console.error("Checklist creation error:", error);
-        toast.error("Não foi possível preparar os postos da rota");
+        notifySupervisorError(error, "Não foi possível preparar os postos da rota");
       });
   }, [route?.id, posts?.length, checklists?.length, checklistsLoading, supervisorRouteId, createChecklistsMutation, utils]);
 
@@ -249,8 +248,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       setKmInitial("");
       toast.success("Rota iniciada com sucesso!");
     } catch (error) {
-      toast.error("Erro ao iniciar rota");
-      console.error("Error starting route:", error);
+      notifySupervisorError(error, "Erro ao iniciar rota");
     }
   };
 
@@ -311,8 +309,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       await refreshOperationalData();
       toast.success("Turno encerrado e relatório gerado com sucesso");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível encerrar o turno");
-      console.error("Error finishing supervisor shift:", error);
+      notifySupervisorError(error, "Não foi possível encerrar o turno");
     }
   };
 
@@ -348,8 +345,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Button>
           <Card className="border-red-200 bg-red-50">
             <CardHeader>
-              <CardTitle className="text-red-900">Rota não encontrada</CardTitle>
+              <CardTitle className="text-red-900">{routeError ? "Falha de conexão" : "Rota não encontrada"}</CardTitle>
+              <CardDescription className="text-red-800">{routeError ? supervisorErrorMessage(routeError, "Não foi possível carregar a rota.") : "Não foi possível localizar esta rota."}</CardDescription>
             </CardHeader>
+            {routeError && <CardContent><Button type="button" variant="outline" onClick={() => void routeQuery.refetch()} className="border-red-300 bg-white text-red-900">Tentar novamente</Button></CardContent>}
           </Card>
         </div>
       </div>
@@ -549,8 +548,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 {createOccurrenceMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE ? "Registrar atividade na base" : "Adicionar ocorrência"}
               </Button>
             </CardContent>
-            {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar coberturas.</CardContent>}
-            {activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de iniciar uma cobertura.</CardContent>}
+            {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar ocorrências.</CardContent>}
+            {activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de registrar uma ocorrência.</CardContent>}
           </Card>
         </section>}
 
@@ -580,7 +579,16 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             </Card>
           )}
 
-          {!createChecklistsMutation.isPending && postCards.length === 0 && (
+          {checklistsError && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="flex flex-col gap-3 py-5 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
+                <span>{supervisorErrorMessage(checklistsError, "Não foi possível carregar os registros dos postos.")}</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => void checklistsQuery.refetch()} className="border-red-300 bg-white text-red-900">Tentar novamente</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {!checklistsError && !createChecklistsMutation.isPending && postCards.length === 0 && (
             <Card className="border-amber-200 bg-amber-50">
               <CardContent className="flex flex-col gap-3 py-5 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
                 <span>Os postos ainda estão sendo preparados. Atualize a tela em alguns segundos.</span>
@@ -624,10 +632,9 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     await checkInMutation.mutateAsync({ checklistId, ...coordinates });
                     await refreshOperationalData();
                     toast.success("Chegada registrada com sucesso!");
-                  } catch (error) {
-                    toast.error("Erro ao registrar chegada");
-                    console.error("Check-in error:", error);
-                  }
+    } catch (error) {
+      notifySupervisorError(error, "Erro ao registrar chegada");
+    }
                 }}
                 onCheckOut={async (checklistId) => {
                   try {
@@ -635,10 +642,9 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     await checkOutMutation.mutateAsync({ checklistId, ...coordinates });
                     await refreshOperationalData();
                     toast.success("Saída registrada com sucesso!");
-                  } catch (error) {
-                    toast.error("Erro ao registrar saída");
-                    console.error("Check-out error:", error);
-                  }
+    } catch (error) {
+      notifySupervisorError(error, "Erro ao registrar saída");
+    }
                 }}
                 onOpenChecklist={(checklistId) => {
                   window.location.href = `/supervisor/checklist/${checklistId}`;

@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   dailyReportQuery: vi.fn(),
   scheduleQuery: vi.fn(),
   postsManagementQuery: vi.fn(),
-  kpisQuery: vi.fn(),
   sessionQuery: { data: { authenticated: false }, isLoading: false, isFetchedAfterMount: false, isSuccess: false },
 }));
 
@@ -20,7 +19,7 @@ vi.mock("@/lib/trpc", () => ({
       },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, schedule: { useQuery: mocks.scheduleQuery }, kpis: { useQuery: mocks.kpisQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
+    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, schedule: { useQuery: mocks.scheduleQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
     useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() } } }),
   },
 }));
@@ -44,8 +43,6 @@ describe("GestorDashboard com sessão em validação", () => {
     mocks.scheduleQuery.mockReturnValue({ data: undefined, isLoading: false });
     mocks.postsManagementQuery.mockReset();
     mocks.postsManagementQuery.mockReturnValue({ data: undefined, isLoading: false });
-    mocks.kpisQuery.mockReset();
-    mocks.kpisQuery.mockReturnValue({ data: undefined, isLoading: false, isFetching: false, error: null });
   });
 
   it("não habilita a consulta protegida até confirmar a sessão nesta navegação", () => {
@@ -65,10 +62,6 @@ describe("GestorDashboard com sessão em validação", () => {
       expect.objectContaining({ enabled: false })
     );
     expect(mocks.postsManagementQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
-    expect(mocks.kpisQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ shiftType: null }),
-      expect.objectContaining({ enabled: false })
-    );
   });
 
   it("mantém a ordem dos hooks ao passar da sessão em validação para autenticada", () => {
@@ -81,10 +74,6 @@ describe("GestorDashboard com sessão em validação", () => {
     expect(screen.getByText("Monitoramento de ponta a ponta")).toBeTruthy();
     expect(screen.getByText("Nenhum supervisor cadastrado")).toBeTruthy();
     expect(mocks.dashboardQuery).toHaveBeenLastCalledWith(
-      expect.objectContaining({ shiftType: null }),
-      expect.objectContaining({ enabled: true })
-    );
-    expect(mocks.kpisQuery).toHaveBeenLastCalledWith(
       expect.objectContaining({ shiftType: null }),
       expect.objectContaining({ enabled: true })
     );

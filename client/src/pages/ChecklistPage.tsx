@@ -10,6 +10,7 @@ import { Loader2, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { clearChecklistDraft, readChecklistDraft, saveChecklistDraft } from "@/lib/onlineOperationDraft";
+import { notifySupervisorError, supervisorErrorMessage } from "@/lib/networkFeedback";
 
 interface ChecklistPageProps {
   params: {
@@ -27,7 +28,8 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
   const utils = trpc.useUtils();
 
   // Queries
-  const { data: checklist, isLoading: checklistLoading } = trpc.checklists.getById.useQuery({ id: checklistId });
+  const checklistQuery = trpc.checklists.getById.useQuery({ id: checklistId }, { retry: false });
+  const { data: checklist, isLoading: checklistLoading, error: checklistError } = checklistQuery;
 
   // Mutations
   const updateItemMutation = trpc.checklists.updateItem.useMutation();
@@ -64,13 +66,9 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
       });
       await Promise.all([
         utils.checklists.getById.invalidate({ id: checklistId }),
-        utils.gestor.dashboard.invalidate(),
-        utils.gestor.dailyReport.invalidate(),
-        utils.gestor.operationalReport.invalidate(),
       ]);
     } catch (error) {
-      console.error("Error updating item:", error);
-      toast.error("Não foi possível salvar este item do checklist");
+      notifySupervisorError(error, "Não foi possível salvar este item do checklist");
     }
   };
 
@@ -80,14 +78,10 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
       if (user?.id) clearChecklistDraft(user.id, checklistId);
       await Promise.all([
         utils.checklists.getById.invalidate({ id: checklistId }),
-        utils.gestor.dashboard.invalidate(),
-        utils.gestor.dailyReport.invalidate(),
-        utils.gestor.operationalReport.invalidate(),
       ]);
       toast.success("Checklist enviado ao Gestor e salvo com sucesso");
     } catch (error) {
-      toast.error("Não foi possível salvar as observações");
-      console.error("Error saving checklist details:", error);
+      notifySupervisorError(error, "Não foi possível salvar as observações");
     }
   };
 
@@ -109,8 +103,10 @@ export default function ChecklistPage({ params }: ChecklistPageProps) {
           </Button>
           <Card className="border-red-200 bg-red-50">
             <CardHeader>
-              <CardTitle className="text-red-900">Checklist não encontrado</CardTitle>
+              <CardTitle className="text-red-900">{checklistError ? "Falha de conexão" : "Checklist não encontrado"}</CardTitle>
+              <CardDescription className="text-red-800">{checklistError ? supervisorErrorMessage(checklistError, "Não foi possível carregar o checklist.") : "Não foi possível localizar este checklist."}</CardDescription>
             </CardHeader>
+            {checklistError && <CardContent><Button type="button" variant="outline" onClick={() => void checklistQuery.refetch()} className="border-red-300 bg-white text-red-900">Tentar novamente</Button></CardContent>}
           </Card>
         </div>
       </div>

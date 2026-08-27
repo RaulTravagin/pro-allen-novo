@@ -3,6 +3,7 @@ import type { TrpcContext } from "./_core/context";
 
 vi.mock("./db", () => ({
   getGestorOperationalSnapshot: vi.fn(),
+  getGestorOperationalKpis: vi.fn(),
   getGestorSchedule: vi.fn(),
   replaceGestorSchedule: vi.fn(),
   getGestorPostsManagement: vi.fn(),
@@ -65,11 +66,14 @@ describe("gestorAccess", () => {
     const login = createContext();
     await appRouter.createCaller(login.context).gestorAccess.login({ password: configuredGestorPassword! });
     vi.mocked(db.getGestorOperationalSnapshot).mockResolvedValue({ activeRoutes: [], recentVisits: [], metrics: {} } as never);
+    vi.mocked(db.getGestorOperationalKpis).mockResolvedValue({ inspections: {}, auditDuration: {}, fleet: {}, compliance: {} } as never);
 
     const sessionCookie = `gestor_access=${login.cookies[0]?.value}`;
     const authorizedCaller = appRouter.createCaller(createContext(sessionCookie).context);
     await expect(authorizedCaller.gestorAccess.session()).resolves.toEqual({ authenticated: true });
-    await expect(authorizedCaller.gestor.dashboard()).resolves.toMatchObject({ activeRoutes: [] });
+    await expect(authorizedCaller.gestor.dashboard()).resolves.toMatchObject({ activeRoutes: [], kpis: { inspections: {} } });
+    expect(db.getGestorOperationalSnapshot).toHaveBeenCalledWith(undefined, { shiftType: null });
+    expect(db.getGestorOperationalKpis).toHaveBeenCalledWith({ shiftType: null });
     const historicalDate = new Date("2026-08-14T12:00:00");
     await expect(authorizedCaller.gestor.dailyReport({ reportDate: historicalDate, shiftType: "night" })).resolves.toMatchObject({ summary: { supervisors: 0 } });
     expect(db.getGestorOperationalSnapshot).toHaveBeenLastCalledWith(historicalDate, { includeHistoricalUsers: true, shiftType: "night" });

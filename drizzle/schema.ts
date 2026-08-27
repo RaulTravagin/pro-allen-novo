@@ -114,6 +114,7 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
   vehicleIdIdx: index("idx_supervisorRoutes_vehicleId").on(table.vehicleId),
   dateIdx: index("idx_supervisorRoutes_date").on(table.date),
   shiftWindowIdx: index("idx_supervisorRoutes_shift_window").on(table.shiftStartedAt, table.shiftType),
+  supervisorShiftWindowIdx: index("idx_supervisorRoutes_supervisor_shift_window").on(table.supervisorId, table.shiftStartedAt, table.shiftType),
   statusIdx: index("idx_supervisorRoutes_status").on(table.status),
 }));
 
@@ -132,6 +133,7 @@ export const fuelLogs = pgTable("fuel_logs", {
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   vehicleCreatedIdx: index("idx_fuel_logs_vehicle_created").on(table.vehicleId, table.createdAt),
+  routeCreatedIdx: index("idx_fuel_logs_route_created").on(table.supervisorRouteId, table.createdAt),
   routeIdx: index("idx_fuel_logs_route").on(table.supervisorRouteId),
   supervisorIdx: index("idx_fuel_logs_supervisor").on(table.supervisorId),
 }));
@@ -159,6 +161,8 @@ export const visitChecklists = pgTable("visitChecklists", {
   updatedAt: updatedAt(),
 }, (table) => ({
   supervisorRouteIdIdx: index("idx_visitChecklists_supervisorRouteId").on(table.supervisorRouteId),
+  supervisorRouteStatusIdx: index("idx_visitChecklists_route_status").on(table.supervisorRouteId, table.status),
+  visitedAtStatusIdx: index("idx_visitChecklists_visitedAt_status").on(table.visitedAt, table.status),
   postIdIdx: index("idx_visitChecklists_postId").on(table.postId),
   statusIdx: index("idx_visitChecklists_status").on(table.status),
 }));
@@ -175,7 +179,9 @@ export const checklistItems = pgTable("checklistItems", {
   notes: text("notes"),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: updatedAt(),
-});
+}, (table) => ({
+  visitChecklistIdIdx: index("idx_checklistItems_visitChecklistId").on(table.visitChecklistId),
+}));
 
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type InsertChecklistItem = typeof checklistItems.$inferInsert;
@@ -189,7 +195,10 @@ export const supervisorLocations = pgTable("supervisorLocations", {
   accuracy: numeric("accuracy", { precision: 10, scale: 2 }),
   recordedAt: timestamp("recordedAt", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  supervisorRecordedAtIdx: index("idx_supervisorLocations_supervisor_recordedAt").on(table.supervisorId, table.recordedAt.desc(), table.id.desc()),
+  routeRecordedAtIdx: index("idx_supervisorLocations_route_recordedAt").on(table.supervisorRouteId, table.recordedAt.desc(), table.id.desc()),
+}));
 
 export type SupervisorLocation = typeof supervisorLocations.$inferSelect;
 export type InsertSupervisorLocation = typeof supervisorLocations.$inferInsert;
@@ -204,6 +213,7 @@ export const postVisitHistory = pgTable("postVisitHistory", {
 }, (table) => ({
   postIdIdx: index("idx_postVisitHistory_postId").on(table.postId),
   supervisorIdIdx: index("idx_postVisitHistory_supervisorId").on(table.supervisorId),
+  supervisorVisitedAtIdx: index("idx_postVisitHistory_supervisor_visitedAt").on(table.supervisorId, table.visitedAt),
   visitedAtIdx: index("idx_postVisitHistory_visitedAt").on(table.visitedAt),
 }));
 

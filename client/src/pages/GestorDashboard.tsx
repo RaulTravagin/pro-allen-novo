@@ -7,9 +7,10 @@ import { trpc } from "@/lib/trpc";
 import { Activity, AlertTriangle, Building2, CalendarDays, Car, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, Crosshair, Download, FileDown, FileText, Gauge, Loader2, LogOut, MapPin, Moon, Navigation, Pencil, Plus, Radio, Route, Save, ShieldCheck, Sun, TimerReset, UsersRound, XCircle } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { supervisorErrorMessage } from "@/lib/networkFeedback";
 
-const REFRESH_INTERVAL = 5_000;
-const KPI_REFRESH_INTERVAL = 30_000;
+const REFRESH_INTERVAL = 15_000;
+const STATIC_QUERY_STALE_TIME = 5 * 60_000;
 
 function formatTime(value: Date | string | null | undefined) {
   return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
@@ -173,18 +174,16 @@ export default function GestorDashboard() {
   const [scheduleDraft, setScheduleDraft] = useState<Record<number, { assignment: string; note: string }>>({});
   const [showPostForm, setShowPostForm] = useState(false);
   const [postForm, setPostForm] = useState({ routeId: "", name: "", region: "", address: "" });
-  const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnMount: "always" });
+  const sessionQuery = trpc.gestorAccess.session.useQuery(undefined, { retry: false, staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: false });
   const { data: session, isLoading: isCheckingSession } = sessionQuery;
   const hasConfirmedGestorSession = sessionQuery.isFetchedAfterMount && sessionQuery.isSuccess && session?.authenticated === true;
   const dashboardInput = useMemo(() => ({ shiftType: liveShiftType || null }), [liveShiftType]);
-  const dashboard = trpc.gestor.dashboard.useQuery(dashboardInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchOnWindowFocus: true });
-  const kpiInput = useMemo(() => ({ shiftType: liveShiftType || null }), [liveShiftType]);
-  const kpis = trpc.gestor.kpis.useQuery(kpiInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: KPI_REFRESH_INTERVAL, refetchOnWindowFocus: true, placeholderData: (previous) => previous });
+  const dashboard = trpc.gestor.dashboard.useQuery(dashboardInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchIntervalInBackground: false, refetchOnWindowFocus: false, placeholderData: (previous) => previous });
   const dailyReportInput = useMemo(() => ({ reportDate: new Date(`${reportDateValue}T12:00:00`), shiftType: reportShiftType || null }), [reportDateValue, reportShiftType]);
-  const dailyReport = trpc.gestor.dailyReport.useQuery(dailyReportInput, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false });
+  const dailyReport = trpc.gestor.dailyReport.useQuery(dailyReportInput, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false, staleTime: 30_000, refetchOnWindowFocus: false });
   const scheduleInput = useMemo(() => ({ scheduleDate: new Date(`${scheduleDateValue}T12:00:00`) }), [scheduleDateValue]);
-  const schedule = trpc.gestor.schedule.useQuery(scheduleInput, { enabled: hasConfirmedGestorSession, retry: false });
-  const postsManagement = trpc.gestor.postsManagement.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false });
+  const schedule = trpc.gestor.schedule.useQuery(scheduleInput, { enabled: hasConfirmedGestorSession, retry: false, staleTime: STATIC_QUERY_STALE_TIME, refetchOnWindowFocus: false });
+  const postsManagement = trpc.gestor.postsManagement.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, staleTime: STATIC_QUERY_STALE_TIME, refetchOnWindowFocus: false });
   const utils = trpc.useUtils();
   const updateSchedule = trpc.gestor.updateSchedule.useMutation({
     onSuccess: async () => {
@@ -297,6 +296,7 @@ export default function GestorDashboard() {
   }
 
   const data = dashboard.data;
+  const kpis = data?.kpis;
   const metrics = data?.metrics;
   const supervisors = data?.operationalSupervisors ?? [];
   const alerts = data?.alerts ?? [];
@@ -316,11 +316,12 @@ export default function GestorDashboard() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
 
-        <OperationalKpiBlock kpis={kpis.data} loading={kpis.isLoading} fetching={kpis.isFetching} unavailable={Boolean(kpis.error)} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
+        <OperationalKpiBlock kpis={kpis} loading={dashboard.isLoading} fetching={dashboard.isFetching} unavailable={Boolean(dashboard.error)} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
 
         <section className="space-y-4">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Acompanhamento em tempo real</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Supervisores, postos e tempo de atendimento</h2><p className="mt-1 text-sm text-slate-600">Cada supervisor permanece aberto para consulta imediata de posto atual, tempo no local, GPS, KM, checklist, observações, alertas e próximas ações.</p></div>
           {pdfError && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{pdfError}</p>}
+          {dashboard.error && <div className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between"><span>{supervisorErrorMessage(dashboard.error, "Não foi possível atualizar o painel operacional.")}</span><Button type="button" variant="outline" onClick={() => void dashboard.refetch()} className="border-rose-300 bg-white text-rose-900">Tentar novamente</Button></div>}
           {dashboard.isLoading ? <LoadingRows /> : supervisors.length ? <div className="space-y-4">{supervisors.map((supervisor) => <SupervisorOperationalCard key={supervisor.supervisorId} supervisor={supervisor} onExportPdf={() => exportSupervisorPdf(supervisor)} exporting={isExportingPdf === `supervisor-${supervisor.supervisorId}`} />)}</div> : <EmptyState title="Nenhum supervisor cadastrado" description="Os supervisores aparecerão nesta área quando tiverem acesso operacional configurado." />}
         </section>
 
