@@ -184,45 +184,48 @@ export default function OperationalReports() {
     <style>{`
       .print-document { display: none; }
       @media print {
-        @page { size: A4 landscape; margin: 10mm; }
-        html, body { width: 297mm !important; height: auto !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @page { size: A4 landscape; margin: 15mm 15mm 20mm; }
+        html, body { width: 267mm !important; height: auto !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .no-print, .screen-report { display: none !important; }
         .report-print { display: block !important; min-height: 0 !important; background: #fff !important; }
-        .print-document { display: block !important; width: 277mm !important; color: #172033 !important; font-family: Arial, Helvetica, sans-serif !important; }
-        .print-page { position: relative; box-sizing: border-box; width: 277mm; min-height: 190mm; padding: 0 0 14mm; break-after: page; page-break-after: always; overflow: hidden; }
+        .print-document { display: block !important; width: 267mm !important; color: #172033 !important; font-family: Arial, Helvetica, sans-serif !important; }
+        .print-page { display: flex; flex-direction: column; box-sizing: border-box; width: 267mm; min-height: 175mm; padding: 0; break-after: page; page-break-after: always; overflow: visible; }
         .print-page:last-child { break-after: auto; page-break-after: auto; }
-        .print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12mm; }
+        .print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12mm; break-inside: avoid; page-break-inside: avoid; }
         .print-kicker { margin: 0 0 2mm; color: #9a7000; font-size: 8pt; font-weight: 700; letter-spacing: .18em; }
         .print-header h1 { margin: 0; font-size: 19pt; line-height: 1.1; color: #111827; }
         .print-header p:not(.print-kicker) { margin: 2mm 0 0; font-size: 9pt; color: #475569; }
         .print-stamp { min-width: 50mm; border: .35mm solid #d6b044; border-radius: 2mm; padding: 3mm 4mm; text-align: right; color: #6b4c00; font-size: 8pt; }
         .print-stamp strong, .print-stamp span { display: block; }
         .print-stamp span { margin-top: 1mm; color: #64748b; }
-        .print-rule { height: 1.2mm; margin: 5mm 0 2mm; background: #172033; }
-        .print-page-meta { display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; }
-        .print-title-block { margin-top: 9mm; }
+        .print-rule { flex: 0 0 auto; height: 1.2mm; margin: 5mm 0 2mm; background: #172033; }
+        .print-page-meta { display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; break-inside: avoid; page-break-inside: avoid; }
+        .print-title-block { margin-top: 9mm; break-inside: avoid; page-break-inside: avoid; }
         .print-title-block p { margin: 0; color: #9a7000; font-size: 8pt; font-weight: 700; letter-spacing: .14em; }
         .print-title-block h2 { margin: 1.5mm 0 1mm; font-size: 17pt; line-height: 1.1; color: #172033; }
         .print-title-block span { font-size: 9pt; color: #64748b; }
         .print-title-block.compact { margin-top: 7mm; margin-bottom: 4mm; }
         .print-title-block.compact h2 { font-size: 15pt; }
         .print-metric-grid { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 3mm; margin-top: 7mm; }
-        .print-metric-grid > div { box-sizing: border-box; min-height: 27mm; border: .3mm solid #cbd5e1; border-radius: 2mm; padding: 4mm; background: #f8fafc; }
+        .print-metric-grid > div { box-sizing: border-box; min-height: 27mm; border: .3mm solid #cbd5e1; border-radius: 2mm; padding: 4mm; background: #f8fafc; break-inside: avoid; page-break-inside: avoid; }
+        .print-summary-box { break-inside: avoid; page-break-inside: avoid; }
         .print-metric-grid span { display: block; color: #64748b; font-size: 8pt; }
         .print-metric-grid strong { display: block; margin-top: 3mm; color: #111827; font-size: 15pt; line-height: 1.05; }
         .print-summary-box { margin-top: 7mm; border-left: 1.2mm solid #d3a800; background: #fffbeb; padding: 4mm 5mm; }
         .print-summary-box h3 { margin: 0; color: #6b4c00; font-size: 10pt; }
         .print-summary-box p { margin: 2mm 0 0; color: #475569; font-size: 9pt; line-height: 1.45; }
-        .print-table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; font-size: 7.7pt !important; line-height: 1.25 !important; }
+        .print-table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; font-size: 7.7pt !important; line-height: 1.25 !important; break-inside: auto; page-break-inside: auto; }
+        .print-table thead { display: table-header-group; }
+        .print-table tfoot { display: table-footer-group; }
         .print-table th { padding: 2.4mm 2mm; background: #172033 !important; color: #fff !important; font-size: 7.1pt; font-weight: 700; letter-spacing: .03em; text-align: left; }
         .print-table td { vertical-align: top; border-bottom: .22mm solid #cbd5e1; padding: 2.4mm 2mm; overflow-wrap: anywhere; }
-        .print-table tr { break-inside: avoid; page-break-inside: avoid; }
+        .print-table tr, .print-table td, .print-table th { break-inside: avoid; page-break-inside: avoid; }
         .print-table tbody tr:nth-child(even) { background: #f8fafc !important; }
         .print-table small { color: #64748b; font-size: 6.8pt; }
         .print-fuel-table th:nth-child(1) { width: 11%; } .print-fuel-table th:nth-child(2) { width: 13%; } .print-fuel-table th:nth-child(3) { width: 13%; } .print-fuel-table th:nth-child(4) { width: 10%; } .print-fuel-table th:nth-child(5) { width: 10%; } .print-fuel-table th:nth-child(6) { width: 8%; } .print-fuel-table th:nth-child(7) { width: 10%; } .print-fuel-table th:nth-child(8) { width: 12%; } .print-fuel-table th:nth-child(9) { width: 13%; }
         .print-audit-table th:nth-child(1) { width: 16%; } .print-audit-table th:nth-child(2) { width: 15%; } .print-audit-table th:nth-child(3) { width: 18%; } .print-audit-table th:nth-child(4) { width: 10%; } .print-audit-table th:nth-child(5) { width: 12%; } .print-audit-table th:nth-child(6) { width: 29%; }
         .print-empty { padding: 12mm !important; text-align: center; color: #64748b; }
-        .print-footer { position: absolute; right: 0; bottom: 3mm; left: 0; display: flex; justify-content: space-between; border-top: .22mm solid #cbd5e1; padding-top: 2mm; color: #64748b; font-size: 7pt; }
+        .print-footer { position: static; display: flex; justify-content: space-between; margin-top: auto; padding-top: 4mm; border-top: .22mm solid #cbd5e1; color: #64748b; font-size: 7pt; break-inside: avoid; page-break-inside: avoid; }
       }
     `}</style>
     <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Auditorias, rotas, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && downloadCsv(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar CSV / Excel</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>

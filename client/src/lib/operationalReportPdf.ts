@@ -68,6 +68,8 @@ const GRAY: [number, number, number] = [100, 116, 139];
 const GREEN: [number, number, number] = [22, 101, 52];
 const AMBER: [number, number, number] = [180, 83, 9];
 const RED: [number, number, number] = [185, 28, 28];
+const PAGE_MARGIN_TOP = 40;
+const PAGE_MARGIN_BOTTOM = 20;
 
 function textOrDash(value: unknown) {
   return value == null || value === "" ? "—" : String(value);
@@ -236,7 +238,7 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
   const doc = new JsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 14;
-  let cursorY = 40;
+  let cursorY = PAGE_MARGIN_TOP;
 
   drawHeader(doc, input, generatedAt);
 
@@ -244,7 +246,7 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     if (cursorY + needed <= doc.internal.pageSize.getHeight() - 20) return;
     doc.addPage();
     drawHeader(doc, input, generatedAt);
-    cursorY = 40;
+    cursorY = PAGE_MARGIN_TOP;
   };
 
   cursorY = drawContextBlock(doc, input, cursorY, pageWidth, marginX);
@@ -323,7 +325,8 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       headStyles: { fillColor: BLACK, textColor: YELLOW, fontStyle: "bold", lineColor: YELLOW },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 24 }, 2: { cellWidth: 48 }, 3: { cellWidth: "auto" } },
-      margin: { left: marginX, right: marginX },
+      margin: { top: PAGE_MARGIN_TOP, right: marginX, bottom: PAGE_MARGIN_BOTTOM, left: marginX },
+      rowPageBreak: "avoid",
       didDrawPage: () => drawHeader(doc, input, generatedAt),
     });
     cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
@@ -384,7 +387,8 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
           styles: { font: "helvetica", fontSize: 8, cellPadding: 2, textColor: BLACK, lineColor: [226, 232, 240] },
           headStyles: { fillColor: YELLOW, textColor: BLACK, fontStyle: "bold" },
           columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" } },
-          margin: { left: marginX, right: marginX },
+          margin: { top: PAGE_MARGIN_TOP, right: marginX, bottom: PAGE_MARGIN_BOTTOM, left: marginX },
+          rowPageBreak: "avoid",
           didDrawPage: () => drawHeader(doc, input, generatedAt),
         });
         cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
