@@ -565,6 +565,17 @@ export async function createFuelLog(input: { vehicleId: number; supervisorRouteI
   return { id: getInsertedId(result), summary: await getVehicleFuelSummary(input.vehicleId) };
 }
 
+export async function updateFuelLogAmount(id: number, amount: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Informe um valor de abastecimento válido");
+  const current = await db.select({ id: fuelLogs.id, vehicleId: fuelLogs.vehicleId }).from(fuelLogs).where(eq(fuelLogs.id, id)).limit(1);
+  const fuelLog = current[0];
+  if (!fuelLog) throw new Error("Abastecimento não encontrado");
+  await db.update(fuelLogs).set({ amount: amount.toFixed(2) }).where(eq(fuelLogs.id, id));
+  return { id, amount: Number(amount.toFixed(2)), summary: await getVehicleFuelSummary(fuelLog.vehicleId) };
+}
+
 export async function getSupervisorRouteById(id: number) {
   const db = await getDb();
   if (!db) return null;

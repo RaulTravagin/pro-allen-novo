@@ -160,6 +160,16 @@ export const appRouter = router({
       }
       return db.getOperationalManagementReport(input);
     }),
+    updateFuelAmount: gestorOrAdminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      amount: z.number().finite().positive().max(9999999999.99),
+    })).mutation(async ({ input }) => {
+      try {
+        return await db.updateFuelLogAmount(input.id, input.amount);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível corrigir o valor do abastecimento" });
+      }
+    }),
     schedule: gestorProcedure.input(z.object({ scheduleDate: z.date().optional() }).optional()).query(async ({ input }) => {
       return db.getGestorSchedule(input?.scheduleDate);
     }),

@@ -11,6 +11,7 @@ vi.mock("./db", () => ({
   updateGestorPost: vi.fn(),
   deleteGestorPost: vi.fn(),
   getOperationalManagementReport: vi.fn(),
+  updateFuelLogAmount: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -75,6 +76,7 @@ describe("gestorAccess", () => {
     await expect(appRouter.createCaller(invalid.context).gestor.createPost(validPostInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.updatePost({ id: 99, ...validPostInput })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(invalid.context).gestor.deletePost({ id: 99 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(invalid.context).gestor.updateFuelAmount({ id: 7, amount: 155.89 })).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const login = createContext();
     await appRouter.createCaller(login.context).gestorAccess.login({ password: configuredGestorPassword! });
@@ -102,11 +104,14 @@ describe("gestorAccess", () => {
     vi.mocked(db.createGestorPost).mockResolvedValue({ id: 99, routeId: 1, name: "Novo posto" } as never);
     vi.mocked(db.updateGestorPost).mockResolvedValue({ id: 99, routeId: 1, name: "Novo posto" } as never);
     vi.mocked(db.deleteGestorPost).mockResolvedValue({ id: 99, deleted: true } as never);
+    vi.mocked(db.updateFuelLogAmount).mockResolvedValue({ id: 7, amount: 155.89, summary: { latestMetrics: { costPerKm: 0.21 } } } as never);
     await expect(authorizedCaller.gestor.postsManagement()).resolves.toEqual({ routes: [] });
     await expect(authorizedCaller.gestor.createPost(validPostInput)).resolves.toMatchObject({ id: 99 });
     await expect(authorizedCaller.gestor.updatePost({ id: 99, ...validPostInput })).resolves.toMatchObject({ id: 99 });
     await expect(authorizedCaller.gestor.deletePost({ id: 99 })).resolves.toEqual({ id: 99, deleted: true });
     expect(db.updateGestorPost).toHaveBeenCalledWith(99, expect.objectContaining({ addressCity: "Jundiaí" }));
     expect(db.deleteGestorPost).toHaveBeenCalledWith(99);
+    await expect(authorizedCaller.gestor.updateFuelAmount({ id: 7, amount: 155.89 })).resolves.toMatchObject({ id: 7, amount: 155.89 });
+    expect(db.updateFuelLogAmount).toHaveBeenCalledWith(7, 155.89);
   });
 });
