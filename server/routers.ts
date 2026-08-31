@@ -330,6 +330,24 @@ export const appRouter = router({
         const { supervisorRouteId: _supervisorRouteId, ...fuelInput } = input;
         return db.createFuelLog({ vehicleId: route.vehicleId, supervisorRouteId: route.id, supervisorId: ctx.user.id, ...fuelInput });
       }),
+
+    updateFuel: protectedProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        odometerKm: z.number().finite().positive(),
+        amount: z.number().finite().positive(),
+        liters: z.number().finite().positive(),
+        fuelType: z.enum(["gasoline", "ethanol", "diesel"]),
+        confirmPriceVariation: z.boolean().optional().default(false),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        try {
+          return await db.updateSupervisorFuelLog({ ...input, supervisorId: ctx.user.id });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível editar o abastecimento" });
+        }
+      }),
   }),
 
   // Supervisor Routes

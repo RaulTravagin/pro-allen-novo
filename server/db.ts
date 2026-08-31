@@ -576,6 +576,77 @@ export async function updateFuelLogAmount(id: number, amount: number) {
   return { id, amount: Number(amount.toFixed(2)), summary: await getVehicleFuelSummary(fuelLog.vehicleId) };
 }
 
+function fuelUnitPrice(amount: number, liters: number) {
+  return liters > 0 ? amount / liters : null;
+}
+
+export async function updateSupervisorFuelLog(input: {
+  id: number;
+  supervisorId: number;
+  odometerKm: number;
+  amount: number;
+  liters: number;
+  fuelType: "gasoline" | "ethanol" | "diesel";
+  confirmPriceVariation?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  for (const [label, value] of [["KM", input.odometerKm], ["valor", input.amount], ["litros", input.liters]] as const) {
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`Informe um ${label} válido`);
+  }
+
+  const current = await db.select({
+    id: fuelLogs.id,
+    vehicleId: fuelLogs.vehicleId,
+    supervisorId: fuelLogs.supervisorId,
+    odometerKm: fuelLogs.odometerKm,
+    amount: fuelLogs.amount,
+    liters: fuelLogs.liters,
+    fuelType: fuelLogs.fuelType,
+    createdAt: fuelLogs.createdAt,
+  }).from(fuelLogs).where(eq(fuelLogs.id, input.id)).limit(1);
+  const fuelLog = current[0];
+  if (!fuelLog) throw new Error("Abastecimento não encontrado");
+  if (fuelLog.supervisorId !== input.supervisorId) throw new Error("Você só pode editar seus próprios abastecimentos");
+
+  const vehicleLogs = await db.select({
+    id: fuelLogs.id,
+    odometerKm: fuelLogs.odometerKm,
+    amount: fuelLogs.amount,
+    liters: fuelLogs.liters,
+    createdAt: fuelLogs.createdAt,
+  }).from(fuelLogs).where(eq(fuelLogs.vehicleId, fuelLog.vehicleId)).orderBy(asc(fuelLogs.createdAt), asc(fuelLogs.id));
+  const position = vehicleLogs.findIndex((log) => log.id === input.id);
+  const previous = position > 0 ? vehicleLogs[position - 1] : undefined;
+  const next = position >= 0 ? vehicleLogs[position + 1] : undefined;
+  const candidateKm = input.odometerKm;
+  if (previous && candidateKm < Number(previous.odometerKm)) {
+    throw new Error(`O KM informado não pode ser inferior ao abastecimento anterior (${Number(previous.odometerKm).toLocaleString("pt-BR")} km)`);
+  }
+  if (next && candidateKm > Number(next.odometerKm)) {
+    throw new Error(`O KM informado não pode superar o próximo abastecimento (${Number(next.odometerKm).toLocaleString("pt-BR")} km)`);
+  }
+
+  const candidatePrice = fuelUnitPrice(input.amount, input.liters);
+  const neighboringPrices = [previous, next]
+    .map((log) => log && fuelUnitPrice(Number(log.amount), Number(log.liters)))
+    .filter((price): price is number => price != null && price > 0);
+  const warnings = neighboringPrices.length && candidatePrice != null
+    ? neighboringPrices.filter((price) => candidatePrice > price * 1.5 || candidatePrice < price * 0.5).map((price) => `Preço por litro de R$ ${candidatePrice.toFixed(2).replace(".", ",")} difere significativamente do abastecimento próximo (aprox. R$ ${price.toFixed(2).replace(".", ",")}/L).`)
+    : [];
+  if (warnings.length && !input.confirmPriceVariation) {
+    return { updated: false as const, requiresConfirmation: true as const, warnings, candidate: { id: input.id, odometerKm: candidateKm, amount: input.amount, liters: input.liters, fuelType: input.fuelType } };
+  }
+
+  await db.update(fuelLogs).set({
+    odometerKm: candidateKm.toFixed(2),
+    amount: input.amount.toFixed(2),
+    liters: input.liters.toFixed(3),
+    fuelType: input.fuelType,
+  }).where(eq(fuelLogs.id, input.id));
+  return { updated: true as const, requiresConfirmation: false as const, id: input.id, summary: await getVehicleFuelSummary(fuelLog.vehicleId) };
+}
+
 export async function getSupervisorRouteById(id: number) {
   const db = await getDb();
   if (!db) return null;

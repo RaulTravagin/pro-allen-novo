@@ -12,4 +12,14 @@ describe("enrichFuelHistory", () => {
     expect(history[0]).toMatchObject({ id: 2, distanceSincePrevious: 360, consumptionKmPerLiter: 9, costPerKm: 0.72 });
     expect(history[1]).toMatchObject({ id: 1, distanceSincePrevious: null, consumptionKmPerLiter: null, costPerKm: null });
   });
+
+  it("ordena cronologicamente antes de calcular mesmo quando a lista chega invertida", () => {
+    const history = enrichFuelHistory([
+      { id: 2, odometerKm: "12360", liters: "40", amount: "260", createdAt: new Date("2026-08-19T08:00:00.000Z") },
+      { id: 1, odometerKm: "12000", liters: "30", amount: "150", createdAt: new Date("2026-08-18T08:00:00.000Z") },
+    ]);
+
+    expect(history[0]).toMatchObject({ id: 2, distanceSincePrevious: 360, consumptionKmPerLiter: 9, costPerKm: 0.72 });
+    expect(history[1]).toMatchObject({ id: 1, distanceSincePrevious: null });
+  });
 });

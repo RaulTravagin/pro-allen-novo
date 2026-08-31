@@ -9,6 +9,7 @@ vi.mock("./db", () => ({
   listActiveVehicles: vi.fn(),
   getVehicleFuelSummary: vi.fn(),
   upsertVehicle: vi.fn(),
+  updateSupervisorFuelLog: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -49,6 +50,14 @@ describe("controle de frota", () => {
 
     await caller.supervisorRoutes.updateKm({ id: 31, vehicleId: 8, kmInitial: 15000 });
     expect(db.updateSupervisorRoute).toHaveBeenCalledWith(31, expect.objectContaining({ vehicleId: 8, kmInitial: 15000, status: "in_progress" }));
+  });
+
+  it("permite editar os dados do próprio abastecimento e encaminha a confirmação de preço", async () => {
+    vi.mocked(db.updateSupervisorFuelLog).mockResolvedValue({ updated: true, requiresConfirmation: false, id: 70, summary: {} } as never);
+    const caller = appRouter.createCaller(context);
+
+    await caller.fleet.updateFuel({ id: 70, odometerKm: 15180, amount: 155.89, liters: 39.071, fuelType: "gasoline", confirmPriceVariation: true });
+    expect(db.updateSupervisorFuelLog).toHaveBeenCalledWith({ id: 70, odometerKm: 15180, amount: 155.89, liters: 39.071, fuelType: "gasoline", confirmPriceVariation: true, supervisorId: 17 });
   });
 
   it("registra abastecimento somente para rota ativa vinculada à viatura", async () => {

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ArrowLeft, Building2, ClipboardList, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus, XCircle } from "lucide-react";
+import { Loader2, ArrowLeft, Building2, ClipboardList, Fuel, Clock, AlertCircle, Route, CarFront, Gauge, Droplets, CircleDollarSign, History, Plus, XCircle, Pencil } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -38,6 +38,12 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const [fuelAmount, setFuelAmount] = useState("");
   const [fuelLiters, setFuelLiters] = useState("");
   const [fuelType, setFuelType] = useState<"gasoline" | "ethanol" | "diesel">("gasoline");
+  const [editingFuel, setEditingFuel] = useState<any | null>(null);
+  const [fuelEditOdometer, setFuelEditOdometer] = useState("");
+  const [fuelEditAmount, setFuelEditAmount] = useState("");
+  const [fuelEditLiters, setFuelEditLiters] = useState("");
+  const [fuelEditType, setFuelEditType] = useState<"gasoline" | "ethanol" | "diesel">("gasoline");
+  const [fuelEditWarnings, setFuelEditWarnings] = useState<string[]>([]);
   const [gpsError, setGpsError] = useState<string>("");
   const [occurrencePostId, setOccurrencePostId] = useState("");
   const [occurrenceReason, setOccurrenceReason] = useState("");
@@ -110,6 +116,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const cancelPendingMutation = trpc.supervisorRoutes.cancelPending.useMutation();
   const saveVehicleMutation = trpc.fleet.saveVehicle.useMutation();
   const registerFuelMutation = trpc.fleet.registerFuel.useMutation();
+  const updateFuelMutation = trpc.fleet.updateFuel.useMutation({
+    onSuccess: async (result) => {
+      if (result.requiresConfirmation) {
+        setFuelEditWarnings(result.warnings);
+        return;
+      }
+      setEditingFuel(null);
+      setFuelEditWarnings([]);
+      await utils.fleet.getFuelSummary.invalidate({ vehicleId: effectiveVehicleId });
+      await utils.supervisorRoutes.getShiftReport.invalidate({ supervisorRouteId });
+      toast.success("Abastecimento atualizado e indicadores recalculados.");
+    },
+    onError: (error) => notifySupervisorError(error, "Não foi possível editar o abastecimento"),
+  });
   const recordLocationMutation = trpc.locations.record.useMutation();
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
   const checkInMutation = trpc.checklists.checkIn.useMutation();
@@ -292,6 +312,28 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível registrar o abastecimento");
     }
+  };
+
+  const openFuelEditor = (log: any) => {
+    setFuelEditWarnings([]);
+    setEditingFuel(log);
+    setFuelEditOdometer(String(log.odometerKm ?? ""));
+    setFuelEditAmount(String(log.amount ?? ""));
+    setFuelEditLiters(String(log.liters ?? ""));
+    setFuelEditType(log.fuelType);
+  };
+
+  const submitFuelEdit = async (confirmPriceVariation = false) => {
+    if (!editingFuel) return;
+    const odometerKm = Number(fuelEditOdometer.replace(",", "."));
+    const amount = Number(fuelEditAmount.replace(",", "."));
+    const liters = Number(fuelEditLiters.replace(",", "."));
+    if (![odometerKm, amount, liters].every(Number.isFinite) || odometerKm < 0 || amount <= 0 || liters <= 0) {
+      toast.error("Informe KM, valor e litros válidos para a correção");
+      return;
+    }
+    setFuelEditWarnings([]);
+    await updateFuelMutation.mutateAsync({ id: editingFuel.id, odometerKm, amount, liters, fuelType: fuelEditType, confirmPriceVariation });
   };
 
   const formatCurrency = (value: number | null | undefined) => value == null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -489,7 +531,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   <div className="rounded-lg border border-emerald-100 bg-white p-3"><CircleDollarSign className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">Custo por KM</p><p className="mt-1 text-xl font-bold text-slate-950">{formatCurrency(fuelSummary?.latestMetrics?.costPerKm)}</p></div>
                   <div className="rounded-lg border border-emerald-100 bg-white p-3"><Droplets className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">KM entre abastecimentos</p><p className="mt-1 text-xl font-bold text-slate-950">{formatNumber(fuelSummary?.latestMetrics?.distanceSincePrevious, " km")}</p></div>
                 </div>
-                {fuelSummary && fuelSummary.history.length > 0 && <div className="mt-5"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><History className="h-4 w-4" />Últimos abastecimentos — {fuelSummary.vehicle.plate}</div><div className="mt-2 overflow-x-auto rounded-lg border border-emerald-100 bg-white"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-emerald-50 text-xs uppercase text-emerald-900"><tr><th className="p-3">Data</th><th className="p-3">KM</th><th className="p-3">Combustível</th><th className="p-3">Valor / litros</th><th className="p-3">Média</th><th className="p-3">Custo/KM</th></tr></thead><tbody>{fuelSummary.history.slice(0, 5).map((log) => <tr key={log.id} className="border-t border-emerald-50"><td className="p-3">{new Date(log.createdAt).toLocaleDateString("pt-BR")}</td><td className="p-3">{formatNumber(Number(log.odometerKm), " km")}</td><td className="p-3">{{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[log.fuelType]}</td><td className="p-3">{formatCurrency(Number(log.amount))} · {formatNumber(Number(log.liters), " L")}</td><td className="p-3">{formatNumber(log.consumptionKmPerLiter, " km/L")}</td><td className="p-3">{formatCurrency(log.costPerKm)}</td></tr>)}</tbody></table></div></div>}
+                {fuelSummary && fuelSummary.history.length > 0 && <div className="mt-5"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><History className="h-4 w-4" />Últimos abastecimentos — {fuelSummary.vehicle.plate}</div><div className="mt-2 overflow-x-auto rounded-lg border border-emerald-100 bg-white"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-emerald-50 text-xs uppercase text-emerald-900"><tr><th className="p-3">Data</th><th className="p-3">KM</th><th className="p-3">Combustível</th><th className="p-3">Valor / litros</th><th className="p-3">Média</th><th className="p-3">Custo/KM</th><th className="p-3 text-right">Ação</th></tr></thead><tbody>{fuelSummary.history.slice(0, 5).map((log) => <tr key={log.id} className="border-t border-emerald-50"><td className="p-3">{new Date(log.createdAt).toLocaleDateString("pt-BR")}</td><td className="p-3">{formatNumber(Number(log.odometerKm), " km")}</td><td className="p-3">{{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[log.fuelType]}</td><td className="p-3">{formatCurrency(Number(log.amount))} · {formatNumber(Number(log.liters), " L")}</td><td className="p-3">{formatNumber(log.consumptionKmPerLiter, " km/L")}</td><td className="p-3">{formatCurrency(log.costPerKm)}</td><td className="p-3 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => openFuelEditor(log)} aria-label={`Editar abastecimento de ${new Date(log.createdAt).toLocaleDateString("pt-BR")}`}><Pencil className="h-4 w-4" /></Button></td></tr>)}</tbody></table></div></div>}
               </div>
             </CardContent>
           </Card>
@@ -659,6 +701,33 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
       </div>
 
+      <AlertDialog open={Boolean(editingFuel)} onOpenChange={(open) => {
+        if (!open && !updateFuelMutation.isPending) {
+          setEditingFuel(null);
+          setFuelEditWarnings([]);
+        }
+      }}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Editar abastecimento</AlertDialogTitle>
+            <AlertDialogDescription>Revise os novos valores antes de confirmar. A sequência de KM é validada contra os abastecimentos anterior e posterior da mesma viatura.</AlertDialogDescription>
+          </AlertDialogHeader>
+          {editingFuel && <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="edit-fuel-km">Quilometragem (KM)</Label><Input id="edit-fuel-km" inputMode="decimal" value={fuelEditOdometer} onChange={(event) => setFuelEditOdometer(event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="edit-fuel-amount">Valor total (R$)</Label><Input id="edit-fuel-amount" inputMode="decimal" value={fuelEditAmount} onChange={(event) => setFuelEditAmount(event.target.value)} placeholder="155,89" /></div>
+            <div className="space-y-2"><Label htmlFor="edit-fuel-liters">Litros (L)</Label><Input id="edit-fuel-liters" inputMode="decimal" value={fuelEditLiters} onChange={(event) => setFuelEditLiters(event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="edit-fuel-type">Tipo de combustível</Label><select id="edit-fuel-type" value={fuelEditType} onChange={(event) => setFuelEditType(event.target.value as typeof fuelEditType)} className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm"><option value="gasoline">Gasolina</option><option value="ethanol">Etanol</option><option value="diesel">Diesel</option></select></div>
+            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><p className="font-semibold text-slate-900">Novos valores a confirmar</p><p className="mt-1">{Number(fuelEditOdometer.replace(",", ".")).toLocaleString("pt-BR")} km · {formatCurrency(Number(fuelEditAmount.replace(",", ".")))} · {fuelEditLiters.replace(".", ",")} L · {{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[fuelEditType]}</p></div>
+            {fuelEditWarnings.length > 0 && <div className="sm:col-span-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-semibold">Atenção: preço por litro fora do padrão</p>{fuelEditWarnings.map((warning) => <p key={warning} className="mt-1">{warning}</p>)}<p className="mt-2">Confirme novamente somente se os valores estiverem corretos.</p></div>}
+          </div>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateFuelMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button type="button" onClick={(event) => { event.preventDefault(); void submitFuelEdit(fuelEditWarnings.length > 0).catch(() => undefined); }} disabled={updateFuelMutation.isPending} className="bg-emerald-700 text-white hover:bg-emerald-800">{updateFuelMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</> : fuelEditWarnings.length > 0 ? "Confirmar mesmo assim" : "Confirmar e salvar"}</Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <SupervisorShiftReportDialog
         open={showShiftReport}
         onOpenChange={(open) => {
