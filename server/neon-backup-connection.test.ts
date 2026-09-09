@@ -2,7 +2,7 @@ import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 
 const connectionString = process.env.NEON_DATABASE_URL;
-const pool = connectionString ? new Pool({ connectionString, ssl: { rejectUnauthorized: false } }) : null;
+const pool = connectionString ? new Pool({ connectionString, ssl: { rejectUnauthorized: true } }) : null;
 
 afterAll(async () => {
   await pool?.end();

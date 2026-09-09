@@ -15,7 +15,7 @@ let restartTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 
 function logProcessFailure(source: string, error: unknown) {
-  console.error(`[Runtime] ${source}:`, error);
+  console.error("[Runtime] %s:", source, error);
 }
 
 function scheduleRestart(error: unknown) {

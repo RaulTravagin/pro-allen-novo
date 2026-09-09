@@ -40,7 +40,7 @@ async function resetDatabasePool(reason: string) {
   try {
     await pool.end();
   } catch (error) {
-    console.warn(`[Database] Falha ao encerrar o pool após ${reason}:`, error);
+    console.warn("[Database] Falha ao encerrar o pool após %s:", reason, error);
   }
 }
 
@@ -68,7 +68,7 @@ export async function getDb() {
     const requiresSsl = process.env.DATABASE_SSL === "true" || databaseUrl.includes("neon.tech");
     const pool = new Pool({
       connectionString: databaseUrl,
-      ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
+      ssl: requiresSsl ? { rejectUnauthorized: true } : undefined,
       max: 6,
       min: 0,
       idleTimeoutMillis: 30_000,
