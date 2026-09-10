@@ -43,6 +43,13 @@
       "when": 1787870500494,
       "tag": "0005_posts_address_management",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789080689481,
+      "tag": "0006_easy_pride",
+      "breakpoints": true
     }
   ]
 }

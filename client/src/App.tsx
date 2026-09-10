@@ -21,6 +21,7 @@ const GestorDashboard = lazy(() => import("./pages/GestorDashboard"));
 const LocalContingency = lazy(() => import("./pages/LocalContingency"));
 const Presentation = lazy(() => import("./pages/Presentation"));
 const OperationalReports = lazy(() => import("./pages/OperationalReports"));
+const PersonnelDashboard = lazy(() => import("./pages/PersonnelDashboard"));
 
 function LoadingScreen() {
   return (
@@ -81,6 +82,7 @@ function Router() {
           <Route path="/admin" component={AdminDashboard} />
           <Route path="/admin/metrics" component={MetricsDashboard} />
           <Route path="/admin/export" component={ReportExport} />
+          <Route path="/pessoal" component={PersonnelDashboard} />
           <Route path="/supervisor" component={SupervisorDashboard} />
           <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
           <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
@@ -96,6 +98,7 @@ function Router() {
     <Suspense fallback={<LoadingScreen />}>
       <Switch>
         <Route path="/supervisor" component={SupervisorDashboard} />
+        <Route path="/pessoal" component={PersonnelDashboard} />
         <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
         <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
         <Route path="/" component={SupervisorDashboard} />

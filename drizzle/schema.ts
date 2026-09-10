@@ -11,6 +11,9 @@ export const supervisorRouteStatusEnum = pgEnum("supervisor_route_status", ["pen
 export const operationShiftEnum = pgEnum("operation_shift", ["day", "night"]);
 export const visitChecklistStatusEnum = pgEnum("visit_checklist_status", ["pending", "in_progress", "visited", "skipped"]);
 export const fuelTypeEnum = pgEnum("fuel_type", ["gasoline", "ethanol", "diesel"]);
+export const personnelRoleEnum = pgEnum("personnel_role", ["SUPERVISOR", "RH", "FINANCEIRO", "ADM"]);
+export const personnelApprovalStatusEnum = pgEnum("personnel_approval_status", ["PENDING", "APPROVED", "PAID", "REJECTED"]);
+export const occurrenceTypeEnum = pgEnum("occurrence_type", ["FALTA_JUSTIFICADA", "FALTA_INJUSTIFICADA", "ATESTADO"]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -23,6 +26,7 @@ export const users = pgTable("users", {
   mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
   isOperational: boolean("isOperational").default(true).notNull(),
   defaultShift: defaultShiftEnum("defaultShift"),
+  personnelRole: personnelRoleEnum("personnelRole"),
   role: userRoleEnum("role").default("user").notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: updatedAt(),
@@ -31,6 +35,97 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+export const personnelEmployees = pgTable("personnel_employees", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  cpf: varchar("cpf", { length: 14 }).notNull(),
+  pixKey: varchar("pixKey", { length: 255 }),
+  post: varchar("post", { length: 255 }).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  cpfUnique: uniqueIndex("uq_personnel_employees_cpf").on(table.cpf),
+  activeIdx: index("idx_personnel_employees_active").on(table.isActive),
+}));
+
+export type PersonnelEmployee = typeof personnelEmployees.$inferSelect;
+export type InsertPersonnelEmployee = typeof personnelEmployees.$inferInsert;
+
+export const personnelFts = pgTable("personnel_fts", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  supervisorId: integer("supervisorId").notNull(),
+  date: timestamp("date", { withTimezone: true }).notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  reason: text("reason").notNull(),
+  status: personnelApprovalStatusEnum("status").default("PENDING").notNull(),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt", { withTimezone: true }),
+  rejectionReason: text("rejectionReason"),
+  paidBy: integer("paidBy"),
+  paidAt: timestamp("paidAt", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  employeeDateIdx: index("idx_personnel_fts_employee_date").on(table.employeeId, table.date),
+  statusIdx: index("idx_personnel_fts_status").on(table.status),
+  supervisorIdx: index("idx_personnel_fts_supervisor").on(table.supervisorId),
+}));
+
+export type PersonnelFt = typeof personnelFts.$inferSelect;
+export type InsertPersonnelFt = typeof personnelFts.$inferInsert;
+
+export const personnelOccurrences = pgTable("personnel_occurrences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  supervisorId: integer("supervisorId").notNull(),
+  type: occurrenceTypeEnum("type").notNull(),
+  date: timestamp("date", { withTimezone: true }).notNull(),
+  documentKey: text("documentKey"),
+  documentUrl: text("documentUrl"),
+  documentName: varchar("documentName", { length: 255 }),
+  observation: text("observation"),
+  status: personnelApprovalStatusEnum("status").default("PENDING").notNull(),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt", { withTimezone: true }),
+  rejectionReason: text("rejectionReason"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  employeeDateIdx: index("idx_personnel_occurrences_employee_date").on(table.employeeId, table.date),
+  statusIdx: index("idx_personnel_occurrences_status").on(table.status),
+  typeIdx: index("idx_personnel_occurrences_type").on(table.type),
+}));
+
+export type PersonnelOccurrence = typeof personnelOccurrences.$inferSelect;
+export type InsertPersonnelOccurrence = typeof personnelOccurrences.$inferInsert;
+
+export const personnelExtras = pgTable("personnel_extras", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  supervisorId: integer("supervisorId").notNull(),
+  date: timestamp("date", { withTimezone: true }).notNull(),
+  hoursOrDaily: numeric("hoursOrDaily", { precision: 10, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description").notNull(),
+  status: personnelApprovalStatusEnum("status").default("PENDING").notNull(),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt", { withTimezone: true }),
+  rejectionReason: text("rejectionReason"),
+  paidBy: integer("paidBy"),
+  paidAt: timestamp("paidAt", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  employeeDateIdx: index("idx_personnel_extras_employee_date").on(table.employeeId, table.date),
+  statusIdx: index("idx_personnel_extras_status").on(table.status),
+  supervisorIdx: index("idx_personnel_extras_supervisor").on(table.supervisorId),
+}));
+
+export type PersonnelExtra = typeof personnelExtras.$inferSelect;
+export type InsertPersonnelExtra = typeof personnelExtras.$inferInsert;
 
 export const supervisorSchedules = pgTable("supervisorSchedules", {
   id: serial("id").primaryKey(),

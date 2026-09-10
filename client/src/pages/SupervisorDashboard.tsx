@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, Clock3, ListChecks, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, ClipboardCheck, Clock3, ListChecks, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -97,6 +97,7 @@ export default function SupervisorDashboard() {
             <p className="mt-1 text-sm text-slate-600">Organize sua visita de hoje.</p>
           </div>
           <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+            <Button onClick={() => navigate("/pessoal")} variant="outline"><ClipboardCheck className="mr-2 h-4 w-4" />Gestão de pessoal</Button>
             {user?.role === "admin" && (
               <Button onClick={() => navigate("/admin")} variant="outline">Painel administrativo</Button>
             )}

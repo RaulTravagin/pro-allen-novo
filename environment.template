@@ -4,7 +4,7 @@
 # Execução mínima com login local de Supervisores e Gestor
 NODE_ENV=development
 PORT=3000
-DATABASE_URL=mysql://USUARIO:SENHA@HOST:3306/BANCO
+DATABASE_URL=postgresql://USUARIO:SENHA@HOST:5432/BANCO
 JWT_SECRET=substitua-por-uma-chave-aleatoria-longa
 GESTOR_ACCESS_PASSWORD=defina-uma-senha-forte-do-gestor
 INITIAL_SUPERVISOR_PASSWORD=defina-uma-senha-inicial

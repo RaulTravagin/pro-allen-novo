@@ -2,11 +2,13 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm"
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
 import { makeRequest, type GeocodingResult } from "./_core/map";
+import { storagePut } from "./storage";
+import { randomUUID } from "node:crypto";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -1736,4 +1738,298 @@ export async function getOperationalManagementReport(input: OperationalReportFil
 export async function getSupervisorShiftReport(supervisorId: number, supervisorRouteId: number) {
   const snapshot = await getGestorOperationalSnapshot(undefined, { includeHistoricalUsers: true });
   return buildSupervisorShiftReport(snapshot, supervisorId, supervisorRouteId);
+}
+
+
+// Personnel and financial operations
+export const PERSONNEL_ROLES = ["SUPERVISOR", "RH", "FINANCEIRO", "ADM"] as const;
+export type PersonnelRole = (typeof PERSONNEL_ROLES)[number];
+export type PersonnelApprovalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
+
+export function getPersonnelRole(user: Pick<NonNullable<TrpcContextUser>, "role" | "personnelRole">): PersonnelRole {
+  if (user.role === "admin") return "ADM";
+  return user.personnelRole ?? "SUPERVISOR";
+}
+
+type TrpcContextUser = {
+  role: "user" | "admin";
+  personnelRole: PersonnelRole | null;
+};
+
+function personnelScope(supervisorId: number, role: PersonnelRole) {
+  return role === "SUPERVISOR" ? eq(personnelFts.supervisorId, supervisorId) : undefined;
+}
+
+function occurrenceScope(supervisorId: number, role: PersonnelRole) {
+  return role === "SUPERVISOR" ? eq(personnelOccurrences.supervisorId, supervisorId) : undefined;
+}
+
+function extraScope(supervisorId: number, role: PersonnelRole) {
+  return role === "SUPERVISOR" ? eq(personnelExtras.supervisorId, supervisorId) : undefined;
+}
+
+export async function listPersonnelEmployees(includeInactive = false) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(personnelEmployees)
+    .where(includeInactive ? undefined : eq(personnelEmployees.isActive, true))
+    .orderBy(personnelEmployees.name);
+}
+
+export async function createPersonnelEmployee(input: InsertPersonnelEmployee) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(personnelEmployees).values(input).returning({ id: personnelEmployees.id });
+  return getPersonnelEmployeeById(getInsertedId(result));
+}
+
+export async function updatePersonnelEmployee(id: number, input: Partial<InsertPersonnelEmployee>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(personnelEmployees).set({ ...input, updatedAt: new Date() }).where(eq(personnelEmployees.id, id));
+  return getPersonnelEmployeeById(id);
+}
+
+export async function getPersonnelEmployeeById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(personnelEmployees).where(eq(personnelEmployees.id, id)).limit(1);
+  return result[0];
+}
+
+export async function listPersonnelUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, name: users.name, username: users.username, email: users.email, role: users.role, personnelRole: users.personnelRole, isOperational: users.isOperational })
+    .from(users).where(eq(users.isOperational, true)).orderBy(users.name);
+}
+
+export async function updatePersonnelUserRole(id: number, personnelRole: PersonnelRole) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ personnelRole, updatedAt: new Date() }).where(eq(users.id, id));
+  return getUserById(id);
+}
+
+export async function listPersonnelFts(supervisorId: number, role: PersonnelRole) {
+  const db = await getDb();
+  if (!db) return [];
+  const scope = personnelScope(supervisorId, role);
+  return db.select({
+    id: personnelFts.id,
+    employeeId: personnelFts.employeeId,
+    employeeName: personnelEmployees.name,
+    employeePixKey: personnelEmployees.pixKey,
+    supervisorId: personnelFts.supervisorId,
+    supervisorName: users.name,
+    date: personnelFts.date,
+    amount: personnelFts.amount,
+    reason: personnelFts.reason,
+    status: personnelFts.status,
+    rejectionReason: personnelFts.rejectionReason,
+    reviewedAt: personnelFts.reviewedAt,
+    paidAt: personnelFts.paidAt,
+    createdAt: personnelFts.createdAt,
+  }).from(personnelFts)
+    .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelFts.employeeId))
+    .leftJoin(users, eq(users.id, personnelFts.supervisorId))
+    .where(scope)
+    .orderBy(desc(personnelFts.createdAt));
+}
+
+export async function createPersonnelFt(input: InsertPersonnelFt) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const employee = await getPersonnelEmployeeById(input.employeeId);
+  if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
+  const result = await db.insert(personnelFts).values(input).returning({ id: personnelFts.id });
+  return getPersonnelFtById(getInsertedId(result));
+}
+
+export async function getPersonnelFtById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select({
+    id: personnelFts.id,
+    employeeId: personnelFts.employeeId,
+    employeeName: personnelEmployees.name,
+    employeePixKey: personnelEmployees.pixKey,
+    supervisorId: personnelFts.supervisorId,
+    supervisorName: users.name,
+    date: personnelFts.date,
+    amount: personnelFts.amount,
+    reason: personnelFts.reason,
+    status: personnelFts.status,
+    rejectionReason: personnelFts.rejectionReason,
+    reviewedAt: personnelFts.reviewedAt,
+    paidAt: personnelFts.paidAt,
+    createdAt: personnelFts.createdAt,
+  }).from(personnelFts)
+    .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelFts.employeeId))
+    .leftJoin(users, eq(users.id, personnelFts.supervisorId))
+    .where(eq(personnelFts.id, id)).limit(1);
+  return result[0];
+}
+
+export async function reviewPersonnelFt(input: { id: number; status: "APPROVED" | "REJECTED"; reviewedBy: number; rejectionReason?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await db.select({ status: personnelFts.status }).from(personnelFts).where(eq(personnelFts.id, input.id)).limit(1);
+  if (!current[0]) throw new Error("Lançamento não encontrado");
+  if (current[0].status !== "PENDING") throw new Error("Este lançamento já foi revisado");
+  await db.update(personnelFts).set({ status: input.status, reviewedBy: input.reviewedBy, reviewedAt: new Date(), rejectionReason: input.status === "REJECTED" ? input.rejectionReason ?? null : null, updatedAt: new Date() }).where(and(eq(personnelFts.id, input.id), eq(personnelFts.status, "PENDING")));
+  return getPersonnelFtById(input.id);
+}
+
+export async function payPersonnelFt(id: number, paidBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(personnelFts).set({ status: "PAID", paidBy, paidAt: new Date(), updatedAt: new Date() }).where(and(eq(personnelFts.id, id), eq(personnelFts.status, "APPROVED")));
+  return getPersonnelFtById(id);
+}
+
+export async function listPersonnelOccurrences(supervisorId: number, role: PersonnelRole) {
+  const db = await getDb();
+  if (!db) return [];
+  const scope = occurrenceScope(supervisorId, role);
+  return db.select({
+    id: personnelOccurrences.id,
+    employeeId: personnelOccurrences.employeeId,
+    employeeName: personnelEmployees.name,
+    supervisorId: personnelOccurrences.supervisorId,
+    supervisorName: users.name,
+    type: personnelOccurrences.type,
+    date: personnelOccurrences.date,
+    documentUrl: personnelOccurrences.documentUrl,
+    documentName: personnelOccurrences.documentName,
+    observation: personnelOccurrences.observation,
+    status: personnelOccurrences.status,
+    rejectionReason: personnelOccurrences.rejectionReason,
+    reviewedAt: personnelOccurrences.reviewedAt,
+    createdAt: personnelOccurrences.createdAt,
+  }).from(personnelOccurrences)
+    .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelOccurrences.employeeId))
+    .leftJoin(users, eq(users.id, personnelOccurrences.supervisorId))
+    .where(scope)
+    .orderBy(desc(personnelOccurrences.createdAt));
+}
+
+export async function createPersonnelOccurrence(input: InsertPersonnelOccurrence) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const employee = await getPersonnelEmployeeById(input.employeeId);
+  if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
+  const result = await db.insert(personnelOccurrences).values(input).returning({ id: personnelOccurrences.id });
+  return getPersonnelOccurrenceById(getInsertedId(result));
+}
+
+export async function getPersonnelOccurrenceById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(personnelOccurrences).where(eq(personnelOccurrences.id, id)).limit(1);
+  return result[0];
+}
+
+export async function reviewPersonnelOccurrence(input: { id: number; status: "APPROVED" | "REJECTED"; reviewedBy: number; rejectionReason?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await db.select({ status: personnelOccurrences.status }).from(personnelOccurrences).where(eq(personnelOccurrences.id, input.id)).limit(1);
+  if (!current[0]) throw new Error("Ocorrência não encontrada");
+  if (current[0].status !== "PENDING") throw new Error("Esta ocorrência já foi revisada");
+  await db.update(personnelOccurrences).set({ status: input.status, reviewedBy: input.reviewedBy, reviewedAt: new Date(), rejectionReason: input.status === "REJECTED" ? input.rejectionReason ?? null : null, updatedAt: new Date() }).where(and(eq(personnelOccurrences.id, input.id), eq(personnelOccurrences.status, "PENDING")));
+  return getPersonnelOccurrenceById(input.id);
+}
+
+export async function listPersonnelExtras(supervisorId: number, role: PersonnelRole) {
+  const db = await getDb();
+  if (!db) return [];
+  const scope = extraScope(supervisorId, role);
+  return db.select({
+    id: personnelExtras.id,
+    employeeId: personnelExtras.employeeId,
+    employeeName: personnelEmployees.name,
+    employeePixKey: personnelEmployees.pixKey,
+    supervisorId: personnelExtras.supervisorId,
+    supervisorName: users.name,
+    date: personnelExtras.date,
+    hoursOrDaily: personnelExtras.hoursOrDaily,
+    amount: personnelExtras.amount,
+    description: personnelExtras.description,
+    status: personnelExtras.status,
+    rejectionReason: personnelExtras.rejectionReason,
+    reviewedAt: personnelExtras.reviewedAt,
+    paidAt: personnelExtras.paidAt,
+    createdAt: personnelExtras.createdAt,
+  }).from(personnelExtras)
+    .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelExtras.employeeId))
+    .leftJoin(users, eq(users.id, personnelExtras.supervisorId))
+    .where(scope)
+    .orderBy(desc(personnelExtras.createdAt));
+}
+
+export async function createPersonnelExtra(input: InsertPersonnelExtra) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const employee = await getPersonnelEmployeeById(input.employeeId);
+  if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
+  const result = await db.insert(personnelExtras).values(input).returning({ id: personnelExtras.id });
+  return getPersonnelExtraById(getInsertedId(result));
+}
+
+export async function getPersonnelExtraById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(personnelExtras).where(eq(personnelExtras.id, id)).limit(1);
+  return result[0];
+}
+
+export async function reviewPersonnelExtra(input: { id: number; status: "APPROVED" | "REJECTED"; reviewedBy: number; rejectionReason?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await db.select({ status: personnelExtras.status }).from(personnelExtras).where(eq(personnelExtras.id, input.id)).limit(1);
+  if (!current[0]) throw new Error("Serviço extra não encontrado");
+  if (current[0].status !== "PENDING") throw new Error("Este serviço extra já foi revisado");
+  await db.update(personnelExtras).set({ status: input.status, reviewedBy: input.reviewedBy, reviewedAt: new Date(), rejectionReason: input.status === "REJECTED" ? input.rejectionReason ?? null : null, updatedAt: new Date() }).where(and(eq(personnelExtras.id, input.id), eq(personnelExtras.status, "PENDING")));
+  return getPersonnelExtraById(input.id);
+}
+
+export async function payPersonnelExtra(id: number, paidBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(personnelExtras).set({ status: "PAID", paidBy, paidAt: new Date(), updatedAt: new Date() }).where(and(eq(personnelExtras.id, id), eq(personnelExtras.status, "APPROVED")));
+  return getPersonnelExtraById(id);
+}
+
+export async function uploadPersonnelDocument(userId: number, file: { name: string; mimeType: string; base64: string }) {
+  const allowedMimeTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
+  if (!allowedMimeTypes.has(file.mimeType)) throw new Error("Formato de atestado não suportado");
+  const bytes = Buffer.from(file.base64, "base64");
+  if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) throw new Error("O arquivo deve ter entre 1 byte e 10 MB");
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120) || "atestado";
+  const result = await storagePut(`personnel/occurrences/${userId}/${randomUUID()}-${safeName}`, bytes, file.mimeType);
+  return { ...result, name: safeName };
+}
+
+export async function getPersonnelDashboardData(supervisorId: number, role: PersonnelRole) {
+  const [employees, fts, occurrences, extras] = await Promise.all([
+    listPersonnelEmployees(),
+    listPersonnelFts(supervisorId, role),
+    listPersonnelOccurrences(supervisorId, role),
+    listPersonnelExtras(supervisorId, role),
+  ]);
+  const payable = [...fts, ...extras].filter((item) => item.status === "APPROVED");
+  const pending = [...fts, ...extras, ...occurrences].filter((item) => item.status === "PENDING");
+  return {
+    employees,
+    fts,
+    occurrences,
+    extras,
+    summary: {
+      pendingCount: pending.length,
+      pendingFinancialCount: payable.length,
+      approvedAmount: payable.reduce((total, item) => total + Number(item.amount), 0),
+      paidAmount: [...fts, ...extras].filter((item) => item.status === "PAID").reduce((total, item) => total + Number(item.amount), 0),
+      employeesCount: employees.length,
+    },
+  };
 }

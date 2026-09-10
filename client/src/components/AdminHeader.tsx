@@ -1,4 +1,4 @@
-import { BarChart3, FileDown, LayoutDashboard, Route } from "lucide-react";
+import { BarChart3, ClipboardCheck, FileDown, LayoutDashboard, Route } from "lucide-react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
@@ -15,6 +15,7 @@ export function AdminHeader({ title, subtitle, onLogout }: AdminHeaderProps) {
     { label: "Relatórios", path: "/admin/relatorios", icon: FileDown },
     { label: "Métricas", path: "/admin/metrics", icon: BarChart3 },
     { label: "Exportar", path: "/admin/export", icon: FileDown },
+    { label: "Pessoal", path: "/pessoal", icon: ClipboardCheck },
     { label: "Operação", path: "/supervisor", icon: Route },
   ];
 

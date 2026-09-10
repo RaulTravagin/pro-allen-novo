@@ -91,6 +91,160 @@ export const appRouter = router({
     }),
   }),
 
+  personnel: router({
+    dashboard: protectedProcedure.query(async ({ ctx }) => {
+      const role = db.getPersonnelRole(ctx.user);
+      return { role, ...(await db.getPersonnelDashboardData(ctx.user.id, role)) };
+    }),
+
+    employees: protectedProcedure.query(async ({ ctx }) => {
+      const role = db.getPersonnelRole(ctx.user);
+      if (role === "SUPERVISOR") return db.listPersonnelEmployees();
+      return db.listPersonnelEmployees(true);
+    }),
+
+    createEmployee: protectedProcedure
+      .input(z.object({
+        name: z.string().trim().min(2, "Informe o nome do funcionário").max(255),
+        cpf: z.string().trim().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, "Informe um CPF válido"),
+        pixKey: z.string().trim().max(255).optional().nullable(),
+        post: z.string().trim().min(2, "Informe o posto/função").max(255),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode cadastrar funcionários" });
+        try {
+          return await db.createPersonnelEmployee({ ...input, cpf: input.cpf.replace(/\D/g, ""), pixKey: input.pixKey || null });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar o funcionário" });
+        }
+      }),
+
+    updateEmployee: protectedProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        name: z.string().trim().min(2).max(255),
+        cpf: z.string().trim().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/),
+        pixKey: z.string().trim().max(255).optional().nullable(),
+        post: z.string().trim().min(2).max(255),
+        isActive: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode editar funcionários" });
+        const { id, ...data } = input;
+        return db.updatePersonnelEmployee(id, { ...data, cpf: data.cpf.replace(/\D/g, ""), pixKey: data.pixKey || null });
+      }),
+
+    users: protectedProcedure.query(async ({ ctx }) => {
+      if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode gerenciar perfis" });
+      return db.listPersonnelUsers();
+    }),
+
+    setUserRole: protectedProcedure
+      .input(z.object({ userId: z.number().int().positive(), personnelRole: z.enum(["SUPERVISOR", "RH", "FINANCEIRO", "ADM"] as const) }))
+      .mutation(async ({ ctx, input }) => {
+        if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode gerenciar perfis" });
+        if (input.userId === ctx.user.id && input.personnelRole !== "ADM") throw new TRPCError({ code: "BAD_REQUEST", message: "O ADM não pode remover o próprio acesso administrativo" });
+        return db.updatePersonnelUserRole(input.userId, input.personnelRole);
+      }),
+
+    createFt: protectedProcedure
+      .input(z.object({ employeeId: z.number().int().positive(), date: z.coerce.date(), amount: z.number().finite().positive().max(9999999999.99), reason: z.string().trim().min(5).max(2_000) }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode lançar FTs" });
+        try {
+          return await db.createPersonnelFt({ ...input, supervisorId: ctx.user.id, amount: input.amount.toFixed(2), status: "PENDING" });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível lançar a FT" });
+        }
+      }),
+
+    createOccurrence: protectedProcedure
+      .input(z.object({
+        employeeId: z.number().int().positive(),
+        type: z.enum(["FALTA_JUSTIFICADA", "FALTA_INJUSTIFICADA", "ATESTADO"]),
+        date: z.coerce.date(),
+        observation: z.string().trim().max(2_000).optional().nullable(),
+        document: z.object({ name: z.string().min(1).max(255), mimeType: z.string(), base64: z.string().min(1) }).optional().nullable(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode lançar ocorrências" });
+        if (input.type === "ATESTADO" && !input.document) throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe o atestado médico em PDF ou imagem" });
+        try {
+          const document = input.document ? await db.uploadPersonnelDocument(ctx.user.id, input.document) : null;
+          return await db.createPersonnelOccurrence({ employeeId: input.employeeId, supervisorId: ctx.user.id, type: input.type, date: input.date, observation: input.observation || null, documentKey: document?.key ?? null, documentUrl: document?.url ?? null, documentName: document?.name ?? null, status: "PENDING" });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível registrar a ocorrência" });
+        }
+      }),
+
+    createExtra: protectedProcedure
+      .input(z.object({ employeeId: z.number().int().positive(), date: z.coerce.date(), hoursOrDaily: z.number().finite().positive().max(9999), amount: z.number().finite().positive().max(9999999999.99), description: z.string().trim().min(5).max(2_000) }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode lançar serviços extras" });
+        try {
+          return await db.createPersonnelExtra({ ...input, supervisorId: ctx.user.id, hoursOrDaily: input.hoursOrDaily.toFixed(2), amount: input.amount.toFixed(2), status: "PENDING" });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível lançar o serviço extra" });
+        }
+      }),
+
+    reviewFt: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), status: z.enum(["APPROVED", "REJECTED"]), rejectionReason: z.string().trim().max(500).optional().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode auditar FTs" });
+        if (input.status === "REJECTED" && (!input.rejectionReason || input.rejectionReason.length < 5)) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da rejeição" });
+        const result = await db.reviewPersonnelFt({ ...input, reviewedBy: ctx.user.id });
+        if (!result || result.status === "PENDING") throw new TRPCError({ code: "CONFLICT", message: "Este lançamento já foi revisado" });
+        return result;
+      }),
+
+    reviewOccurrence: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), status: z.enum(["APPROVED", "REJECTED"]), rejectionReason: z.string().trim().max(500).optional().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode auditar ocorrências" });
+        if (input.status === "REJECTED" && (!input.rejectionReason || input.rejectionReason.length < 5)) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da rejeição" });
+        const result = await db.reviewPersonnelOccurrence({ ...input, reviewedBy: ctx.user.id });
+        if (!result || result.status === "PENDING") throw new TRPCError({ code: "CONFLICT", message: "Esta ocorrência já foi revisada" });
+        return result;
+      }),
+
+    reviewExtra: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), status: z.enum(["APPROVED", "REJECTED"]), rejectionReason: z.string().trim().max(500).optional().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode auditar serviços extras" });
+        if (input.status === "REJECTED" && (!input.rejectionReason || input.rejectionReason.length < 5)) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da rejeição" });
+        const result = await db.reviewPersonnelExtra({ ...input, reviewedBy: ctx.user.id });
+        if (!result || result.status === "PENDING") throw new TRPCError({ code: "CONFLICT", message: "Este lançamento já foi revisado" });
+        return result;
+      }),
+
+    payFt: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "FINANCEIRO" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente Financeiro ou ADM pode quitar FTs" });
+        const result = await db.payPersonnelFt(input.id, ctx.user.id);
+        if (!result || result.status !== "PAID") throw new TRPCError({ code: "CONFLICT", message: "A FT precisa estar aprovada e ainda não quitada" });
+        return result;
+      }),
+
+    payExtra: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "FINANCEIRO" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente Financeiro ou ADM pode quitar extras" });
+        const result = await db.payPersonnelExtra(input.id, ctx.user.id);
+        if (!result || result.status !== "PAID") throw new TRPCError({ code: "CONFLICT", message: "O extra precisa estar aprovado e ainda não quitado" });
+        return result;
+      }),
+  }),
+
   localAuth: router({
     login: publicProcedure
       .input(z.object({ username: z.string().trim().min(3).max(64), password: z.string().min(1).max(200) }))
