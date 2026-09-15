@@ -31,7 +31,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -145,7 +145,15 @@ async function fileToPayload(file: File): Promise<FilePayload> {
   return { name: file.name, mimeType: file.type, base64 };
 }
 
-export default function PersonnelDashboard() {
+type PersonnelSection = "workspace" | "employees" | "users" | "finance";
+
+export default function PersonnelDashboard({
+  initialSection = "workspace",
+  requiredRole,
+}: {
+  initialSection?: PersonnelSection;
+  requiredRole?: PersonnelRole[];
+}) {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
@@ -153,15 +161,17 @@ export default function PersonnelDashboard() {
     retry: false,
   });
   const [entryType, setEntryType] = useState<EntryType>("FT");
-  const [activeSection, setActiveSection] = useState<
-    "workspace" | "employees" | "users"
-  >("workspace");
+  const [activeSection, setActiveSection] = useState<PersonnelSection>(initialSection);
   const role = (dashboardQuery.data?.role ??
     (user?.role === "admin" ? "ADM" : "SUPERVISOR")) as PersonnelRole;
   const isSupervisor = role === "SUPERVISOR";
   const isReviewer = role === "RH" || role === "ADM";
   const isFinance = role === "FINANCEIRO" || role === "ADM";
   const isAdmin = role === "ADM";
+
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   const invalidateDashboard = async () => {
     await utils.personnel.dashboard.invalidate();
@@ -190,6 +200,26 @@ export default function PersonnelDashboard() {
           <CardContent>
             <Button onClick={() => void dashboardQuery.refetch()}>
               Tentar novamente
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (requiredRole && !requiredRole.includes(role)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] p-5">
+        <Card className="max-w-md border-rose-200">
+          <CardHeader>
+            <CardTitle>Acesso não autorizado</CardTitle>
+            <CardDescription>
+              Esta área é restrita aos perfis {requiredRole.map(roleLabel).join(" e ")}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate(user?.role === "admin" ? "/admin" : "/supervisor")}>
+              Voltar ao início
             </Button>
           </CardContent>
         </Card>
@@ -269,6 +299,14 @@ export default function PersonnelDashboard() {
                 onClick={() => setActiveSection("users")}
               />
             )}
+            {isFinance && (
+              <NavButton
+                active={activeSection === "finance"}
+                icon={BadgeDollarSign}
+                label="Aprovados para pagar"
+                onClick={() => setActiveSection("finance")}
+              />
+            )}
           </nav>
           <div className="mt-5 rounded-xl bg-[#0d1b2a] p-3 text-white">
             <p className="text-xs font-semibold text-[#f6c915]">
@@ -333,6 +371,9 @@ export default function PersonnelDashboard() {
           )}
           {activeSection === "users" && isAdmin && (
             <UsersSection onRefresh={invalidateDashboard} />
+          )}
+          {activeSection === "finance" && isFinance && (
+            <FinanceQueue data={data} onRefresh={invalidateDashboard} />
           )}
         </main>
       </div>
@@ -427,7 +468,7 @@ function Workspace({
     <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       {(isSupervisor || role === "ADM") && (
         <EntryForm
-          employees={data?.employees ?? []}
+          employees={(data?.employees ?? []).filter((employee: any) => employee.isActive)}
           entryType={entryType}
           setEntryType={setEntryType}
           onRefresh={onRefresh}
@@ -452,6 +493,7 @@ function EntryForm({
   onRefresh: () => Promise<void>;
 }) {
   const [employeeId, setEmployeeId] = useState("");
+  const [legacyEmployeeName, setLegacyEmployeeName] = useState("");
   const [date, setDate] = useState(todayInputValue);
   const [amount, setAmount] = useState("");
   const [hours, setHours] = useState("");
@@ -461,6 +503,7 @@ function EntryForm({
   const createFt = trpc.personnel.createFt.useMutation();
   const createOccurrence = trpc.personnel.createOccurrence.useMutation();
   const createExtra = trpc.personnel.createExtra.useMutation();
+  const ensureLegacyEmployee = trpc.personnel.ensureLegacyEmployee.useMutation();
   const isOccurrence =
     entryType === "FALTA_JUSTIFICADA" ||
     entryType === "FALTA_INJUSTIFICADA" ||
@@ -468,7 +511,10 @@ function EntryForm({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!employeeId) return toast.error("Selecione um funcionário");
+    if (!employeeId && employees.length > 0) return toast.error("Selecione um funcionário");
+    if (!employeeId && employees.length === 0 && !legacyEmployeeName.trim()) {
+      return toast.error("Informe o nome do colaborador para o cadastro temporário");
+    }
     if (!date) return toast.error("Informe a data da ocorrência");
     if (entryType === "ATESTADO" && !file)
       return toast.error("Anexe o atestado médico");
@@ -483,8 +529,14 @@ function EntryForm({
       return toast.error("Informe uma observação para a ocorrência");
     setSubmitting(true);
     try {
+      let selectedEmployeeId = employeeId;
+      if (!selectedEmployeeId) {
+        const legacyEmployee = await ensureLegacyEmployee.mutateAsync({ name: legacyEmployeeName.trim() });
+        if (!legacyEmployee?.id) throw new Error("Não foi possível criar o cadastro temporário");
+        selectedEmployeeId = String(legacyEmployee.id);
+      }
       const base = {
-        employeeId: Number(employeeId),
+        employeeId: Number(selectedEmployeeId),
         date: new Date(`${date}T12:00:00`),
       };
       if (entryType === "FT")
@@ -512,6 +564,7 @@ function EntryForm({
       setAmount("");
       setHours("");
       setReason("");
+      setLegacyEmployeeName("");
       setFile(null);
       await onRefresh();
     } catch (error) {
@@ -573,19 +626,32 @@ function EntryForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="personnel-employee">Funcionário</Label>
-              <select
-                id="personnel-employee"
-                value={employeeId}
-                onChange={event => setEmployeeId(event.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                <option value="">Selecione o colaborador</option>
-                {employees.map(employee => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name} · {employee.post}
-                  </option>
-                ))}
-              </select>
+              {employees.length > 0 ? (
+                <select
+                  id="personnel-employee"
+                  value={employeeId}
+                  onChange={event => setEmployeeId(event.target.value)}
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Selecione o colaborador</option>
+                  {employees.map(employee => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name} · {employee.position || employee.post}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  <Input
+                    id="personnel-employee"
+                    value={legacyEmployeeName}
+                    onChange={event => setLegacyEmployeeName(event.target.value)}
+                    placeholder="Digite o nome enquanto o RH cadastra a base"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-amber-700">A lista nova ainda está vazia. Este nome ficará marcado como cadastro manual temporário.</p>
+                </>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="personnel-date">Data de referência</Label>
@@ -695,7 +761,7 @@ function EntryForm({
             </p>
             <Button
               type="submit"
-              disabled={submitting || !employees.length}
+              disabled={submitting}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting ? (
@@ -914,11 +980,12 @@ function FinanceQueue({
       ...(data?.extras ?? []).map((row: any) => ({ ...row, kind: "EXTRA" })),
     ];
     const csv = [
-      ["Funcionário", "Tipo", "Data", "Valor", "Chave PIX", "Status"],
+      ["Funcionário", "Tipo", "Data de referência", "Pagamento previsto", "Valor", "Chave PIX", "Status"],
       ...allRows.map((row: any) => [
         row.employeeName,
         row.kind,
         formatDate(row.date),
+        row.kind === "FT" ? formatDate(row.paymentDate) : "—",
         Number(row.amount).toFixed(2).replace(".", ","),
         row.employeePixKey || "",
         statusLabel(row.status),
@@ -967,13 +1034,14 @@ function FinanceQueue({
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
+              <table className="w-full min-w-[820px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-3">Favorecido</th>
                   <th className="px-3 py-3">PIX</th>
                   <th className="px-3 py-3">Tipo</th>
-                  <th className="px-3 py-3">Data</th>
+                  <th className="px-3 py-3">Referência</th>
+                  <th className="px-3 py-3">Pagamento previsto</th>
                   <th className="px-3 py-3">Valor</th>
                   <th className="px-3 py-3 text-right">Ação</th>
                 </tr>
@@ -990,6 +1058,9 @@ function FinanceQueue({
                     <td className="px-3 py-3 text-slate-600">{row.label}</td>
                     <td className="px-3 py-3 text-slate-600">
                       {formatDate(row.date)}
+                    </td>
+                    <td className="px-3 py-3 font-semibold text-blue-700">
+                      {row.kind === "FT" ? formatDate(row.paymentDate) : "—"}
                     </td>
                     <td className="px-3 py-3 font-black text-emerald-700">
                       {formatCurrency(row.amount)}
@@ -1113,17 +1184,21 @@ function EmployeesSection({
   const [editing, setEditing] = useState<any | null>(null);
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
+  const [position, setPosition] = useState("");
+  const [postId, setPostId] = useState("");
   const [pixKey, setPixKey] = useState("");
-  const [post, setPost] = useState("");
+  const [isActive, setIsActive] = useState(true);
   const createEmployee = trpc.personnel.createEmployee.useMutation();
   const updateEmployee = trpc.personnel.updateEmployee.useMutation();
-  const canEdit = role === "ADM";
+  const canEdit = role === "RH" || role === "ADM";
   const reset = () => {
     setEditing(null);
     setName("");
     setCpf("");
+    setPosition("");
+    setPostId("");
     setPixKey("");
-    setPost("");
+    setIsActive(true);
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -1134,16 +1209,18 @@ function EmployeesSection({
           id: editing.id,
           name,
           cpf,
+          position,
+          postId: postId ? Number(postId) : null,
           pixKey: pixKey || null,
-          post,
-          isActive: editing.isActive,
+          isActive,
         });
       else
         await createEmployee.mutateAsync({
           name,
           cpf,
+          position,
+          postId: postId ? Number(postId) : null,
           pixKey: pixKey || null,
-          post,
         });
       toast.success(
         editing ? "Funcionário atualizado" : "Funcionário cadastrado"
@@ -1191,7 +1268,7 @@ function EmployeesSection({
                 {editing ? "Editar funcionário" : "Novo funcionário"}
               </CardTitle>
               <CardDescription>
-                CPF, posto e chave PIX são usados no fluxo financeiro.
+                Cargo, posto principal e chave PIX ficam disponíveis para o fluxo financeiro.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1207,23 +1284,40 @@ function EmployeesSection({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="employee-cpf">CPF</Label>
+                  <Label htmlFor="employee-cpf">CPF / matrícula</Label>
                   <Input
                     id="employee-cpf"
                     value={cpf}
                     onChange={event => setCpf(event.target.value)}
-                    placeholder="000.000.000-00"
+                    placeholder="CPF ou matrícula"
                     required
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="employee-post">Posto / função</Label>
+                  <Label htmlFor="employee-position">Cargo / função</Label>
                   <Input
-                    id="employee-post"
-                    value={post}
-                    onChange={event => setPost(event.target.value)}
+                    id="employee-position"
+                    value={position}
+                    onChange={event => setPosition(event.target.value)}
+                    placeholder="Ex.: Vigia, Controlador de acesso"
                     required
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="employee-post">Posto de trabalho principal</Label>
+                  <select
+                    id="employee-post"
+                    value={postId}
+                    onChange={event => setPostId(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="">Não informado</option>
+                    {(data?.posts ?? []).map((postItem: any) => (
+                      <option key={postItem.id} value={postItem.id}>
+                        {postItem.name} · {postItem.region}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="employee-pix">Chave PIX (opcional)</Label>
@@ -1233,6 +1327,18 @@ function EmployeesSection({
                     onChange={event => setPixKey(event.target.value)}
                     placeholder="CPF, e-mail, telefone ou chave aleatória"
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="employee-status">Status</Label>
+                  <select
+                    id="employee-status"
+                    value={isActive ? "active" : "inactive"}
+                    onChange={event => setIsActive(event.target.value === "active")}
+                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="active">Ativo</option>
+                    <option value="inactive">Inativo</option>
+                  </select>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -1268,7 +1374,8 @@ function EmployeesSection({
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-3">Nome</th>
                     <th className="px-3 py-3">CPF</th>
-                    <th className="px-3 py-3">Posto / função</th>
+                    <th className="px-3 py-3">Cargo / posto</th>
+                    <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">PIX</th>
                     {canEdit && <th className="px-3 py-3 text-right">Ação</th>}
                   </tr>
@@ -1283,7 +1390,13 @@ function EmployeesSection({
                         {employee.cpf}
                       </td>
                       <td className="px-3 py-3 text-slate-600">
-                        {employee.post}
+                        <span className="font-semibold">{employee.position || "—"}</span>
+                        <span className="block text-xs text-slate-500">{employee.post}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={employee.isActive ? "text-emerald-700" : "text-slate-400"}>
+                          {employee.isActive ? "Ativo" : "Inativo"}
+                        </span>
                       </td>
                       <td className="px-3 py-3 font-mono text-xs text-slate-500">
                         {employee.pixKey || "—"}
@@ -1297,8 +1410,10 @@ function EmployeesSection({
                               setEditing(employee);
                               setName(employee.name);
                               setCpf(employee.cpf);
+                              setPosition(employee.position || "");
+                              setPostId(employee.postId ? String(employee.postId) : "");
                               setPixKey(employee.pixKey || "");
-                              setPost(employee.post);
+                              setIsActive(employee.isActive);
                             }}
                           >
                             Editar

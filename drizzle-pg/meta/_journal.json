@@ -50,6 +50,13 @@
       "when": 1789080689481,
       "tag": "0006_easy_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789487758426,
+      "tag": "0007_personnel_access_and_ft_payment",
+      "breakpoints": true
     }
   ]
 }

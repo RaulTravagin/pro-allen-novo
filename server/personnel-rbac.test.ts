@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPersonnelRole, PERSONNEL_ROLES } from "./db";
+import { calculateFtPaymentDate, getPersonnelRole, PERSONNEL_ROLES } from "./db";
 
 describe("personnel RBAC", () => {
   it("maps the existing admin account to the global personnel role", () => {
@@ -23,5 +23,13 @@ describe("personnel RBAC", () => {
 
   it("exposes all four supported profiles", () => {
     expect(PERSONNEL_ROLES).toEqual(["SUPERVISOR", "RH", "FINANCEIRO", "ADM"]);
+  });
+
+  it("pays first-half FT references on the 20th of the same month", () => {
+    expect(calculateFtPaymentDate(new Date(2026, 7, 15, 8))).toEqual(new Date(2026, 7, 20, 12));
+  });
+
+  it("pays second-half FT references on the 15th of the next month", () => {
+    expect(calculateFtPaymentDate(new Date(2026, 11, 31, 8))).toEqual(new Date(2027, 0, 15, 12));
   });
 });

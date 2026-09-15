@@ -1746,6 +1746,18 @@ export const PERSONNEL_ROLES = ["SUPERVISOR", "RH", "FINANCEIRO", "ADM"] as cons
 export type PersonnelRole = (typeof PERSONNEL_ROLES)[number];
 export type PersonnelApprovalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
 
+/** Calcula a data prevista sem alterar a regra de fechamento quinzenal. */
+export function calculateFtPaymentDate(referenceDate: Date) {
+  if (!(referenceDate instanceof Date) || Number.isNaN(referenceDate.getTime())) {
+    throw new Error("Data de referência inválida");
+  }
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  return referenceDate.getDate() <= 15
+    ? new Date(year, month, 20, 12, 0, 0, 0)
+    : new Date(year, month + 1, 15, 12, 0, 0, 0);
+}
+
 export function getPersonnelRole(user: Pick<NonNullable<TrpcContextUser>, "role" | "personnelRole">): PersonnelRole {
   if (user.role === "admin") return "ADM";
   return user.personnelRole ?? "SUPERVISOR";
@@ -1776,6 +1788,15 @@ export async function listPersonnelEmployees(includeInactive = false) {
     .orderBy(personnelEmployees.name);
 }
 
+export async function listPersonnelPosts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: posts.id, name: posts.name, address: posts.address, region: posts.region })
+    .from(posts)
+    .where(eq(posts.isActive, true))
+    .orderBy(posts.region, posts.name);
+}
+
 export async function createPersonnelEmployee(input: InsertPersonnelEmployee) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1788,6 +1809,18 @@ export async function updatePersonnelEmployee(id: number, input: Partial<InsertP
   if (!db) throw new Error("Database not available");
   await db.update(personnelEmployees).set({ ...input, updatedAt: new Date() }).where(eq(personnelEmployees.id, id));
   return getPersonnelEmployeeById(id);
+}
+
+export async function createLegacyPersonnelEmployee(name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(personnelEmployees).values({
+    name,
+    cpf: `LEGACY-${randomUUID().replace(/-/g, "").slice(0, 8)}`,
+    post: "Cadastro manual temporário",
+    isActive: true,
+  }).returning({ id: personnelEmployees.id });
+  return getPersonnelEmployeeById(getInsertedId(result));
 }
 
 export async function getPersonnelEmployeeById(id: number) {
@@ -1823,6 +1856,7 @@ export async function listPersonnelFts(supervisorId: number, role: PersonnelRole
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
+    paymentDate: personnelFts.paymentDate,
     amount: personnelFts.amount,
     reason: personnelFts.reason,
     status: personnelFts.status,
@@ -1842,7 +1876,10 @@ export async function createPersonnelFt(input: InsertPersonnelFt) {
   if (!db) throw new Error("Database not available");
   const employee = await getPersonnelEmployeeById(input.employeeId);
   if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
-  const result = await db.insert(personnelFts).values(input).returning({ id: personnelFts.id });
+  const result = await db.insert(personnelFts).values({
+    ...input,
+    paymentDate: calculateFtPaymentDate(input.date),
+  }).returning({ id: personnelFts.id });
   return getPersonnelFtById(getInsertedId(result));
 }
 
@@ -1857,6 +1894,7 @@ export async function getPersonnelFtById(id: number) {
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
+    paymentDate: personnelFts.paymentDate,
     amount: personnelFts.amount,
     reason: personnelFts.reason,
     status: personnelFts.status,
@@ -2011,8 +2049,9 @@ export async function uploadPersonnelDocument(userId: number, file: { name: stri
 }
 
 export async function getPersonnelDashboardData(supervisorId: number, role: PersonnelRole) {
-  const [employees, fts, occurrences, extras] = await Promise.all([
-    listPersonnelEmployees(),
+  const [employees, posts, fts, occurrences, extras] = await Promise.all([
+    listPersonnelEmployees(role !== "SUPERVISOR"),
+    listPersonnelPosts(),
     listPersonnelFts(supervisorId, role),
     listPersonnelOccurrences(supervisorId, role),
     listPersonnelExtras(supervisorId, role),
@@ -2021,6 +2060,7 @@ export async function getPersonnelDashboardData(supervisorId: number, role: Pers
   const pending = [...fts, ...extras, ...occurrences].filter((item) => item.status === "PENDING");
   return {
     employees,
+    posts,
     fts,
     occurrences,
     extras,
@@ -2029,7 +2069,7 @@ export async function getPersonnelDashboardData(supervisorId: number, role: Pers
       pendingFinancialCount: payable.length,
       approvedAmount: payable.reduce((total, item) => total + Number(item.amount), 0),
       paidAmount: [...fts, ...extras].filter((item) => item.status === "PAID").reduce((total, item) => total + Number(item.amount), 0),
-      employeesCount: employees.length,
+      employeesCount: employees.filter((employee) => employee.isActive).length,
     },
   };
 }

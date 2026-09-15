@@ -35,9 +35,9 @@ As senhas iniciais de supervisores podem ser fornecidas por `INITIAL_SUPERVISOR_
 
 ## Módulo de gestão de pessoal e financeiro
 
-O módulo está disponível em `/pessoal` para usuários autenticados. Ele adiciona o fluxo completo de **Folgas Trabalhadas (FTs)**, faltas, atestados médicos com upload, serviços extras, auditoria do RH, quitação financeira, exportação CSV e manutenção de funcionários.
+O módulo está disponível em `/pessoal` para usuários autenticados. As rotas adicionais `/rh/funcionarios` e `/financeiro/pagamentos` isolam, respectivamente, o cadastro/auditoria do RH e a fila de quitação do Financeiro, sem alterar as URLs operacionais atuais da Supervisão. O módulo adiciona o fluxo completo de **Folgas Trabalhadas (FTs)**, faltas, atestados médicos com upload, serviços extras, auditoria do RH, quitação financeira, exportação CSV e manutenção de funcionários.
 
-O banco usa as tabelas `personnel_employees`, `personnel_fts`, `personnel_occurrences` e `personnel_extras`, além dos enums e da coluna `users.personnelRole` criados na migração `drizzle-pg/0006_easy_pride.sql`. Depois de configurar o banco, aplique as migrações com:
+O banco usa as tabelas `personnel_employees`, `personnel_fts`, `personnel_occurrences` e `personnel_extras`, além dos enums e da coluna `users.personnelRole` criados na migração `drizzle-pg/0006_easy_pride.sql`. A migração aditiva `drizzle-pg/0007_personnel_access_and_ft_payment.sql` acrescenta cargo, posto principal e `data_prevista_pagamento` sem apagar ou renomear estruturas existentes. Para FT, referências do dia 01 ao 15 recebem pagamento previsto no dia 20 do mesmo mês; referências do dia 16 em diante recebem pagamento previsto no dia 15 do mês seguinte. Depois de configurar o banco, aplique as migrações com:
 
 ```bash
 pnpm install --frozen-lockfile

@@ -52,6 +52,12 @@ const gestorPostInput = z.object({
   addressPostalCode: z.string().trim().regex(/^\d{5}-?\d{3}$/, "Informe um CEP válido"),
 });
 
+function normalizePersonnelIdentifier(value: string) {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length === 11 ? digits : trimmed;
+}
+
 const DEFAULT_CHECKLIST_ITEMS = [
   { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
   { category: 'Pontualidade', description: 'Pontualidade e escala' },
@@ -103,17 +109,27 @@ export const appRouter = router({
       return db.listPersonnelEmployees(true);
     }),
 
+    posts: protectedProcedure.query(async ({ ctx }) => {
+      const role = db.getPersonnelRole(ctx.user);
+      if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar os postos" });
+      return db.listPersonnelPosts();
+    }),
+
     createEmployee: protectedProcedure
       .input(z.object({
         name: z.string().trim().min(2, "Informe o nome do funcionário").max(255),
-        cpf: z.string().trim().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, "Informe um CPF válido"),
+        cpf: z.string().trim().min(3, "Informe o CPF ou a matrícula").max(14, "CPF ou matrícula muito longo"),
+        position: z.string().trim().min(2, "Informe o cargo/função").max(255),
+        postId: z.number().int().positive("Selecione o posto principal").nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
-        post: z.string().trim().min(2, "Informe o posto/função").max(255),
       }))
       .mutation(async ({ ctx, input }) => {
-        if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode cadastrar funcionários" });
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode cadastrar funcionários" });
         try {
-          return await db.createPersonnelEmployee({ ...input, cpf: input.cpf.replace(/\D/g, ""), pixKey: input.pixKey || null });
+          const post = input.postId ? await db.getPostById(input.postId) : null;
+          if (input.postId && (!post || post.isActive === false)) throw new Error("Posto principal inválido ou inativo");
+          return await db.createPersonnelEmployee({ ...input, cpf: normalizePersonnelIdentifier(input.cpf), post: post?.name ?? "Posto não informado", pixKey: input.pixKey || null });
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar o funcionário" });
         }
@@ -123,15 +139,28 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int().positive(),
         name: z.string().trim().min(2).max(255),
-        cpf: z.string().trim().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/),
+        cpf: z.string().trim().min(3).max(14),
+        position: z.string().trim().min(2).max(255),
+        postId: z.number().int().positive().nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
-        post: z.string().trim().min(2).max(255),
         isActive: z.boolean(),
       }))
       .mutation(async ({ ctx, input }) => {
-        if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode editar funcionários" });
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode editar funcionários" });
         const { id, ...data } = input;
-        return db.updatePersonnelEmployee(id, { ...data, cpf: data.cpf.replace(/\D/g, ""), pixKey: data.pixKey || null });
+        const post = data.postId ? await db.getPostById(data.postId) : null;
+        if (data.postId && (!post || post.isActive === false)) throw new TRPCError({ code: "BAD_REQUEST", message: "Posto principal inválido ou inativo" });
+        const existing = await db.getPersonnelEmployeeById(id);
+        return db.updatePersonnelEmployee(id, { ...data, cpf: normalizePersonnelIdentifier(data.cpf), post: post?.name ?? existing?.post ?? "Posto não informado", pixKey: data.pixKey || null });
+      }),
+
+    ensureLegacyEmployee: protectedProcedure
+      .input(z.object({ name: z.string().trim().min(2).max(255) }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode usar o cadastro temporário" });
+        return db.createLegacyPersonnelEmployee(input.name);
       }),
 
     users: protectedProcedure.query(async ({ ctx }) => {

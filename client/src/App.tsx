@@ -23,6 +23,18 @@ const Presentation = lazy(() => import("./pages/Presentation"));
 const OperationalReports = lazy(() => import("./pages/OperationalReports"));
 const PersonnelDashboard = lazy(() => import("./pages/PersonnelDashboard"));
 
+function PersonnelRoute() {
+  return <PersonnelDashboard />;
+}
+
+function HrEmployeesRoute() {
+  return <PersonnelDashboard initialSection="employees" requiredRole={["RH", "ADM"]} />;
+}
+
+function FinancePaymentsRoute() {
+  return <PersonnelDashboard initialSection="finance" requiredRole={["FINANCEIRO", "ADM"]} />;
+}
+
 function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50" role="status" aria-live="polite">
@@ -82,7 +94,9 @@ function Router() {
           <Route path="/admin" component={AdminDashboard} />
           <Route path="/admin/metrics" component={MetricsDashboard} />
           <Route path="/admin/export" component={ReportExport} />
-          <Route path="/pessoal" component={PersonnelDashboard} />
+          <Route path="/pessoal" component={PersonnelRoute} />
+          <Route path="/rh/funcionarios" component={HrEmployeesRoute} />
+          <Route path="/financeiro/pagamentos" component={FinancePaymentsRoute} />
           <Route path="/supervisor" component={SupervisorDashboard} />
           <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
           <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
@@ -98,7 +112,9 @@ function Router() {
     <Suspense fallback={<LoadingScreen />}>
       <Switch>
         <Route path="/supervisor" component={SupervisorDashboard} />
-        <Route path="/pessoal" component={PersonnelDashboard} />
+        <Route path="/pessoal" component={PersonnelRoute} />
+        <Route path="/rh/funcionarios" component={HrEmployeesRoute} />
+        <Route path="/financeiro/pagamentos" component={FinancePaymentsRoute} />
         <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
         <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
         <Route path="/" component={SupervisorDashboard} />
