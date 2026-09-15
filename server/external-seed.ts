@@ -112,6 +112,7 @@ async function seed() {
       console.warn(`[External seed] ${account.passwordEnv} não configurada; ${account.username} não será criado neste deploy.`);
       continue;
     }
+    const passwordHash = await hashSupervisorPassword(password);
     const [existingUser] = await db.select().from(users).where(eq(users.username, account.username)).limit(1);
     if (!existingUser) {
       await db.insert(users).values({
@@ -119,7 +120,7 @@ async function seed() {
         username: account.username,
         name: account.name,
         loginMethod: "local",
-        passwordHash: await hashSupervisorPassword(password),
+        passwordHash,
         mustChangePassword: true,
         isOperational: true,
         personnelRole: account.personnelRole,
@@ -128,6 +129,7 @@ async function seed() {
     } else {
       await db.update(users).set({
         name: account.name,
+        ...(existingUser.mustChangePassword ? { passwordHash } : {}),
         personnelRole: account.personnelRole,
         role: account.personnelRole === "ADM" ? "admin" : "user",
         isOperational: true,
