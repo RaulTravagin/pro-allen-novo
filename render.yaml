@@ -1,7 +1,7 @@
 services:
   - type: web
     runtime: node
-    name: pro-allen-online
+    name: pro-allen-oficial
     region: oregon
     plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
