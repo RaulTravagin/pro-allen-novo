@@ -31,7 +31,7 @@ O servidor respeita a variável `PORT`; quando ela não for informada, inicia em
 | `GESTOR_ACCESS_PASSWORD` | Senha exclusiva da página do Gestor.                             |
 | `VITE_APP_TITLE`         | Título público do aplicativo; o valor recomendado é `Pro Allen`. |
 
-As senhas iniciais de supervisores podem ser fornecidas por `INITIAL_SUPERVISOR_PASSWORD` e `RAULTRAVAGIN_INITIAL_PASSWORD` durante o provisionamento. Não use os valores de exemplo em produção.
+As senhas iniciais de supervisores podem ser fornecidas por `INITIAL_SUPERVISOR_PASSWORD` e `RAULTRAVAGIN_INITIAL_PASSWORD` durante o provisionamento. Os acessos administrativos iniciais usam `INITIAL_RH_PASSWORD` para `rh.proallen`, `INITIAL_FINANCEIRO_PASSWORD` para `financeiro.proallen` e `INITIAL_ADMIN_PASSWORD` para `admin.proallen`. Não use valores de exemplo em produção.
 
 ## Módulo de gestão de pessoal e financeiro
 
@@ -46,7 +46,7 @@ pnpm build
 pnpm start
 ```
 
-O perfil efetivo segue estas regras: contas existentes com `users.role = admin` são tratadas como **ADM**; contas operacionais sem `personnelRole` são tratadas como **SUPERVISOR**. O ADM pode atribuir **SUPERVISOR**, **RH**, **FINANCEIRO** ou **ADM** na aba **Perfis de acesso** dentro de `/pessoal`. Supervisores lançam registros, RH aprova ou rejeita, e Financeiro quita somente valores aprovados.
+O perfil efetivo segue estas regras: contas existentes com `users.role = admin` são tratadas como **ADM**; contas operacionais sem `personnelRole` são tratadas como **SUPERVISOR**. A tela inicial permite escolher Supervisor, RH, Financeiro ou Admin, mas o perfil real retornado pelo servidor sempre prevalece no redirecionamento. RH e ADM podem atribuir **SUPERVISOR**, **RH**, **FINANCEIRO** ou **ADM** e criar novos logins na aba **Usuários do Sistema** dentro de `/pessoal`. Supervisores lançam registros, RH aprova ou rejeita, e Financeiro quita somente valores aprovados.
 
 O upload de atestados aceita PDF, JPG, PNG e WEBP de até 10 MB. Os bytes são enviados para o storage configurado e apenas a referência do arquivo é persistida no banco. Para habilitar o upload, defina `BUILT_IN_FORGE_API_URL` e `BUILT_IN_FORGE_API_KEY`; sem essas variáveis, os demais fluxos do módulo continuam disponíveis, mas o envio de atestado será recusado com uma mensagem de configuração.
 

@@ -291,11 +291,11 @@ export default function PersonnelDashboard({
               label="Funcionários"
               onClick={() => setActiveSection("employees")}
             />
-            {isAdmin && (
+            {isReviewer && (
               <NavButton
                 active={activeSection === "users"}
                 icon={UserCog}
-                label="Perfis de acesso"
+                label="Usuários do Sistema"
                 onClick={() => setActiveSection("users")}
               />
             )}
@@ -369,8 +369,8 @@ export default function PersonnelDashboard({
               onRefresh={invalidateDashboard}
             />
           )}
-          {activeSection === "users" && isAdmin && (
-            <UsersSection onRefresh={invalidateDashboard} />
+          {activeSection === "users" && isReviewer && (
+            <UsersSection onRefresh={invalidateDashboard} canManageRoles={isAdmin} />
           )}
           {activeSection === "finance" && isFinance && (
             <FinanceQueue data={data} onRefresh={invalidateDashboard} />
@@ -1438,108 +1438,73 @@ function EmployeesSection({
   );
 }
 
-function UsersSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
+function UsersSection({ onRefresh, canManageRoles }: { onRefresh: () => Promise<void>; canManageRoles: boolean }) {
   const usersQuery = trpc.personnel.users.useQuery();
   const setRole = trpc.personnel.setUserRole.useMutation();
-  const saveRole = async (userId: number, personnelRole: PersonnelRole) => {
+  const createUser = trpc.personnel.createUser.useMutation();
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [personnelRole, setPersonnelRole] = useState<PersonnelRole>("RH");
+
+  const saveRole = async (userId: number, nextRole: PersonnelRole) => {
     try {
-      await setRole.mutateAsync({ userId, personnelRole });
+      await setRole.mutateAsync({ userId, personnelRole: nextRole });
       toast.success("Perfil atualizado");
       await Promise.all([usersQuery.refetch(), onRefresh()]);
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível atualizar o perfil"
-      );
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o perfil");
     }
   };
+
+  const saveUser = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await createUser.mutateAsync({ name, username, password, personnelRole });
+      toast.success("Usuário criado. Entregue a senha diretamente ao colaborador.");
+      setName("");
+      setUsername("");
+      setPassword("");
+      setPersonnelRole("RH");
+      await Promise.all([usersQuery.refetch(), onRefresh()]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível criar o usuário");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">
-          Segurança
-        </p>
-        <h2 className="mt-1 text-2xl font-black tracking-tight">
-          Perfis de acesso
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Defina quem lança, audita e quita os registros.
-        </p>
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Segurança</p>
+        <h2 className="mt-1 text-2xl font-black tracking-tight">Usuários do Sistema</h2>
+        <p className="mt-1 text-sm text-slate-500">Crie logins para RH, Financeiro e Supervisão e mantenha os perfis sob controle.</p>
       </div>
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <UserCog className="h-5 w-5 text-blue-600" />
-            Usuários ativos
-          </CardTitle>
-          <CardDescription>
-            O perfil ADM mantém acesso global ao módulo.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {usersQuery.isLoading ? (
-            <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando usuários...
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[650px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-3">Usuário</th>
-                    <th className="px-3 py-3">Login</th>
-                    <th className="px-3 py-3">Acesso operacional</th>
-                    <th className="px-3 py-3">Perfil do módulo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(usersQuery.data ?? []).map((item: any) => (
-                    <tr key={item.id}>
-                      <td className="px-3 py-3 font-semibold">
-                        {item.name || "Sem nome"}
-                      </td>
-                      <td className="px-3 py-3 text-slate-500">
-                        {item.username || item.email || "—"}
-                      </td>
-                      <td className="px-3 py-3">
-                        {item.isOperational ? (
-                          <span className="text-emerald-700">Ativo</span>
-                        ) : (
-                          <span className="text-slate-400">Inativo</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3">
-                        <select
-                          value={
-                            item.role === "admin"
-                              ? "ADM"
-                              : item.personnelRole || "SUPERVISOR"
-                          }
-                          onChange={event =>
-                            void saveRole(
-                              item.id,
-                              event.target.value as PersonnelRole
-                            )
-                          }
-                          disabled={setRole.isPending}
-                          className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
-                        >
-                          <option value="SUPERVISOR">Supervisor</option>
-                          <option value="RH">RH</option>
-                          <option value="FINANCEIRO">Financeiro</option>
-                          <option value="ADM">ADM</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg"><Plus className="h-5 w-5 text-blue-600" />Novo login</CardTitle>
+            <CardDescription>A senha é armazenada somente como hash e deve ser entregue de forma reservada.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={saveUser}>
+              <div className="space-y-1.5"><Label htmlFor="system-user-name">Nome completo</Label><Input id="system-user-name" value={name} onChange={event => setName(event.target.value)} required minLength={2} /></div>
+              <div className="space-y-1.5"><Label htmlFor="system-user-username">Usuário de login</Label><Input id="system-user-username" value={username} onChange={event => setUsername(event.target.value.toLowerCase())} placeholder="ex.: novo.rh" autoComplete="off" required /></div>
+              <div className="space-y-1.5"><Label htmlFor="system-user-password">Senha provisória</Label><Input id="system-user-password" type="password" value={password} onChange={event => setPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></div>
+              <div className="space-y-1.5"><Label htmlFor="system-user-role">Perfil</Label><select id="system-user-role" value={personnelRole} onChange={event => setPersonnelRole(event.target.value as PersonnelRole)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="RH">RH</option><option value="FINANCEIRO">Financeiro</option><option value="SUPERVISOR">Supervisor</option><option value="ADM">Admin</option></select></div>
+              <Button type="submit" className="w-full bg-[#0d1b2a] hover:bg-slate-800" disabled={createUser.isPending}>{createUser.isPending ? "Criando..." : "Criar usuário"}</Button>
+            </form>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg"><UserCog className="h-5 w-5 text-blue-600" />Usuários cadastrados</CardTitle>
+            <CardDescription>O perfil ADM mantém acesso global. Senhas nunca são exibidas nesta lista.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {usersQuery.isLoading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Carregando usuários...</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th className="px-3 py-3">Usuário</th><th className="px-3 py-3">Login</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Perfil</th></tr></thead><tbody className="divide-y divide-slate-100">{(usersQuery.data ?? []).map((item: any) => <tr key={item.id}><td className="px-3 py-3 font-semibold">{item.name || "Sem nome"}</td><td className="px-3 py-3 text-slate-500">{item.username || item.email || "—"}</td><td className="px-3 py-3"><span className={item.isOperational ? "text-emerald-700" : "text-slate-400"}>{item.isOperational ? "Ativo" : "Inativo"}</span>{item.mustChangePassword && <span className="ml-2 text-xs text-amber-700">Senha provisória</span>}</td><td className="px-3 py-3"><select value={item.role === "admin" ? "ADM" : item.personnelRole || "SUPERVISOR"} onChange={event => void saveRole(item.id, event.target.value as PersonnelRole)} disabled={!canManageRoles || setRole.isPending} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"><option value="SUPERVISOR">Supervisor</option><option value="RH">RH</option><option value="FINANCEIRO">Financeiro</option><option value="ADM">ADM</option></select></td></tr>)}</tbody></table></div>}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

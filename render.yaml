@@ -24,3 +24,9 @@ services:
         sync: false
       - key: RAULTRAVAGIN_INITIAL_PASSWORD
         sync: false
+      - key: INITIAL_RH_PASSWORD
+        sync: false
+      - key: INITIAL_FINANCEIRO_PASSWORD
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false

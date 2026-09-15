@@ -17,6 +17,12 @@ const supervisorCatalog = [
   { username: "raultravagin", name: "Raul Travagin", shift: "reliever" as const, passwordEnv: "RAULTRAVAGIN_INITIAL_PASSWORD" },
 ] as const;
 
+const personnelCatalog = [
+  { username: "rh.proallen", name: "RH Pro Allen", personnelRole: "RH" as const, passwordEnv: "INITIAL_RH_PASSWORD" },
+  { username: "financeiro.proallen", name: "Financeiro Pro Allen", personnelRole: "FINANCEIRO" as const, passwordEnv: "INITIAL_FINANCEIRO_PASSWORD" },
+  { username: "admin.proallen", name: "Admin Pro Allen", personnelRole: "ADM" as const, passwordEnv: "INITIAL_ADMIN_PASSWORD" },
+] as const;
+
 async function seed() {
   const db = await getDb();
   if (!db) throw new Error("DATABASE_URL não configurada ou inacessível.");
@@ -99,7 +105,37 @@ async function seed() {
       });
     }
   }
-  console.log("[External seed] Rotas, postos e supervisores iniciais verificados.");
+
+  for (const account of personnelCatalog) {
+    const password = process.env[account.passwordEnv];
+    if (!password) {
+      console.warn(`[External seed] ${account.passwordEnv} não configurada; ${account.username} não será criado neste deploy.`);
+      continue;
+    }
+    const [existingUser] = await db.select().from(users).where(eq(users.username, account.username)).limit(1);
+    if (!existingUser) {
+      await db.insert(users).values({
+        openId: `local:${account.username}`,
+        username: account.username,
+        name: account.name,
+        loginMethod: "local",
+        passwordHash: await hashSupervisorPassword(password),
+        mustChangePassword: true,
+        isOperational: true,
+        personnelRole: account.personnelRole,
+        role: account.personnelRole === "ADM" ? "admin" : "user",
+      });
+    } else {
+      await db.update(users).set({
+        name: account.name,
+        personnelRole: account.personnelRole,
+        role: account.personnelRole === "ADM" ? "admin" : "user",
+        isOperational: true,
+        updatedAt: new Date(),
+      }).where(eq(users.id, existingUser.id));
+    }
+  }
+  console.log("[External seed] Rotas, postos, supervisores e portais administrativos verificados.");
 }
 
 seed().catch((error) => {

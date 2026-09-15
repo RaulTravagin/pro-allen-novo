@@ -90,6 +90,35 @@ describe("localAuth.login", () => {
     expect(cookies[0]?.name).toBe("supervisor_access");
   });
 
+  it("permite login local do Admin e devolve o perfil ADM", async () => {
+    const password = "Admin-Teste-2026!";
+    const passwordHash = await hashSupervisorPassword(password);
+    vi.mocked(db.getUserByUsername).mockResolvedValue({
+      id: 77,
+      openId: "local:admin.proallen",
+      name: "Admin Pro Allen",
+      email: null,
+      loginMethod: "local",
+      username: "admin.proallen",
+      passwordHash,
+      mustChangePassword: true,
+      isOperational: true,
+      personnelRole: "ADM",
+      role: "admin",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    } as never);
+
+    const { context } = createContext();
+    const result = await appRouter.createCaller(context).localAuth.login({
+      username: "admin.proallen",
+      password,
+    });
+
+    expect(result.user).toMatchObject({ username: "admin.proallen", personnelRole: "ADM", role: "admin" });
+  });
+
   it("recusa senha incorreta", async () => {
     vi.mocked(db.getUserByUsername).mockResolvedValue(undefined);
     await expect(appRouter.createCaller(createContext().context).localAuth.login({

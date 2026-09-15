@@ -1833,15 +1833,41 @@ export async function getPersonnelEmployeeById(id: number) {
 export async function listPersonnelUsers() {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ id: users.id, name: users.name, username: users.username, email: users.email, role: users.role, personnelRole: users.personnelRole, isOperational: users.isOperational })
+  return db.select({ id: users.id, name: users.name, username: users.username, email: users.email, role: users.role, personnelRole: users.personnelRole, isOperational: users.isOperational, mustChangePassword: users.mustChangePassword })
     .from(users).where(eq(users.isOperational, true)).orderBy(users.name);
 }
 
 export async function updatePersonnelUserRole(id: number, personnelRole: PersonnelRole) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(users).set({ personnelRole, updatedAt: new Date() }).where(eq(users.id, id));
+  await db.update(users).set({ personnelRole, role: personnelRole === "ADM" ? "admin" : "user", updatedAt: new Date() }).where(eq(users.id, id));
   return getUserById(id);
+}
+
+export async function createPersonnelUser(input: {
+  name: string;
+  username: string;
+  passwordHash: string;
+  personnelRole: PersonnelRole;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const username = input.username.trim().toLowerCase();
+  const existing = await getUserByUsername(username);
+  if (existing) throw new Error("Este usuário já existe");
+  const result = await db.insert(users).values({
+    openId: `local:${username}`,
+    name: input.name.trim(),
+    loginMethod: "local",
+    username,
+    passwordHash: input.passwordHash,
+    mustChangePassword: true,
+    isOperational: true,
+    personnelRole: input.personnelRole,
+    role: input.personnelRole === "ADM" ? "admin" : "user",
+    lastSignedIn: new Date(),
+  }).returning({ id: users.id });
+  return getUserById(getInsertedId(result));
 }
 
 export async function listPersonnelFts(supervisorId: number, role: PersonnelRole) {

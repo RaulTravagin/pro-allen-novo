@@ -16,6 +16,7 @@ import {
   createSupervisorSession,
   LOCAL_SUPERVISOR_COOKIE_NAME,
   LOCAL_SUPERVISOR_SESSION_MAX_AGE_SECONDS,
+  hashSupervisorPassword,
   verifySupervisorPassword,
 } from "./local-supervisor-auth";
 import { buildDailyOperationalReport } from "./daily-operational-report";
@@ -164,9 +165,33 @@ export const appRouter = router({
       }),
 
     users: protectedProcedure.query(async ({ ctx }) => {
-      if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode gerenciar perfis" });
+      const role = db.getPersonnelRole(ctx.user);
+      if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode gerenciar usuários" });
       return db.listPersonnelUsers();
     }),
+
+    createUser: protectedProcedure
+      .input(z.object({
+        name: z.string().trim().min(2, "Informe o nome completo").max(255),
+        username: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{2,63}$/, "Use apenas letras, números, ponto, hífen ou sublinhado"),
+        password: z.string().min(8, "A senha deve ter pelo menos 8 caracteres").max(200),
+        personnelRole: z.enum(["SUPERVISOR", "RH", "FINANCEIRO", "ADM"] as const),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const requesterRole = db.getPersonnelRole(ctx.user);
+        if (requesterRole !== "RH" && requesterRole !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode criar usuários" });
+        if (requesterRole === "RH" && input.personnelRole === "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "O RH não pode criar usuários ADM" });
+        try {
+          return db.createPersonnelUser({
+            name: input.name,
+            username: input.username,
+            passwordHash: await hashSupervisorPassword(input.password),
+            personnelRole: input.personnelRole,
+          });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível criar o usuário" });
+        }
+      }),
 
     setUserRole: protectedProcedure
       .input(z.object({ userId: z.number().int().positive(), personnelRole: z.enum(["SUPERVISOR", "RH", "FINANCEIRO", "ADM"] as const) }))
@@ -280,7 +305,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const user = await db.getUserByUsername(input.username.toLowerCase());
         const passwordValid = user ? await verifySupervisorPassword(input.password, user.passwordHash) : false;
-        if (!user || !passwordValid || user.role !== "user" || user.isOperational === false) {
+        if (!user || !passwordValid || (user.role !== "user" && user.role !== "admin") || user.isOperational === false) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos" });
         }
         const token = await createSupervisorSession(user.id);
@@ -288,7 +313,16 @@ export const appRouter = router({
           ...getSessionCookieOptions(ctx.req),
           maxAge: LOCAL_SUPERVISOR_SESSION_MAX_AGE_SECONDS * 1000,
         });
-        return { success: true, user: { id: user.id, name: user.name, username: user.username } };
+        return {
+          success: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            role: user.role,
+            personnelRole: user.personnelRole ?? (user.role === "admin" ? "ADM" : "SUPERVISOR"),
+          },
+        };
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       ctx.res.clearCookie(LOCAL_SUPERVISOR_COOKIE_NAME, { ...getSessionCookieOptions(ctx.req), maxAge: -1 });
