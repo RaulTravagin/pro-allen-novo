@@ -15,6 +15,7 @@ function PostCardFlowHarness() {
       id={22}
       postId={3}
       postName="Posto de teste"
+      occurrenceReport="Visita realizada e posto em funcionamento."
       status={status}
       arrivalTime={arrivalTime}
       departureTime={departureTime}
@@ -28,7 +29,7 @@ function PostCardFlowHarness() {
         setStatus("visited");
         setDepartureTime(new Date("2026-08-12T12:00:00.000Z"));
       }}
-      onOpenChecklist={vi.fn()}
+      onOpenOccurrence={vi.fn()}
     />
   );
 }
@@ -57,6 +58,7 @@ describe("PostCard", () => {
         id={23}
         postId={4}
         postName="Posto com GPS"
+        occurrenceReport="Visita realizada e posto em funcionamento."
         status="visited"
         arrivalTime={new Date("2026-08-12T11:00:00.000Z")}
         departureTime={new Date("2026-08-12T11:30:00.000Z")}
@@ -66,7 +68,7 @@ describe("PostCard", () => {
         departureLongitude="-46.98760000"
         onCheckIn={async () => undefined}
         onCheckOut={async () => undefined}
-        onOpenChecklist={vi.fn()}
+        onOpenOccurrence={vi.fn()}
       />,
     );
 

@@ -10,8 +10,7 @@ import {
   getLocalSession,
   importLocalContingencyData,
   loginLocal,
-  saveLocalChecklistItem,
-  saveLocalVisitObservations,
+  saveLocalVisitOccurrence,
   startLocalActivity,
   updateLocalKm,
 } from "./localContingency";
@@ -19,7 +18,7 @@ import {
 afterEach(() => clearLocalContingencyData());
 
 describe("modo local de contingência", () => {
-  it("persiste login, rota, quilometragem e checklist no navegador", async () => {
+  it("persiste login, rota, quilometragem e ocorrência no navegador", async () => {
     const session = await loginLocal("paulo.murashita", "123456");
     expect(session).toMatchObject({ username: "paulo.murashita", name: "Paulo Murashita" });
     expect(getLocalSession()?.username).toBe("paulo.murashita");
@@ -28,11 +27,10 @@ describe("modo local de contingência", () => {
     const withInitialKm = updateLocalKm(activity.id, 12000, "initial");
     const firstVisit = withInitialKm.visits[0];
     const checkedIn = checkInLocalVisit(activity.id, firstVisit.id);
-    const withChecklist = saveLocalChecklistItem(activity.id, firstVisit.id, checkedIn.visits[0].items[0].id, "conforme", "Tudo em ordem");
-    saveLocalVisitObservations(activity.id, firstVisit.id, "Visita local registrada durante manutenção.");
+    const withOccurrence = saveLocalVisitOccurrence(activity.id, firstVisit.id, "Visita local registrada durante manutenção.");
     const checkedOut = checkOutLocalVisit(activity.id, firstVisit.id);
 
-    expect(withChecklist.visits[0].items[0]).toMatchObject({ answer: "conforme", notes: "Tudo em ordem" });
+    expect(withOccurrence.visits[0].occurrenceReport).toBe("Visita local registrada durante manutenção.");
     expect(checkedOut.visits[0]).toMatchObject({ status: "visited", arrivalAt: expect.any(String), departureAt: expect.any(String) });
 
     const closed = updateLocalKm(activity.id, 12012, "final");

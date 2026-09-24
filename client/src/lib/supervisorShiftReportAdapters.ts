@@ -20,7 +20,7 @@ function mapVisit(visit: any): PdfVisit {
     status: visit.status,
     arrivalTime: visit.arrivalTime,
     departureTime: visit.departureTime,
-    auditSubmittedAt: visit.auditSubmittedAt,
+    occurrenceSubmittedAt: visit.occurrenceSubmittedAt,
     durationMinutes: visit.durationMinutes,
     observations: visit.observations,
     isCoverage: visit.isCoverage,
@@ -29,7 +29,7 @@ function mapVisit(visit: any): PdfVisit {
     arrivalLongitude: visit.arrivalLongitude,
     departureLatitude: visit.departureLatitude,
     departureLongitude: visit.departureLongitude,
-    checklistItems: visit.checklistItems ?? [],
+    occurrenceReport: visit.occurrenceReport,
   };
 }
 
@@ -77,12 +77,12 @@ export function buildSupervisorShiftPdfInput(report: any): PdfReportInput {
       { label: "KM percorrido", value: `${Number(metrics.kmCovered ?? 0).toLocaleString("pt-BR")} km` },
       { label: "Visitas concluídas", value: String(metrics.completedVisits ?? 0) },
       { label: "Coberturas", value: String(metrics.coverageCount ?? 0) },
-      { label: "Ocorrências", value: String(metrics.nonCompliantItems ?? 0), alert: Number(metrics.nonCompliantItems ?? 0) > 0 },
+      { label: "Ocorrências", value: String(metrics.occurrenceCount ?? 0), alert: Number(metrics.occurrenceCount ?? 0) > 0 },
     ],
     summaryLines: [
       `Quilometragem: inicial ${metrics.kmInitial ?? "—"} km · final ${metrics.kmFinal ?? "—"} km · percorrido ${Number(metrics.kmCovered ?? 0).toLocaleString("pt-BR")} km.`,
       `Abastecimentos: ${fuelLabel}${metrics.fuelLiters ? ` · ${Number(metrics.fuelLiters).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} L` : ""}.`,
-      `Registros: ${metrics.observationCount ?? 0} observação(ões), ${metrics.nonCompliantItems ?? 0} não conformidade(s) e ${metrics.pendingVisits ?? 0} visita(s) pendente(s).`,
+      `Registros: ${metrics.occurrenceCount ?? 0} ocorrência(s) enviadas e ${metrics.pendingVisits ?? 0} visita(s) pendente(s).`,
     ],
     sections,
     fileName: `relatorio-turno-${slugifyFileName(supervisorName)}-${reportDate.toISOString().slice(0, 10)}.pdf`,

@@ -23,15 +23,15 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import Login from "./Login";
 
 describe("Login", () => {
-  it("exibe o login local do supervisor e o atalho local do Gestor", () => {
+  it("exibe o portal do supervisor e o atalho local do Gestor", () => {
     render(<Login />);
 
     expect(screen.getByText("Pro Allen")).toBeTruthy();
     expect(screen.getByText("CT3 Chults Travagin")).toBeTruthy();
-    expect(screen.getByText("Acesso do Supervisor")).toBeTruthy();
+    expect(screen.getAllByText("Portal do Supervisor").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Usuário")).toBeTruthy();
     expect(screen.getByLabelText("Senha")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Entrar como supervisor" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Entrar no portal do Supervisor" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Entrar no Sistema" })).toBeNull();
     expect(screen.getByRole("link", { name: "Acesso do Gestor" })).toHaveProperty("href", "http://localhost:3000/gestor/acesso");
   });

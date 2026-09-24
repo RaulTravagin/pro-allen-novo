@@ -69,6 +69,7 @@ describe("checklists.checkIn e checkOut", () => {
       supervisorRouteId: 11,
       postId: 3,
       status: "in_progress",
+      occurrenceReport: "Visita realizada e posto em funcionamento.",
     } as never);
     await expect(caller.checklists.checkOut({ checklistId: 22, latitude: -23.5, longitude: -46.6 })).resolves.toMatchObject({
       success: true,
@@ -90,7 +91,7 @@ describe("checklists.checkIn e checkOut", () => {
       checklistId: 99,
     });
     expect(db.createVisitChecklist).toHaveBeenCalledWith(11, 3);
-    expect(db.createChecklistItem).toHaveBeenCalledTimes(9);
+    expect(db.createChecklistItem).not.toHaveBeenCalled();
     expect(db.updateVisitChecklist).toHaveBeenNthCalledWith(3, 99, expect.objectContaining({ status: "in_progress" }));
   });
 

@@ -15,7 +15,7 @@ export default function ReportExport() {
   const [isExporting, setIsExporting] = useState(false);
 
   // Queries
-  const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
+  const { data: reports, isLoading: reportsLoading } = trpc.reports.occurrencesByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -29,7 +29,7 @@ export default function ReportExport() {
     setIsExporting(true);
     try {
       // Create CSV content
-      const headers = ["Posto", "Rota", "Supervisor", "Chegada", "Saída", "Duração", "Data", "Observações"];
+      const headers = ["Posto", "Rota", "Supervisor", "Chegada", "Saída", "Duração", "Data", "Ocorrência / relatório"];
       const rows = reports.map((r: any) => {
         const arrival = r.arrivalTime ? new Date(r.arrivalTime).toLocaleTimeString('pt-BR') : '-';
         const departure = r.departureTime ? new Date(r.departureTime).toLocaleTimeString('pt-BR') : '-';
@@ -46,7 +46,7 @@ export default function ReportExport() {
           departure,
           duration,
           date,
-          r.observations || '-'
+          r.occurrenceReport || '-'
         ];
       });
 
@@ -141,7 +141,7 @@ export default function ReportExport() {
                 <SelectContent>
                   <SelectItem value="visits">Relatório de Visitas com Horários</SelectItem>
                   <SelectItem value="summary">Resumo Executivo</SelectItem>
-                  <SelectItem value="compliance">Conformidade do Checklist</SelectItem>
+                  <SelectItem value="compliance">Registros de ocorrência</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -152,7 +152,7 @@ export default function ReportExport() {
                 <strong>Período:</strong> {dateRange.start.toLocaleDateString('pt-BR')} a {dateRange.end.toLocaleDateString('pt-BR')}
               </p>
               <p className="text-sm text-gray-600 mb-2">
-                <strong>Tipo:</strong> {reportType === 'visits' ? 'Visitas com Horários' : reportType === 'summary' ? 'Resumo Executivo' : 'Conformidade'}
+                <strong>Tipo:</strong> {reportType === 'visits' ? 'Visitas com Horários' : reportType === 'summary' ? 'Resumo Executivo' : 'Registros de ocorrência'}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Registros:</strong> {reports?.length || 0} visitas

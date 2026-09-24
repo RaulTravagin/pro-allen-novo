@@ -47,7 +47,7 @@ const bulletsBySlide = {
   solution: [
     "Plataforma web centralizada",
     "Geolocalização ao vivo da operação",
-    "Checklists digitais com evidências",
+    "Ocorrências digitais com evidências",
     "Controle rigoroso de rotas e postos",
   ],
 };
@@ -180,7 +180,7 @@ export default function Presentation() {
       slide = pptx.addSlide("PRO_ALLEN_MASTER");
       addTitle(slide, "02  /  Módulos", "Uma visão única da operação em campo", "Os dados deixam de ficar dispersos e passam a formar uma cadeia operacional rastreável.");
       addCard(slide, 0.7, 2.5, 3.86, 3.35, "Módulo 01", "Mapa operacional", "Última posição GPS dos supervisores, geocodificação dos postos e leitura visual da cobertura em tempo real.", "◉");
-      addCard(slide, 4.74, 2.5, 3.86, 3.35, "Módulo 02", "Checklists e rotas", "Rotinas de inspeção padronizadas, auditorias, registros de ocorrência e relatórios imediatos.", "✓");
+      addCard(slide, 4.74, 2.5, 3.86, 3.35, "Módulo 02", "Ocorrências e rotas", "Rotinas de inspeção padronizadas, auditorias, registros de ocorrência e relatórios imediatos.", "✓");
       addCard(slide, 8.78, 2.5, 3.84, 3.35, "Módulo 03", "Gestão de acessos", "Perfis distintos para Supervisor, Gestor e Administrador, com autenticação segura e permissões claras.", "⌁");
       addFooter(slide, "Módulos");
 
@@ -201,7 +201,7 @@ export default function Presentation() {
       addFooter(slide, "Mapa operacional");
 
       slide = pptx.addSlide("PRO_ALLEN_MASTER");
-      addTitle(slide, "04  /  Rotina digital", "Checklists que transformam visita em evidência", "Cada inspeção nasce com padrão, contexto e possibilidade de auditoria imediata.");
+      addTitle(slide, "04  /  Rotina digital", "Ocorrências que transformam visita em evidência", "Cada visita gera um registro obrigatório, com contexto e acompanhamento imediato.");
       slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 2.43, w: 4.05, h: 3.62, rectRadius: 0.08, fill: { color: COLORS.yellow }, line: { color: COLORS.yellow } });
       slide.addText("01", { x: 1.05, y: 2.86, w: 0.8, h: 0.45, fontFace: "Aptos Display", fontSize: 25, bold: true, color: COLORS.ink, margin: 0 });
       slide.addText("Executar", { x: 1.05, y: 3.55, w: 2.8, h: 0.38, fontFace: "Aptos Display", fontSize: 21, bold: true, color: COLORS.ink, margin: 0 });
@@ -209,7 +209,7 @@ export default function Presentation() {
       slide.addShape(pptx.ShapeType.line, { x: 5.35, y: 4.3, w: 1.05, h: 0, line: { color: COLORS.yellow, width: 2.2, endArrowType: "triangle" } });
       addCard(slide, 6.7, 2.43, 2.72, 3.62, "02", "Registrar", "Ocorrências, observações e comprovações ficam associadas à visita, sem depender de papel ou mensagens soltas.", "→");
       addCard(slide, 9.9, 2.43, 2.72, 3.62, "03", "Agir", "O gestor recebe uma visão atualizada para orientar, alertar o cliente e priorizar a fiscalização.", "↗");
-      addFooter(slide, "Checklists e rotas");
+      addFooter(slide, "Ocorrências e rotas");
 
       slide = pptx.addSlide("PRO_ALLEN_MASTER");
       addTitle(slide, "05  /  Tecnologia", "Arquitetura moderna, segurança como fundamento", "A solução combina uma experiência simples em campo com uma base técnica preparada para crescer.");
@@ -240,7 +240,7 @@ export default function Presentation() {
       slide = pptx.addSlide("PRO_ALLEN_MASTER");
       addTitle(slide, "07  /  Implantação", "Da primeira rota à operação 100% digital", "Uma adoção progressiva reduz risco, cria adesão e transforma o sistema em hábito operacional.");
       const phases = [
-        ["FASE 01", "Projeto piloto", "Rotas selecionadas", "Validar fluxos, ajustar checklists e medir a primeira experiência de campo."],
+        ["FASE 01", "Projeto piloto", "Rotas selecionadas", "Validar fluxos, ajustar registros de ocorrência e medir a primeira experiência de campo."],
         ["FASE 02", "Treinamento e engajamento", "Equipe de supervisão", "Formar multiplicadores e consolidar a rotina digital na operação."],
         ["FASE 03", "Escala total", "Todos os postos", "Operação 100% digital, com acompanhamento de indicadores e melhoria contínua."],
       ];
@@ -308,7 +308,7 @@ export default function Presentation() {
 
         <article id="presentation-slide-2" className="presentation-slide presentation-slide--paper">
           <header className="presentation-slide__header"><div><p className="presentation-eyebrow presentation-eyebrow--ink">02 / MÓDULOS</p><h2>Uma visão única<br /><span>da operação em campo</span></h2><p className="presentation-subtitle presentation-subtitle--ink">Os dados deixam de ficar dispersos e passam a formar uma cadeia operacional rastreável.</p></div><div className="presentation-header-mark presentation-header-mark--ink">03<br /><strong>MÓDULOS</strong></div></header>
-          <div className="presentation-feature-grid"><FeatureCard icon={MapPinned} eyebrow="MÓDULO 01" title="Mapa operacional">Última posição GPS dos supervisores, geocodificação dos postos e leitura visual da cobertura em tempo real.</FeatureCard><FeatureCard icon={Route} eyebrow="MÓDULO 02" title="Checklists e rotas">Rotinas de inspeção padronizadas, auditorias, registros de ocorrência e relatórios imediatos.</FeatureCard><FeatureCard icon={ShieldCheck} eyebrow="MÓDULO 03" title="Gestão de acessos" accent="green">Perfis distintos para Supervisor, Gestor e Administrador, com autenticação segura e permissões claras.</FeatureCard></div><SlideNumber value="03" />
+          <div className="presentation-feature-grid"><FeatureCard icon={MapPinned} eyebrow="MÓDULO 01" title="Mapa operacional">Última posição GPS dos supervisores, geocodificação dos postos e leitura visual da cobertura em tempo real.</FeatureCard><FeatureCard icon={Route} eyebrow="MÓDULO 02" title="Ocorrências e rotas">Rotinas de inspeção padronizadas, auditorias, registros de ocorrência e relatórios imediatos.</FeatureCard><FeatureCard icon={ShieldCheck} eyebrow="MÓDULO 03" title="Gestão de acessos" accent="green">Perfis distintos para Supervisor, Gestor e Administrador, com autenticação segura e permissões claras.</FeatureCard></div><SlideNumber value="03" />
         </article>
 
         <article id="presentation-slide-3" className="presentation-slide presentation-slide--dark">
@@ -317,7 +317,7 @@ export default function Presentation() {
         </article>
 
         <article id="presentation-slide-4" className="presentation-slide presentation-slide--paper">
-          <header className="presentation-slide__header"><div><p className="presentation-eyebrow presentation-eyebrow--ink">04 / ROTINA DIGITAL</p><h2>Checklists que transformam<br /><span>visita em evidência</span></h2><p className="presentation-subtitle presentation-subtitle--ink">Cada inspeção nasce com padrão, contexto e possibilidade de auditoria imediata.</p></div><div className="presentation-header-number">01<span>→</span>02<span>→</span>03</div></header>
+          <header className="presentation-slide__header"><div><p className="presentation-eyebrow presentation-eyebrow--ink">04 / ROTINA DIGITAL</p><h2>Ocorrências que transformam<br /><span>visita em evidência</span></h2><p className="presentation-subtitle presentation-subtitle--ink">Cada visita gera um registro obrigatório, com contexto e acompanhamento imediato.</p></div><div className="presentation-header-number">01<span>→</span>02<span>→</span>03</div></header>
           <div className="presentation-routine"><section className="presentation-routine-card presentation-routine-card--highlight"><span className="presentation-routine-number">01</span><h3>Executar</h3><p>Roteiros objetivos guiam o supervisor em cada posto e reduzem a variação entre visitas.</p></section><ArrowRight className="presentation-routine-arrow" size={35} /><section className="presentation-routine-card"><span className="presentation-routine-number">02</span><h3>Registrar</h3><p>Ocorrências, observações e comprovações ficam associadas à visita, sem depender de papel ou mensagens soltas.</p></section><ArrowRight className="presentation-routine-arrow" size={35} /><section className="presentation-routine-card"><span className="presentation-routine-number">03</span><h3>Agir</h3><p>O gestor recebe uma visão atualizada para orientar, alertar o cliente e priorizar a fiscalização.</p></section></div><SlideNumber value="05" />
         </article>
 
@@ -333,7 +333,7 @@ export default function Presentation() {
 
         <article id="presentation-slide-7" className="presentation-slide presentation-slide--yellow">
           <header className="presentation-slide__header"><div><p className="presentation-eyebrow presentation-eyebrow--ink">07 / IMPLANTAÇÃO</p><h2>Da primeira rota à<br /><span>operação 100% digital</span></h2><p className="presentation-subtitle presentation-subtitle--ink">Uma adoção progressiva reduz risco, cria adesão e transforma o sistema em hábito operacional.</p></div><Target className="presentation-header-icon presentation-header-icon--ink" size={54} strokeWidth={1.1} /></header>
-          <div className="presentation-phases"><section className="presentation-phase presentation-phase--active"><span>FASE 01</span><h3>Projeto piloto</h3><small>Rotas selecionadas</small><p>Validar fluxos, ajustar checklists e medir a primeira experiência de campo.</p></section><ArrowRight className="presentation-phase-arrow" size={27} /><section className="presentation-phase"><span>FASE 02</span><h3>Treinamento e engajamento</h3><small>Equipe de supervisão</small><p>Formar multiplicadores e consolidar a rotina digital na operação.</p></section><ArrowRight className="presentation-phase-arrow" size={27} /><section className="presentation-phase"><span>FASE 03</span><h3>Escala total</h3><small>Todos os postos</small><p>Operação 100% digital, com acompanhamento de indicadores e melhoria contínua.</p></section></div><div className="presentation-closing"><Sparkles size={17} /> Próximo passo: selecionar as rotas do piloto e iniciar a virada operacional.</div><SlideNumber value="08" />
+          <div className="presentation-phases"><section className="presentation-phase presentation-phase--active"><span>FASE 01</span><h3>Projeto piloto</h3><small>Rotas selecionadas</small><p>Validar fluxos, ajustar registros de ocorrência e medir a primeira experiência de campo.</p></section><ArrowRight className="presentation-phase-arrow" size={27} /><section className="presentation-phase"><span>FASE 02</span><h3>Treinamento e engajamento</h3><small>Equipe de supervisão</small><p>Formar multiplicadores e consolidar a rotina digital na operação.</p></section><ArrowRight className="presentation-phase-arrow" size={27} /><section className="presentation-phase"><span>FASE 03</span><h3>Escala total</h3><small>Todos os postos</small><p>Operação 100% digital, com acompanhamento de indicadores e melhoria contínua.</p></section></div><div className="presentation-closing"><Sparkles size={17} /> Próximo passo: selecionar as rotas do piloto e iniciar a virada operacional.</div><SlideNumber value="08" />
         </article>
       </section>
 

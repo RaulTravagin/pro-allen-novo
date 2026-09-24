@@ -20,18 +20,15 @@ function asNumber(value: unknown) {
 export function buildDailyOperationalReport(snapshot: AnyRecord) {
   const supervisors = (snapshot.operationalSupervisors ?? []).map((supervisor: AnyRecord) => {
     const route = supervisor.route as AnyRecord | null;
-    const visits = route?.checklistVisits ?? [];
+    const visits = route?.visits ?? [];
     const completedVisits = visits.filter((visit: AnyRecord) => visit.status === "visited");
     const activeVisit = visits.find((visit: AnyRecord) => visit.status === "in_progress") ?? null;
     const coverages = visits.filter((visit: AnyRecord) => visit.isCoverage);
-    const checklistTotals = visits.filter((visit: AnyRecord) => visit.status === "visited" || visit.status === "in_progress").reduce((total: AnyRecord, visit: AnyRecord) => {
-      const checklist = visit.checklistSummary ?? {};
-      total.total += asNumber(checklist.total);
-      total.compliant += asNumber(checklist.compliant);
-      total.nonCompliant += asNumber(checklist.nonCompliant);
-      total.unanswered += asNumber(checklist.unanswered);
+    const occurrenceTotals = visits.filter((visit: AnyRecord) => visit.status === "visited" || visit.status === "in_progress").reduce((total: AnyRecord, visit: AnyRecord) => {
+      total.total += 1;
+      if (visit.occurrenceReport?.trim()) total.reported += 1;
       return total;
-    }, { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 });
+    }, { total: 0, reported: 0 });
 
     return {
       supervisorId: supervisor.supervisorId,
@@ -70,15 +67,14 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
           arrivalTime: visit.arrivalTime ?? null,
           departureTime: visit.departureTime ?? null,
           durationMinutes: visit.durationMinutes ?? null,
-          observations: visit.observations ?? null,
+          occurrenceReport: visit.occurrenceReport ?? visit.observations ?? null,
+          occurrenceSubmittedAt: visit.occurrenceSubmittedAt ?? null,
           isCoverage: Boolean(visit.isCoverage),
           coverageReason: visit.coverageReason ?? null,
           arrivalLatitude: visit.arrivalLatitude ?? null,
           arrivalLongitude: visit.arrivalLongitude ?? null,
           departureLatitude: visit.departureLatitude ?? null,
           departureLongitude: visit.departureLongitude ?? null,
-          checklist: visit.checklistSummary ?? { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 },
-          checklistItems: visit.checklistItems ?? [],
         })),
       } : null,
       latestLocation: supervisor.latestLocation ? {
@@ -88,7 +84,7 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
         recordedAt: supervisor.latestLocation.recordedAt ?? null,
       } : null,
       alerts: supervisor.alerts ?? [],
-      checklistTotals,
+      occurrenceTotals,
       completedVisitCount: completedVisits.length,
       coverageCount: coverages.length,
       activities: (supervisor.activities ?? []).map((activity: AnyRecord) => ({
@@ -117,11 +113,11 @@ export function buildDailyOperationalReport(snapshot: AnyRecord) {
     total.visitsInProgress += supervisor.route?.activeVisit ? 1 : 0;
     total.coverages += supervisor.coverageCount;
     total.kmCovered += asNumber(supervisor.route?.kmCovered);
-    total.nonCompliantItems += supervisor.checklistTotals.nonCompliant;
-    total.unansweredItems += supervisor.checklistTotals.unanswered;
+    total.reportedOccurrences += supervisor.occurrenceTotals.reported;
+    total.pendingOccurrenceReports += Math.max(0, supervisor.occurrenceTotals.total - supervisor.occurrenceTotals.reported);
     total.alerts += supervisor.alerts.length;
     return total;
-  }, { supervisors: 0, supervisorsOnRoute: 0, completedVisits: 0, pendingVisits: 0, visitsInProgress: 0, coverages: 0, kmCovered: 0, nonCompliantItems: 0, unansweredItems: 0, alerts: 0 });
+  }, { supervisors: 0, supervisorsOnRoute: 0, completedVisits: 0, pendingVisits: 0, visitsInProgress: 0, coverages: 0, kmCovered: 0, reportedOccurrences: 0, pendingOccurrenceReports: 0, alerts: 0 });
 
   return {
     reportDate: snapshot.reportDate ? new Date(snapshot.reportDate) : new Date(),

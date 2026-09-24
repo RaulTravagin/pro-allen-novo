@@ -255,7 +255,8 @@ export const visitChecklists = pgTable("visitChecklists", {
   arrivalTime: timestamp("arrivalTime", { withTimezone: true }),
   departureTime: timestamp("departureTime", { withTimezone: true }),
   visitedAt: timestamp("visitedAt", { withTimezone: true }),
-  auditSubmittedAt: timestamp("auditSubmittedAt", { withTimezone: true }),
+  occurrenceSubmittedAt: timestamp("occurrenceSubmittedAt", { withTimezone: true }),
+  occurrenceReport: text("occurrenceReport"),
   observations: text("observations"),
   isCoverage: boolean("isCoverage").default(false).notNull(),
   coverageReason: text("coverageReason"),
@@ -276,22 +277,6 @@ export const visitChecklists = pgTable("visitChecklists", {
 
 export type VisitChecklist = typeof visitChecklists.$inferSelect;
 export type InsertVisitChecklist = typeof visitChecklists.$inferInsert;
-
-export const checklistItems = pgTable("checklistItems", {
-  id: serial("id").primaryKey(),
-  visitChecklistId: integer("visitChecklistId").notNull(),
-  category: varchar("category", { length: 255 }).notNull(),
-  description: varchar("description", { length: 255 }).notNull(),
-  isCompliant: boolean("isCompliant"),
-  notes: text("notes"),
-  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: updatedAt(),
-}, (table) => ({
-  visitChecklistIdIdx: index("idx_checklistItems_visitChecklistId").on(table.visitChecklistId),
-}));
-
-export type ChecklistItem = typeof checklistItems.$inferSelect;
-export type InsertChecklistItem = typeof checklistItems.$inferInsert;
 
 export const supervisorLocations = pgTable("supervisorLocations", {
   id: serial("id").primaryKey(),
@@ -334,7 +319,6 @@ export const postsRelations = relations(posts, ({ one, many }) => ({ route: one(
 export const vehiclesRelations = relations(vehicles, ({ many }) => ({ supervisorRoutes: many(supervisorRoutes), fuelLogs: many(fuelLogs) }));
 export const supervisorRoutesRelations = relations(supervisorRoutes, ({ one, many }) => ({ supervisor: one(users, { fields: [supervisorRoutes.supervisorId], references: [users.id] }), route: one(routes, { fields: [supervisorRoutes.routeId], references: [routes.id] }), vehicle: one(vehicles, { fields: [supervisorRoutes.vehicleId], references: [vehicles.id] }), visitChecklists: many(visitChecklists), supervisorLocations: many(supervisorLocations), fuelLogs: many(fuelLogs) }));
 export const fuelLogsRelations = relations(fuelLogs, ({ one }) => ({ vehicle: one(vehicles, { fields: [fuelLogs.vehicleId], references: [vehicles.id] }), supervisorRoute: one(supervisorRoutes, { fields: [fuelLogs.supervisorRouteId], references: [supervisorRoutes.id] }), supervisor: one(users, { fields: [fuelLogs.supervisorId], references: [users.id] }) }));
-export const visitChecklistsRelations = relations(visitChecklists, ({ one, many }) => ({ supervisorRoute: one(supervisorRoutes, { fields: [visitChecklists.supervisorRouteId], references: [supervisorRoutes.id] }), post: one(posts, { fields: [visitChecklists.postId], references: [posts.id] }), checklistItems: many(checklistItems) }));
-export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({ visitChecklist: one(visitChecklists, { fields: [checklistItems.visitChecklistId], references: [visitChecklists.id] }) }));
+export const visitChecklistsRelations = relations(visitChecklists, ({ one }) => ({ supervisorRoute: one(supervisorRoutes, { fields: [visitChecklists.supervisorRouteId], references: [supervisorRoutes.id] }), post: one(posts, { fields: [visitChecklists.postId], references: [posts.id] }) }));
 export const supervisorLocationsRelations = relations(supervisorLocations, ({ one }) => ({ supervisor: one(users, { fields: [supervisorLocations.supervisorId], references: [users.id] }), supervisorRoute: one(supervisorRoutes, { fields: [supervisorLocations.supervisorRouteId], references: [supervisorRoutes.id] }) }));
 export const postVisitHistoryRelations = relations(postVisitHistory, ({ one }) => ({ post: one(posts, { fields: [postVisitHistory.postId], references: [posts.id] }), supervisor: one(users, { fields: [postVisitHistory.supervisorId], references: [users.id] }) }));

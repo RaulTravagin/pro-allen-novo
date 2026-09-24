@@ -43,7 +43,7 @@ describe("checklists.createCoverage", () => {
     vi.mocked(db.createVisitChecklist).mockResolvedValue(301);
   });
 
-  it("registra uma cobertura fora da rota com justificativa e checklist padrão", async () => {
+  it("registra uma cobertura fora da rota com justificativa e relato posterior", async () => {
     const result = await appRouter.createCaller(ownerContext).checklists.createCoverage({
       supervisorRouteId: 11,
       postId: 92,
@@ -55,7 +55,7 @@ describe("checklists.createCoverage", () => {
       isCoverage: true,
       coverageReason: "Cobertura emergencial por ausência no posto",
     });
-    expect(db.createChecklistItem).toHaveBeenCalledTimes(9);
+    expect(db.createChecklistItem).not.toHaveBeenCalled();
   });
 
   it("registra uma atividade na Base Operacional com justificativa e posto persistível", async () => {
@@ -71,7 +71,7 @@ describe("checklists.createCoverage", () => {
       isCoverage: true,
       coverageReason: "Permanência operacional na base",
     });
-    expect(db.createChecklistItem).toHaveBeenCalledTimes(9);
+    expect(db.createChecklistItem).not.toHaveBeenCalled();
   });
 
   it("exige justificativa antes de criar uma cobertura", async () => {

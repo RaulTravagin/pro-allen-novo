@@ -1,12 +1,4 @@
-export type LocalChecklistAnswer = "conforme" | "atencao" | "pendente";
 export type LocalVisitStatus = "pending" | "in_progress" | "visited";
-
-export type LocalChecklistItem = {
-  id: string;
-  label: string;
-  answer: LocalChecklistAnswer;
-  notes: string;
-};
 
 export type LocalVisit = {
   id: string;
@@ -16,8 +8,7 @@ export type LocalVisit = {
   status: LocalVisitStatus;
   arrivalAt: string | null;
   departureAt: string | null;
-  observations: string;
-  items: LocalChecklistItem[];
+  occurrenceReport: string;
 };
 
 export type LocalActivity = {
@@ -54,17 +45,6 @@ export type LocalRoute = {
 };
 
 const STORAGE_KEY = "pro-allen:contingency:v1";
-const CHECKLIST_LABELS = [
-  "Uniforme e apresentação pessoal",
-  "Pontualidade e escala",
-  "Livro de ocorrências",
-  "Procedimentos operacionais",
-  "Equipamentos e materiais",
-  "Limpeza e organização",
-  "Contato com o cliente",
-  "Registro fotográfico",
-  "Plano de ação (quando necessário)",
-];
 
 const LOCAL_USERS = [
   { username: "paulo.murashita", name: "Paulo Murashita", credentialHash: "eada2356396d89a2fe8429895da07f345f00b4bbe5db6200fe234e63749386fd" },
@@ -119,9 +99,7 @@ async function sha256(value: string) {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function getLocalSession() {
-  return readState().session;
-}
+export function getLocalSession() { return readState().session; }
 
 export async function loginLocal(username: string, password: string): Promise<LocalSession | null> {
   const normalizedUsername = username.trim().toLowerCase();
@@ -158,7 +136,7 @@ export function startLocalActivity(session: LocalSession, routeId: string) {
     id: uuid(), supervisorUsername: session.username, supervisorName: session.name,
     routeId: route.id, routeName: route.name, routeRegion: route.region, activityType: route.activityType,
     status: "in_progress", startedAt: now, completedAt: null, kmInitial: null, kmFinal: null,
-    visits: route.posts.map((post) => ({ id: uuid(), postId: post.id, postName: post.name, region: post.region, status: "pending", arrivalAt: null, departureAt: null, observations: "", items: CHECKLIST_LABELS.map((label) => ({ id: uuid(), label, answer: "pendente", notes: "" })) })),
+    visits: route.posts.map((post) => ({ id: uuid(), postId: post.id, postName: post.name, region: post.region, status: "pending", arrivalAt: null, departureAt: null, occurrenceReport: "" })),
   };
   const state = readState();
   writeState({ ...state, activities: [...state.activities, activity] });
@@ -188,10 +166,7 @@ export function updateLocalKm(activityId: string, km: number, type: "initial" | 
 }
 
 export function updateLocalVisit(activityId: string, visitId: string, update: (visit: LocalVisit) => LocalVisit) {
-  return updateLocalActivity(activityId, (activity) => ({
-    ...activity,
-    visits: activity.visits.map((visit) => visit.id === visitId ? update(visit) : visit),
-  }));
+  return updateLocalActivity(activityId, (activity) => ({ ...activity, visits: activity.visits.map((visit) => visit.id === visitId ? update(visit) : visit) }));
 }
 
 export function checkInLocalVisit(activityId: string, visitId: string) {
@@ -199,15 +174,14 @@ export function checkInLocalVisit(activityId: string, visitId: string) {
 }
 
 export function checkOutLocalVisit(activityId: string, visitId: string) {
-  return updateLocalVisit(activityId, visitId, (visit) => ({ ...visit, status: "visited", departureAt: new Date().toISOString() }));
+  return updateLocalVisit(activityId, visitId, (visit) => {
+    if (visit.occurrenceReport.trim().length < 8) throw new Error("Registre a ocorrência antes de registrar a saída.");
+    return { ...visit, status: "visited", departureAt: new Date().toISOString() };
+  });
 }
 
-export function saveLocalChecklistItem(activityId: string, visitId: string, itemId: string, answer: LocalChecklistAnswer, notes: string) {
-  return updateLocalVisit(activityId, visitId, (visit) => ({ ...visit, items: visit.items.map((item) => item.id === itemId ? { ...item, answer, notes } : item) }));
-}
-
-export function saveLocalVisitObservations(activityId: string, visitId: string, observations: string) {
-  return updateLocalVisit(activityId, visitId, (visit) => ({ ...visit, observations }));
+export function saveLocalVisitOccurrence(activityId: string, visitId: string, occurrenceReport: string) {
+  return updateLocalVisit(activityId, visitId, (visit) => ({ ...visit, occurrenceReport }));
 }
 
 export function exportLocalContingencyData() {
@@ -221,6 +195,4 @@ export function importLocalContingencyData(raw: string) {
   return writeState({ version: 1, session: parsed.session ?? null, activities: parsed.activities, updatedAt: new Date().toISOString() });
 }
 
-export function clearLocalContingencyData() {
-  localStorage.removeItem(STORAGE_KEY);
-}
+export function clearLocalContingencyData() { localStorage.removeItem(STORAGE_KEY); }

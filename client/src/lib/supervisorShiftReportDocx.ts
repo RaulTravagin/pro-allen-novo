@@ -115,17 +115,6 @@ function visitStatusLabel(status: string) {
   return ({ visited: "Concluído", in_progress: "Em atendimento", pending: "Pendente", skipped: "Não realizado" } as Record<string, string>)[status] ?? status;
 }
 
-function checklistSummary(checklist: any) {
-  const total = number(checklist?.total);
-  const compliant = number(checklist?.compliant);
-  const nonCompliant = number(checklist?.nonCompliant);
-  const unanswered = number(checklist?.unanswered);
-  if (!total) return "Checklist não iniciado";
-  if (nonCompliant) return `${nonCompliant} não conforme(s)`;
-  if (unanswered) return `${unanswered} sem resposta`;
-  return `${compliant}/${total} conforme`;
-}
-
 export function createSupervisorShiftWordDocument(report: any) {
   const metrics = report.metrics ?? {};
   const reportDate = new Date(report.reportDate);
@@ -134,10 +123,10 @@ export function createSupervisorShiftWordDocument(report: any) {
   const fuelLogs = report.fuelLogs ?? [];
   const observations = report.observations ?? [];
   const supervisorName = report.supervisor?.name ?? "Supervisor";
-  const attentionCount = number(metrics.nonCompliantItems);
+  const attentionCount = number(metrics.occurrenceCount);
   const completedVisits = number(metrics.completedVisits);
   const totalVisits = number(metrics.totalVisits);
-  const executiveSummary = `O turno de ${supervisorName} registrou ${completedVisits} visita(s) concluída(s) de ${totalVisits} prevista(s), ${number(metrics.coverageCount)} cobertura(s) ou atividade(s) na Base Operacional e ${formatKm(metrics.kmCovered)} percorridos. ${attentionCount ? `Foram identificados ${attentionCount} ponto(s) de atenção no checklist.` : "Não foram identificados pontos de atenção no checklist."}`;
+  const executiveSummary = `O turno de ${supervisorName} registrou ${completedVisits} visita(s) concluída(s) de ${totalVisits} prevista(s), ${number(metrics.coverageCount)} cobertura(s) ou atividade(s) na Base Operacional e ${formatKm(metrics.kmCovered)} percorridos. Foram enviados ${attentionCount} registro(s) de ocorrência.`;
   const activityRows = activities.map((activity: any) => [
     activityLabel(activity),
     statusLabel(activity.status),
@@ -148,8 +137,7 @@ export function createSupervisorShiftWordDocument(report: any) {
     `${text(visit.postName)}${visit.isCoverage ? `\n${visit.postName === "Base Operacional" ? "BASE OPERACIONAL" : "COBERTURA"}` : ""}\n${text(visit.routeName)}`,
     visitStatusLabel(visit.status),
     `Entrada: ${time(visit.arrivalTime)}\nSaída: ${time(visit.departureTime)}`,
-    visit.isCoverage ? `Justificativa: ${text(visit.coverageReason)}\n${text(visit.observations)}` : text(visit.observations),
-    checklistSummary(visit.checklistSummary),
+    `${visit.isCoverage ? `Justificativa: ${text(visit.coverageReason)}\n` : ""}${text(visit.occurrenceReport ?? visit.observations)}`,
   ]);
   const fuelRows = fuelLogs.map((fuel: any) => [
     time(fuel.createdAt),
@@ -172,11 +160,11 @@ export function createSupervisorShiftWordDocument(report: any) {
         new Paragraph({ spacing: { before: 160, after: 70 }, children: [new TextRun({ text: `Gerado em ${time(report.generatedAt)}  ·  Status do turno: `, color: MUTED, size: 17 }), new TextRun({ text: statusLabel(report.status), bold: true, color: report.status === "completed" ? GREEN : AMBER, size: 17 })] }),
         sectionTitle("Leitura executiva", "Visão geral"),
         new Paragraph({ spacing: { after: 130 }, children: [new TextRun({ text: executiveSummary, color: NAVY, size: 21 })] }),
-        table(["Início", "Término", "KM percorrido", "Visitas", "Atenção"], [[time(report.startedAt), time(report.completedAt), formatKm(metrics.kmCovered), `${completedVisits}/${totalVisits}`, String(attentionCount)], ["Período operacional", report.shiftType === "night" ? "Noturno · 18h–06h" : "Diurno · 06h–18h", `KM ${formatKm(metrics.kmInitial)} → ${formatKm(metrics.kmFinal)}`, `${number(metrics.coverageCount)} cobertura(s)/base`, attentionCount ? "Revisar checklist" : "Sem pendências"]], [20, 20, 20, 20, 20]),
+        table(["Início", "Término", "KM percorrido", "Visitas", "Ocorrências"], [[time(report.startedAt), time(report.completedAt), formatKm(metrics.kmCovered), `${completedVisits}/${totalVisits}`, String(attentionCount)], ["Período operacional", report.shiftType === "night" ? "Noturno · 18h–06h" : "Diurno · 06h–18h", `KM ${formatKm(metrics.kmInitial)} → ${formatKm(metrics.kmFinal)}`, `${number(metrics.coverageCount)} cobertura(s)/base`, attentionCount ? `${attentionCount} registro(s) enviado(s)` : "Nenhum registro enviado"]], [20, 20, 20, 20, 20]),
         sectionTitle("Atividades e horários", "Linha do tempo"),
         ...(activityRows.length ? [table(["Atividade", "Situação", "Janela", "Quilometragem"], activityRows, [26, 18, 28, 28])] : [new Paragraph({ children: [new TextRun({ text: "Nenhuma atividade registrada.", color: MUTED, italics: true })] })]),
         sectionTitle("Postos visitados, Base Operacional e coberturas", "Registros de campo"),
-        ...(visitRows.length ? [table(["Posto / atividade", "Situação", "Entrada e saída", "Observações / justificativa", "Checklist"], visitRows, [23, 15, 22, 28, 12])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto ou atividade de visita registrado neste turno.", color: MUTED, italics: true })] })]),
+        ...(visitRows.length ? [table(["Posto / atividade", "Situação", "Entrada e saída", "Observações / justificativa", "Ocorrência / relatório"], visitRows, [23, 15, 22, 28, 12])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto ou atividade de visita registrado neste turno.", color: MUTED, italics: true })] })]),
         sectionTitle("Abastecimentos", "Controle de frota"),
         ...(fuelRows.length ? [table(["Data", "Odômetro", "Combustível", "Valor / litros"], fuelRows, [27, 20, 23, 30])] : [new Paragraph({ children: [new TextRun({ text: `Nenhum abastecimento registrado. Total financeiro: ${formatCurrency(metrics.fuelAmount)}.`, color: MUTED, italics: true })] })]),
         sectionTitle("Ocorrências e observações", "Pontos de atenção"),
@@ -187,7 +175,7 @@ export function createSupervisorShiftWordDocument(report: any) {
           rows: [new TableRow({ children: [
             cell(`Abastecimentos\n${number(metrics.fuelCount)} registro(s) · ${formatCurrency(metrics.fuelAmount)}`, { shading: LIGHT, width: 33, bold: true }),
             cell(`Observações\n${number(metrics.observationCount)} registro(s) anotado(s)`, { shading: LIGHT, width: 34, bold: true }),
-            cell(`Checklist\n${attentionCount ? `${attentionCount} ponto(s) para revisão` : "Sem não conformidades"}`, { shading: attentionCount ? ROSE_LIGHT : GREEN_LIGHT, width: 33, bold: true, color: attentionCount ? ROSE : GREEN }),
+            cell(`Ocorrências\n${attentionCount ? `${attentionCount} registro(s) enviado(s)` : "Nenhum registro enviado"}`, { shading: attentionCount ? ROSE_LIGHT : GREEN_LIGHT, width: 33, bold: true, color: attentionCount ? ROSE : GREEN }),
           ] })],
         }),
         new Paragraph({ spacing: { before: 260, after: 0 }, children: [new TextRun({ text: "Documento gerado automaticamente pelo sistema Pro Allen. Os horários, quilometragens, abastecimentos e registros apresentados correspondem às informações lançadas durante o turno.", color: MUTED, italics: true, size: 14 })] }),

@@ -5,10 +5,10 @@ describe("indicadores do Gestor indisponíveis", () => {
   it("retorna todos os agregados zerados mantendo o formato esperado pelo painel", () => {
     const fallback = buildEmptyGestorKpis({ shiftType: "night", supervisorId: 41 });
 
-    expect(fallback.inspections).toEqual({ completed: 0, audited: 0, target: 0, completionRate: null });
-    expect(fallback.auditDuration).toEqual({ averageMinutes: null, measuredVisits: 0 });
+    expect(fallback.inspections).toEqual({ completed: 0, reported: 0, target: 0, completionRate: null });
+    expect(fallback.visitDuration).toEqual({ averageMinutes: null, measuredVisits: 0 });
     expect(fallback.fleet).toEqual({ totalKm: 0, routesWithKm: 0, routesPendingKm: 0 });
-    expect(fallback.compliance).toEqual({ rate: null, compliantVisits: 0, evaluatedVisits: 0, nonCompliantItems: 0 });
+    expect(fallback.occurrences).toEqual({ reportedVisits: 0, totalVisits: 0, pendingReports: 0 });
   });
 
   it("preserva o turno, o supervisor e a janela do período consultado", () => {

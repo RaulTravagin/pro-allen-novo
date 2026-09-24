@@ -12,7 +12,7 @@ function mapVisit(visit: any): PdfVisit {
     status: visit?.status ?? null,
     arrivalTime: visit?.arrivalTime ?? null,
     departureTime: visit?.departureTime ?? null,
-    auditSubmittedAt: visit?.auditSubmittedAt ?? null,
+    occurrenceSubmittedAt: visit?.occurrenceSubmittedAt ?? null,
     durationMinutes: visit?.durationMinutes ?? null,
     observations: visit?.observations ?? null,
     isCoverage: Boolean(visit?.isCoverage),
@@ -21,12 +21,7 @@ function mapVisit(visit: any): PdfVisit {
     arrivalLongitude: visit?.arrivalLongitude ?? null,
     departureLatitude: visit?.departureLatitude ?? null,
     departureLongitude: visit?.departureLongitude ?? null,
-    checklistItems: (visit?.checklistItems ?? []).map((item: any) => ({
-      category: item?.category ?? null,
-      description: item?.description ?? null,
-      isCompliant: item?.isCompliant ?? null,
-      notes: item?.notes ?? null,
-    })),
+    occurrenceReport: visit?.occurrenceReport ?? visit?.observations ?? null,
     photos: (visit?.photos ?? []).map((photo: any) => ({ url: photo?.url ?? photo?.photoUrl ?? null, caption: photo?.caption ?? photo?.description ?? null })),
   };
 }
@@ -49,7 +44,7 @@ export function buildSupervisorPdfSection(supervisor: any): PdfRouteSection {
     kmCovered: route?.kmCovered ?? null,
     statusLabel: ROUTE_STATUS_LABEL[route?.routeStatus ?? ""] ?? null,
     plannedPosts: route?.totalPosts ?? null,
-    visits: (route?.checklistVisits ?? []).map(mapVisit),
+    visits: (route?.visits ?? []).map(mapVisit),
   };
 }
 
@@ -83,7 +78,7 @@ export function buildDailyReportSummaryLines(report: any): string[] {
   return [
     `Supervisores acompanhados: ${summary.supervisors ?? 0} · em rota: ${summary.supervisorsOnRoute ?? 0}.`,
     `Visitas concluídas: ${summary.completedVisits ?? 0} · em atendimento: ${summary.visitsInProgress ?? 0} · pendentes: ${summary.pendingVisits ?? 0} · coberturas: ${summary.coverages ?? 0}.`,
-    `Quilometragem registrada: ${Number(summary.kmCovered ?? 0).toLocaleString("pt-BR")} km · não conformidades: ${summary.nonCompliantItems ?? 0} · alertas: ${summary.alerts ?? 0}.`,
+    `Quilometragem registrada: ${Number(summary.kmCovered ?? 0).toLocaleString("pt-BR")} km · ocorrências enviadas: ${summary.reportedOccurrences ?? 0} · relatos pendentes: ${summary.pendingOccurrenceReports ?? 0} · alertas: ${summary.alerts ?? 0}.`,
   ];
 }
 

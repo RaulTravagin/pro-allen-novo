@@ -11,15 +11,14 @@ export type RouteDraft = {
   updatedAt: string;
 };
 
-export type ChecklistDraft = {
-  observations: string;
-  itemStates: Record<number, { isCompliant: boolean; notes: string }>;
+export type OccurrenceDraft = {
+  occurrenceReport: string;
   updatedAt: string;
 };
 
 const PREFIX = "pro-allen:online-turn-draft:v1";
 
-function key(kind: "route" | "checklist", supervisorId: number, recordId: number) {
+function key(kind: "route" | "occurrence", supervisorId: number, recordId: number) {
   return `${PREFIX}:${kind}:${supervisorId}:${recordId}`;
 }
 
@@ -54,16 +53,16 @@ export function clearRouteDraft(supervisorId: number, routeId: number) {
   try { localStorage.removeItem(key("route", supervisorId, routeId)); } catch {}
 }
 
-export function readChecklistDraft(supervisorId: number, checklistId: number) {
-  return read<ChecklistDraft>(key("checklist", supervisorId, checklistId));
+export function readOccurrenceDraft(supervisorId: number, visitId: number) {
+  return read<OccurrenceDraft>(key("occurrence", supervisorId, visitId));
 }
 
-export function saveChecklistDraft(supervisorId: number, checklistId: number, draft: Omit<ChecklistDraft, "updatedAt">) {
+export function saveOccurrenceDraft(supervisorId: number, visitId: number, draft: Omit<OccurrenceDraft, "updatedAt">) {
   const value = { ...draft, updatedAt: new Date().toISOString() };
-  write(key("checklist", supervisorId, checklistId), value);
+  write(key("occurrence", supervisorId, visitId), value);
   return value;
 }
 
-export function clearChecklistDraft(supervisorId: number, checklistId: number) {
-  try { localStorage.removeItem(key("checklist", supervisorId, checklistId)); } catch {}
+export function clearOccurrenceDraft(supervisorId: number, visitId: number) {
+  try { localStorage.removeItem(key("occurrence", supervisorId, visitId)); } catch {}
 }

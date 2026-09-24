@@ -7,13 +7,12 @@ vi.mock("./db", async (importOriginal) => {
     ...actual,
     getVisitChecklistById: vi.fn(),
     getSupervisorRouteById: vi.fn(),
-    updateVisitChecklist: vi.fn(),
-    touchSupervisorRouteFromChecklist: vi.fn(),
+    submitVisitOccurrence: vi.fn(),
   };
 });
 
 import * as db from "./db";
-import { deriveAuditProgress } from "./db";
+import { deriveVisitProgress } from "./db";
 import { appRouter } from "./routers";
 
 function supervisorContext(supervisorId = 17): TrpcContext {
@@ -24,34 +23,29 @@ function supervisorContext(supervisorId = 17): TrpcContext {
   };
 }
 
-describe("sincronização imediata de auditoria", () => {
-  it("persiste a auditoria do posto e toca a rota em andamento sem exigir KM final", async () => {
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({ id: 33, supervisorRouteId: 71 } as never);
+describe("sincronização imediata de ocorrência", () => {
+  it("persiste a ocorrência do posto e toca a rota em andamento sem exigir KM final", async () => {
+    vi.mocked(db.getVisitChecklistById).mockResolvedValue({ id: 33, supervisorRouteId: 71, status: "in_progress" } as never);
     vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 71, supervisorId: 17, status: "in_progress", kmFinal: null } as never);
-    vi.mocked(db.updateVisitChecklist).mockResolvedValue({} as never);
-    vi.mocked(db.touchSupervisorRouteFromChecklist).mockResolvedValue(undefined as never);
+    vi.mocked(db.submitVisitOccurrence).mockResolvedValue({} as never);
 
     const caller = appRouter.createCaller(supervisorContext());
-    await expect(caller.checklists.updateDetails({ checklistId: 33, observations: "Auditoria concluída durante a rota" })).resolves.toBeDefined();
+    await expect(caller.checklists.submitOccurrence({ checklistId: 33, occurrenceReport: "Visita concluída durante a rota" })).resolves.toBeDefined();
 
-    expect(db.updateVisitChecklist).toHaveBeenCalledWith(33, expect.objectContaining({
-      observations: "Auditoria concluída durante a rota",
-      auditSubmittedAt: expect.any(Date),
-    }));
-    expect(db.touchSupervisorRouteFromChecklist).toHaveBeenCalledWith(33);
+    expect(db.submitVisitOccurrence).toHaveBeenCalledWith(33, "Visita concluída durante a rota");
   });
 
-  it("contabiliza o posto auditado no Gestor mesmo com a rota e a visita ainda em andamento", () => {
-    const progress = deriveAuditProgress([
+  it("contabiliza o relato no Gestor mesmo com a rota e a visita ainda em andamento", () => {
+    const progress = deriveVisitProgress([
       {
         status: "in_progress",
-        auditSubmittedAt: new Date("2026-08-21T22:15:00.000Z"),
-        checklistSummary: { total: 9, unanswered: 0 },
+        occurrenceSubmittedAt: new Date("2026-08-21T22:15:00.000Z"),
+        occurrenceReport: "Visita realizada.",
       },
-      { status: "pending", auditSubmittedAt: null, checklistSummary: { total: 9, unanswered: 9 } },
-      { status: "pending", auditSubmittedAt: null, checklistSummary: { total: 9, unanswered: 9 } },
+      { status: "pending", occurrenceSubmittedAt: null, occurrenceReport: null },
+      { status: "pending", occurrenceSubmittedAt: null, occurrenceReport: null },
     ]);
 
-    expect(progress).toEqual({ totalPosts: 3, auditedVisits: 1, completedVisits: 0, pendingVisits: 2, skippedVisits: 0 });
+    expect(progress).toEqual({ totalPosts: 3, reportedVisits: 1, completedVisits: 0, pendingVisits: 2, skippedVisits: 0 });
   });
 });

@@ -59,30 +59,14 @@ function normalizePersonnelIdentifier(value: string) {
   return digits.length === 11 ? digits : trimmed;
 }
 
-const DEFAULT_CHECKLIST_ITEMS = [
-  { category: 'Uniforme', description: 'Uniforme e apresentação pessoal' },
-  { category: 'Pontualidade', description: 'Pontualidade e escala' },
-  { category: 'Documentação', description: 'Livro de ocorrências' },
-  { category: 'Procedimentos', description: 'Procedimentos operacionais' },
-  { category: 'Equipamentos', description: 'Equipamentos e materiais' },
-  { category: 'Limpeza', description: 'Limpeza e organização' },
-  { category: 'Contato', description: 'Contato com o cliente' },
-  { category: 'Fotografia', description: 'Registro fotográfico' },
-  { category: 'Ação', description: 'Plano de ação (quando necessário)' },
-] as const;
-
-async function createChecklistWithDefaultItems(
+async function createVisitRecord(
   supervisorRouteId: number,
   postId: number,
   options: { isCoverage?: boolean; coverageReason?: string | null } = {},
 ) {
-  const checklistId = options.isCoverage || options.coverageReason
-    ? await db.createVisitChecklist(supervisorRouteId, postId, options)
-    : await db.createVisitChecklist(supervisorRouteId, postId);
-  for (const item of DEFAULT_CHECKLIST_ITEMS) {
-    await db.createChecklistItem(checklistId, item.category, item.description);
-  }
-  return checklistId;
+  return options.isCoverage !== undefined || options.coverageReason !== undefined
+    ? db.createVisitChecklist(supervisorRouteId, postId, options)
+    : db.createVisitChecklist(supervisorRouteId, postId);
 }
 
 export const appRouter = router({
@@ -705,7 +689,7 @@ export const appRouter = router({
         const checklistIds = [];
         
         for (const post of posts) {
-          const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, post.id);
+          const checklistId = await createVisitRecord(input.supervisorRouteId, post.id);
           checklistIds.push(checklistId);
         }
         
@@ -731,7 +715,7 @@ export const appRouter = router({
           throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
         }
 
-        const newChecklistId = await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId, {
+        const newChecklistId = await createVisitRecord(checklist.supervisorRouteId, checklist.postId, {
           isCoverage: checklist.isCoverage,
           coverageReason: checklist.coverageReason,
         });
@@ -780,7 +764,7 @@ export const appRouter = router({
         if (routeChecklists.some((item) => item.status === 'in_progress')) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de registrar uma cobertura' });
         }
-        const checklistId = await createChecklistWithDefaultItems(input.supervisorRouteId, post.id, {
+        const checklistId = await createVisitRecord(input.supervisorRouteId, post.id, {
           isCoverage: true,
           coverageReason: input.coverageReason,
         });
@@ -791,47 +775,30 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const checklist = await db.getVisitChecklistById(input.id);
-        if (!checklist) return null;
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
+        const visit = await db.getVisitChecklistById(input.id);
+        if (!visit) return null;
+        const route = await db.getSupervisorRouteById(visit.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) return null;
-        const items = await db.getChecklistItemsByVisit(input.id);
-        return { ...checklist, items };
-      }),
-    
-    updateItem: protectedProcedure
-      .input(z.object({ itemId: z.number(), isCompliant: z.boolean(), notes: z.string().optional() }))
-      .mutation(async ({ ctx, input }) => {
-        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const item = await db.getChecklistItemById(input.itemId);
-        if (!item) throw new TRPCError({ code: 'NOT_FOUND' });
-        const checklist = await db.getVisitChecklistById(item.visitChecklistId);
-        const route = checklist ? await db.getSupervisorRouteById(checklist.supervisorRouteId) : null;
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        return await db.updateChecklistItem(input.itemId, {
-          isCompliant: input.isCompliant,
-          notes: input.notes,
-        });
+        return visit;
       }),
 
-    updateDetails: protectedProcedure
-      .input(z.object({ checklistId: z.number(), observations: z.string().optional() }))
+    submitOccurrence: protectedProcedure
+      .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8, 'Informe pelo menos 8 caracteres no relato da ocorrência').max(5000) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const checklist = await db.getVisitChecklistById(input.checklistId);
-        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
+        const visit = await db.getVisitChecklistById(input.checklistId);
+        if (!visit) throw new TRPCError({ code: 'NOT_FOUND' });
+        const route = await db.getSupervisorRouteById(visit.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        const result = await db.updateVisitChecklist(input.checklistId, {
-          observations: input.observations ?? null,
-          auditSubmittedAt: new Date(),
-        });
-        await db.touchSupervisorRouteFromChecklist(input.checklistId);
-        return result;
+        if (visit.status !== 'in_progress' && visit.status !== 'visited') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Registre a chegada antes de enviar a ocorrência' });
+        }
+        await db.submitVisitOccurrence(input.checklistId, input.occurrenceReport);
+        return { success: true, occurrenceSubmittedAt: new Date() };
       }),
     
     markVisited: protectedProcedure
-      .input(z.object({ checklistId: z.number(), observations: z.string().optional(), arrivalTime: z.date().optional(), departureTime: z.date().optional() }))
+      .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8), arrivalTime: z.date().optional(), departureTime: z.date().optional() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         
@@ -843,13 +810,14 @@ export const appRouter = router({
         await db.updateVisitChecklist(input.checklistId, {
           status: 'visited',
           visitedAt: new Date(),
-          observations: input.observations,
+          occurrenceReport: input.occurrenceReport,
+          occurrenceSubmittedAt: new Date(),
           arrivalTime: input.arrivalTime,
           departureTime: input.departureTime,
         });
         
         // Record in visit history
-        await db.recordPostVisit(checklist.postId, ctx.user.id, input.observations);
+        await db.recordPostVisit(checklist.postId, ctx.user.id, input.occurrenceReport);
         
         return { success: true };
       }),
@@ -876,7 +844,7 @@ export const appRouter = router({
         }
 
         const targetChecklistId = checklist.status === 'visited'
-          ? await createChecklistWithDefaultItems(checklist.supervisorRouteId, checklist.postId, {
+          ? await createVisitRecord(checklist.supervisorRouteId, checklist.postId, {
               isCoverage: checklist.isCoverage,
               coverageReason: checklist.coverageReason,
             })
@@ -907,6 +875,9 @@ export const appRouter = router({
         const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
         if (checklist.status !== 'in_progress') throw new TRPCError({ code: 'CONFLICT', message: 'Só é possível registrar saída de uma visita em andamento' });
+        if (!checklist.occurrenceReport?.trim()) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Envie o registro obrigatório da ocorrência antes de registrar a saída' });
+        }
         
         await db.updateVisitChecklist(input.checklistId, {
           status: 'visited',
@@ -916,7 +887,7 @@ export const appRouter = router({
           departureLongitude: input.longitude ?? null,
         });
         
-        await db.recordPostVisit(checklist.postId, ctx.user.id);
+        await db.recordPostVisit(checklist.postId, ctx.user.id, checklist.occurrenceReport);
         
         return { success: true, departureTime: new Date() };
       }),
@@ -970,16 +941,16 @@ export const appRouter = router({
         return await db.getPostVisitsByDateRange(input.startDate, input.endDate);
       }),
     
-    visitChecklistsByDateRange: adminProcedure
+    occurrencesByDateRange: adminProcedure
       .input(z.object({ startDate: z.date(), endDate: z.date() }))
       .query(async ({ input }) => {
-        return await db.getVisitChecklistsWithTimes(input.startDate, input.endDate);
+        return await db.getVisitsWithTimes(input.startDate, input.endDate);
       }),
 
-    conformanceSummaryByDateRange: adminProcedure
+    occurrenceSummaryByDateRange: adminProcedure
       .input(z.object({ startDate: z.date(), endDate: z.date() }))
       .query(async ({ input }) => {
-        return await db.getChecklistConformanceSummary(input.startDate, input.endDate);
+        return await db.getVisitOccurrenceSummary(input.startDate, input.endDate);
       }),
   }),
 });

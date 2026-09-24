@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearChecklistDraft, clearRouteDraft, readChecklistDraft, readRouteDraft, saveChecklistDraft, saveRouteDraft } from "./onlineOperationDraft";
+import { clearOccurrenceDraft, clearRouteDraft, readOccurrenceDraft, readRouteDraft, saveOccurrenceDraft, saveRouteDraft } from "./onlineOperationDraft";
 
 describe("rascunhos online do turno", () => {
   const values = new Map<string, string>();
@@ -23,10 +23,10 @@ describe("rascunhos online do turno", () => {
     expect(readRouteDraft(10, 30)).toBeNull();
   });
 
-  it("mantém observações e respostas do checklist até o envio ser confirmado", () => {
-    saveChecklistDraft(10, 90, { observations: "Acompanhar troca de uniforme", itemStates: { 1: { isCompliant: false, notes: "Sem colete" } } });
-    expect(readChecklistDraft(10, 90)).toMatchObject({ observations: "Acompanhar troca de uniforme", itemStates: { 1: { isCompliant: false, notes: "Sem colete" } } });
-    clearChecklistDraft(10, 90);
-    expect(readChecklistDraft(10, 90)).toBeNull();
+  it("mantém o relato da ocorrência até o envio ser confirmado", () => {
+    saveOccurrenceDraft(10, 90, { occurrenceReport: "Acompanhar troca de uniforme" });
+    expect(readOccurrenceDraft(10, 90)).toMatchObject({ occurrenceReport: "Acompanhar troca de uniforme" });
+    clearOccurrenceDraft(10, 90);
+    expect(readOccurrenceDraft(10, 90)).toBeNull();
   });
 });

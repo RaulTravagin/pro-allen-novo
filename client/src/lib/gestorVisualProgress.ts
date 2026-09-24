@@ -10,11 +10,9 @@ export type SupervisorVisualProgress = {
   total: number;
   progress: number;
   alertCount: number;
-  checklistTotal: number;
-  compliant: number;
-  nonCompliant: number;
-  unanswered: number;
-  complianceRate: number;
+  occurrenceTotal: number;
+  occurrenceReported: number;
+  occurrencePending: number;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,7 +41,7 @@ function asNonNegativeNumber(value: unknown) {
 export function buildGestorVisualProgress(supervisors: any[]) {
   const supervisorProgress: SupervisorVisualProgress[] = supervisors.map((supervisor) => {
     const route = supervisor.route;
-    const visits = route?.checklistVisits ?? [];
+    const visits = route?.visits ?? [];
     const completed = asNonNegativeNumber(route?.completedVisits);
     const inProgressFromVisits = visits.filter((visit: any) => visit.status === "in_progress").length;
     const inProgress = inProgressFromVisits || (route?.activeVisit ? 1 : 0);
@@ -51,14 +49,8 @@ export function buildGestorVisualProgress(supervisors: any[]) {
     const pending = Math.max(0, total - completed - inProgress);
     const status = supervisor.operationalStatus ?? supervisor.status ?? "sem_rota";
     const alertCount = (supervisor.alerts ?? []).length;
-    const checklistTotals = visits.filter((visit: any) => visit.status === "visited" || visit.status === "in_progress").reduce((accumulator: { total: number; compliant: number; nonCompliant: number; unanswered: number }, visit: any) => {
-      const checklist = visit.checklistSummary ?? {};
-      accumulator.total += asNonNegativeNumber(checklist.total);
-      accumulator.compliant += asNonNegativeNumber(checklist.compliant);
-      accumulator.nonCompliant += asNonNegativeNumber(checklist.nonCompliant);
-      accumulator.unanswered += asNonNegativeNumber(checklist.unanswered);
-      return accumulator;
-    }, { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 });
+    const occurrenceTotal = visits.filter((visit: any) => visit.status === "visited" || visit.status === "in_progress").length;
+    const occurrenceReported = visits.filter((visit: any) => Boolean(visit.occurrenceSubmittedAt || visit.occurrenceReport?.trim())).length;
 
     return {
       supervisorId: supervisor.supervisorId,
@@ -72,11 +64,9 @@ export function buildGestorVisualProgress(supervisors: any[]) {
       total,
       progress: total ? Math.round((completed / total) * 100) : 0,
       alertCount,
-      checklistTotal: checklistTotals.total,
-      compliant: checklistTotals.compliant,
-      nonCompliant: checklistTotals.nonCompliant,
-      unanswered: checklistTotals.unanswered,
-      complianceRate: checklistTotals.total ? Math.round((checklistTotals.compliant / checklistTotals.total) * 100) : 0,
+      occurrenceTotal,
+      occurrenceReported,
+      occurrencePending: Math.max(0, occurrenceTotal - occurrenceReported),
     };
   });
 
@@ -99,8 +89,11 @@ export function buildGestorVisualProgress(supervisors: any[]) {
       inProgress: accumulator.inProgress + supervisor.inProgress,
       pending: accumulator.pending + supervisor.pending,
       supervisorsWithAlerts: accumulator.supervisorsWithAlerts + (supervisor.alertCount > 0 ? 1 : 0),
+      occurrenceTotal: accumulator.occurrenceTotal + supervisor.occurrenceTotal,
+      occurrenceReported: accumulator.occurrenceReported + supervisor.occurrenceReported,
+      occurrencePending: accumulator.occurrencePending + supervisor.occurrencePending,
     }),
-    { total: 0, completed: 0, inProgress: 0, pending: 0, supervisorsWithAlerts: 0 },
+    { total: 0, completed: 0, inProgress: 0, pending: 0, supervisorsWithAlerts: 0, occurrenceTotal: 0, occurrenceReported: 0, occurrencePending: 0 },
   );
 
   return {

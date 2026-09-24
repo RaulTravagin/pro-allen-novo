@@ -36,23 +36,6 @@ function duration(minutes: unknown) {
   return hours ? `${hours}h ${remainder}min` : `${remainder} min`;
 }
 
-function checklistSummary(checklist: any) {
-  const total = Number(checklist?.total ?? 0);
-  const compliant = Number(checklist?.compliant ?? 0);
-  const nonCompliant = Number(checklist?.nonCompliant ?? 0);
-  const unanswered = Number(checklist?.unanswered ?? 0);
-  if (total === 0) return "Checklist não iniciado";
-  if (nonCompliant > 0) return `Requer atenção: ${nonCompliant} item(ns) não conforme(s)`;
-  if (unanswered > 0) return `Preenchimento pendente: ${unanswered} item(ns) aguardando resposta`;
-  return `Checklist conforme: ${compliant} item(ns) verificado(s)`;
-}
-
-function checklistItemStatus(item: any) {
-  if (item.isCompliant === true) return "Conforme";
-  if (item.isCompliant === false) return "Não conforme";
-  return "Sem resposta";
-}
-
 function cell(value: unknown, options: { bold?: boolean; color?: string; shading?: string; width?: number } = {}) {
   return new TableCell({
     width: options.width ? { size: options.width, type: WidthType.PERCENTAGE } : undefined,
@@ -79,7 +62,7 @@ function metricTable(report: DailyReport) {
   const summary = report.summary;
   return table(
     ["Supervisores em rota", "Visitas concluídas", "Postos pendentes", "Em atendimento"],
-    [[`${summary.supervisorsOnRoute}/${summary.supervisors}`, summary.completedVisits, summary.pendingVisits, summary.visitsInProgress], ["Coberturas", "KM percorridos", "Não conformidades", "Alertas"], [summary.coverages, `${Number(summary.kmCovered).toLocaleString("pt-BR")} km`, summary.nonCompliantItems, summary.alerts]],
+    [[`${summary.supervisorsOnRoute}/${summary.supervisors}`, summary.completedVisits, summary.pendingVisits, summary.visitsInProgress], ["Coberturas", "KM percorridos", "Ocorrências enviadas", "Relatos pendentes"], [summary.coverages, `${Number(summary.kmCovered).toLocaleString("pt-BR")} km`, summary.reportedOccurrences, summary.pendingOccurrenceReports]],
     [25, 25, 25, 25],
   );
 }
@@ -96,7 +79,7 @@ function supervisorSection(supervisor: any, index: number) {
     `${visit.postName}${visit.isCoverage ? " (Cobertura)" : ""}`,
     visit.status === "visited" ? "Concluído" : visit.status === "in_progress" ? "Em atendimento" : visit.status === "pending" ? "Pendente" : "Não realizado",
     `Chegada: ${time(visit.arrivalTime)}\nSaída: ${time(visit.departureTime)}\nDuração: ${duration(visit.durationMinutes)}`,
-    `${visit.isCoverage ? `Cobertura: ${text(visit.coverageReason)}\n` : ""}${text(visit.observations)}`,
+    `${visit.isCoverage ? `Cobertura: ${text(visit.coverageReason)}\n` : ""}${text(visit.occurrenceReport ?? visit.observations)}`,
   ]);
   const location = supervisor.latestLocation ? `${Number(supervisor.latestLocation.latitude).toFixed(5)}, ${Number(supervisor.latestLocation.longitude).toFixed(5)} · precisão ${text(supervisor.latestLocation.accuracy)} m · ${time(supervisor.latestLocation.recordedAt)}` : "Sem localização recebida";
 
@@ -112,19 +95,10 @@ function supervisorSection(supervisor: any, index: number) {
       new Paragraph({ spacing: { before: 180, after: 80 }, heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Sequência de atividades no dia", color: slate, bold: true })] }),
       table(["Atividade", "Situação", "Horários", "Quilometragem"], activityRows, [26, 18, 28, 28]),
     ] : []),
-    new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Checklist consolidado: ${checklistSummary(supervisor.checklistTotals)} · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
+    new Paragraph({ spacing: { before: 180 }, children: [new TextRun({ text: `Ocorrências enviadas: ${supervisor.occurrenceTotals?.reported ?? 0} · relatos pendentes: ${Math.max(0, (supervisor.occurrenceTotals?.total ?? 0) - (supervisor.occurrenceTotals?.reported ?? 0))} · ${supervisor.coverageCount} cobertura(s).`, color: slate })] }),
     new Paragraph({ spacing: { before: 140, after: 80 }, children: [new TextRun({ text: `Alertas: ${(supervisor.alerts ?? []).map((alert: any) => alert.title).join(" · ") || "Sem alertas operacionais"}`, bold: true, color: (supervisor.alerts ?? []).length ? "B45309" : "166534" })] }),
     new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Postos e atendimentos", color: slate, bold: true })] }),
     ...(visitRows.length ? [table(["Posto", "Situação", "Horários", "Observações"], visitRows, [22, 16, 28, 34])] : [new Paragraph({ children: [new TextRun({ text: "Nenhum posto registrado para este supervisor no dia.", color: muted, italics: true })] })]),
-    new Paragraph({ spacing: { before: 220, after: 80 }, heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: "Checklist por visita", color: slate, bold: true })] }),
-    ...((route?.visits ?? []).filter((visit: any) => visit.status === "visited" || visit.status === "in_progress").flatMap((visit: any) => {
-      const items = visit.checklistItems ?? [];
-      if (!items.length) return [];
-      return [
-        new Paragraph({ spacing: { before: 100, after: 60 }, children: [new TextRun({ text: `${visit.postName}: ${checklistSummary(visit.checklist)}`, bold: true, color: slate })] }),
-        table(["Item verificado", "Resultado", "Observação"], items.map((item: any) => [`${text(item.category)} · ${text(item.description)}`, checklistItemStatus(item), text(item.notes)]), [52, 20, 28]),
-      ];
-    })),
   ];
 }
 

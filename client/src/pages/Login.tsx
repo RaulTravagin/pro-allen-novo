@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { BadgeDollarSign, ClipboardList, MapPin, ShieldCheck, UsersRound } from "lucide-react";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -22,14 +22,14 @@ const portalOptions: PortalOption[] = [
   {
     id: "SUPERVISOR",
     label: "Portal do Supervisor",
-    description: "Rotas, visitas e checklists",
+    description: "Rotas, visitas e ocorrências",
     icon: ClipboardList,
     path: "/supervisor",
   },
   {
     id: "RH",
     label: "Portal do RH",
-    description: "Funcionários e auditoria",
+    description: "Funcionários e lançamentos",
     icon: UsersRound,
     path: "/rh/funcionarios",
   },

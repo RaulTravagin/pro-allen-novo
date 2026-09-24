@@ -22,7 +22,7 @@ describe("buildSupervisorShiftReport", () => {
           kmInitial: "12000",
           kmFinal: "12008",
           kmCovered: 8,
-          checklistVisits: [],
+          visits: [],
           fuelLogs: [],
         },
         {
@@ -41,7 +41,7 @@ describe("buildSupervisorShiftReport", () => {
           kmInitial: "12008",
           kmFinal: null,
           kmCovered: null,
-          checklistVisits: [
+          visits: [
             {
               id: 21,
               postName: "Kelvion",
@@ -51,8 +51,8 @@ describe("buildSupervisorShiftReport", () => {
               departureTime: new Date("2026-08-25T10:55:00.000Z"),
               observations: "Portaria em ordem",
               isCoverage: false,
-              checklistSummary: { total: 9, compliant: 8, nonCompliant: 1, unanswered: 0 },
-              checklistItems: [],
+              occurrenceReport: "Portaria em ordem",
+              occurrenceSubmittedAt: new Date("2026-08-25T10:56:00.000Z"),
             },
             {
               id: 22,
@@ -64,8 +64,6 @@ describe("buildSupervisorShiftReport", () => {
               observations: null,
               isCoverage: true,
               coverageReason: "Retorno à base para apoio operacional",
-              checklistSummary: { total: 9, compliant: 0, nonCompliant: 0, unanswered: 9 },
-              checklistItems: [],
             },
           ],
           fuelLogs: [{ id: 31, amount: "200.50", liters: "25.5", createdAt: new Date("2026-08-25T11:30:00.000Z") }],
@@ -84,7 +82,7 @@ describe("buildSupervisorShiftReport", () => {
         completedVisits: 1,
         visitsInProgress: 1,
         coverageCount: 1,
-        nonCompliantItems: 1,
+        occurrenceCount: 1,
         observationCount: 2,
         fuelCount: 1,
         fuelAmount: 200.5,

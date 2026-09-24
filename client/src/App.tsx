@@ -12,7 +12,7 @@ import { getGestorRouteMode } from "./lib/gestor-routing";
 
 const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
 const RouteDetails = lazy(() => import("./pages/RouteDetails"));
-const ChecklistPage = lazy(() => import("./pages/ChecklistPage"));
+const OccurrencePage = lazy(() => import("./pages/OccurrencePage"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const MetricsDashboard = lazy(() => import("./pages/MetricsDashboard"));
 const ReportExport = lazy(() => import("./pages/ReportExport"));
@@ -99,7 +99,7 @@ function Router() {
           <Route path="/financeiro/pagamentos" component={FinancePaymentsRoute} />
           <Route path="/supervisor" component={SupervisorDashboard} />
           <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
-          <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
+          <Route path="/supervisor/occurrence/:visitId" component={OccurrencePage} />
           <Route path="/" component={AdminDashboard} />
           <Route path="/404" component={NotFound} />
           <Route component={NotFound} />
@@ -116,7 +116,7 @@ function Router() {
         <Route path="/rh/funcionarios" component={HrEmployeesRoute} />
         <Route path="/financeiro/pagamentos" component={FinancePaymentsRoute} />
         <Route path="/supervisor/route/:supervisorRouteId" component={RouteDetails} />
-        <Route path="/supervisor/checklist/:checklistId" component={ChecklistPage} />
+        <Route path="/supervisor/occurrence/:visitId" component={OccurrencePage} />
         <Route path="/" component={SupervisorDashboard} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

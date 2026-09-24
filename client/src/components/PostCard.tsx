@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap } from "lucide-react";
+import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap, FileText } from "lucide-react";
 import React from "react";
 import { useState, useMemo, memo, useCallback } from "react";
 
@@ -11,6 +11,7 @@ interface PostCardProps {
   postAddress?: string;
   status: 'pending' | 'in_progress' | 'visited';
   observations?: string;
+  occurrenceReport?: string | null;
   isCoverage?: boolean;
   isOperationalBaseCoverage?: boolean;
   coverageReason?: string | null;
@@ -20,9 +21,9 @@ interface PostCardProps {
   arrivalLongitude?: number | string | null;
   departureLatitude?: number | string | null;
   departureLongitude?: number | string | null;
-  onCheckIn: (checklistId: number) => Promise<void>;
-  onCheckOut: (checklistId: number) => Promise<void>;
-  onOpenChecklist: (checklistId: number) => void;
+  onCheckIn: (visitId: number) => Promise<void>;
+  onCheckOut: (visitId: number) => Promise<void>;
+  onOpenOccurrence: (visitId: number) => void;
   isLoading?: boolean;
   hasActiveVisit?: boolean;
   isActiveVisit?: boolean;
@@ -35,6 +36,7 @@ const PostCard = memo(function PostCard({
   postAddress,
   status,
   observations,
+  occurrenceReport,
   isCoverage = false,
   isOperationalBaseCoverage = false,
   coverageReason,
@@ -46,7 +48,7 @@ const PostCard = memo(function PostCard({
   departureLongitude,
   onCheckIn,
   onCheckOut,
-  onOpenChecklist,
+  onOpenOccurrence,
   isLoading = false,
   hasActiveVisit = false,
   isActiveVisit = status === 'in_progress',
@@ -124,7 +126,7 @@ const PostCard = memo(function PostCard({
   
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
-  const memoizedOpenChecklist = useCallback(() => onOpenChecklist(id), [id, onOpenChecklist]);
+  const memoizedOpenOccurrence = useCallback(() => onOpenOccurrence(id), [id, onOpenOccurrence]);
 
   return (
     <Card className={`transition-all ${cardStyles}`}>
@@ -193,11 +195,11 @@ const PostCard = memo(function PostCard({
                 {isActiveVisit ? (
                 <Button
                   onClick={memoizedCheckOut}
-                  disabled={isCheckingOut || isLoading}
+                  disabled={isCheckingOut || isLoading || !occurrenceReport?.trim()}
                   aria-label={`Registrar saída de ${postName}`}
                   className="bg-red-600 hover:bg-red-700 text-white flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all"
                   size="sm"
-                  title="Clique para registrar sua saída do posto"
+                  title={occurrenceReport?.trim() ? "Clique para registrar sua saída do posto" : "Envie o registro da ocorrência antes de registrar a saída"}
                 >
                   {isCheckingOut ? (
                     <>
@@ -217,15 +219,17 @@ const PostCard = memo(function PostCard({
                     Outra visita está ativa
                   </span>
                 )}
+                {!occurrenceReport?.trim() && <span className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-800">Envie a ocorrência antes da saída</span>}
                 <Button
-                  onClick={memoizedOpenChecklist}
+                  onClick={memoizedOpenOccurrence}
                   disabled={isLoading}
                   variant="outline"
                   className="text-blue-600 border-blue-600 flex-1 md:flex-none"
                   size="sm"
                 >
-                  <span className="hidden sm:inline">Checklist</span>
-                  <span className="sm:hidden">Check</span>
+                  <FileText className="mr-1 h-4 w-4" />
+                  <span className="hidden sm:inline">{occurrenceReport?.trim() ? "Editar ocorrência" : "Registrar ocorrência"}</span>
+                  <span className="sm:hidden">Ocorrência</span>
                 </Button>
               </>
             )}
@@ -260,14 +264,14 @@ const PostCard = memo(function PostCard({
                 </Button>
                 <Button
                   type="button"
-                  onClick={memoizedOpenChecklist}
+                  onClick={memoizedOpenOccurrence}
                   disabled={isLoading}
                   aria-label={`Ver detalhes de ${postName}`}
                   variant="outline"
                   className="flex-1 border-gray-300 text-gray-600 md:flex-none"
                   size="sm"
                 >
-                  Ver detalhes
+                  <FileText className="mr-1 h-4 w-4" />Ver ocorrência
                 </Button>
               </>
             )}
@@ -345,6 +349,14 @@ const PostCard = memo(function PostCard({
         <CardContent className="pt-0">
           <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
             <strong>Observações:</strong> {observations}
+          </p>
+        </CardContent>
+      )}
+
+      {occurrenceReport && (
+        <CardContent className="pt-0">
+          <p className="rounded border border-violet-100 bg-violet-50 p-2 text-sm text-violet-950">
+            <strong>Ocorrência/relatório:</strong> {occurrenceReport}
           </p>
         </CardContent>
       )}

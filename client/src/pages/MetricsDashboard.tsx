@@ -13,11 +13,11 @@ export default function MetricsDashboard() {
   const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), end: new Date() });
 
   // Queries
-  const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
+  const { data: reports, isLoading: reportsLoading } = trpc.reports.occurrencesByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
-  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.conformanceSummaryByDateRange.useQuery({
+  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.occurrenceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -28,7 +28,7 @@ export default function MetricsDashboard() {
       return {
         totalVisits: 0,
         avgVisitTime: 0,
-        avgConformance: 0,
+        occurrenceRate: 0,
         visitsByDay: [],
         visitsByRoute: [],
         conformanceData: [],
@@ -63,17 +63,16 @@ export default function MetricsDashboard() {
     });
     const visitsByRouteData = Object.entries(visitsByRoute).map(([route, count]) => ({ route: `Rota ${route}`, visits: count }));
 
-    const conformanceTotal = conformance?.total ?? 0;
-    const conformanceData = conformanceTotal > 0 ? [
-      { name: 'Conforme', value: conformance?.compliant ?? 0, fill: '#10b981' },
-      { name: 'Não Conforme', value: conformance?.nonCompliant ?? 0, fill: '#ef4444' },
-      { name: 'Sem resposta', value: conformance?.unanswered ?? 0, fill: '#f59e0b' },
+    const occurrenceTotal = conformance?.total ?? 0;
+    const conformanceData = occurrenceTotal > 0 ? [
+      { name: 'Ocorrência enviada', value: conformance?.reported ?? 0, fill: '#10b981' },
+      { name: 'Registro pendente', value: Math.max(0, occurrenceTotal - (conformance?.reported ?? 0)), fill: '#f59e0b' },
     ].filter((item) => item.value > 0) : [];
 
     return {
       totalVisits,
       avgVisitTime,
-      avgConformance: conformanceTotal > 0 ? Math.round(((conformance?.compliant ?? 0) / conformanceTotal) * 100) : 0,
+      occurrenceRate: occurrenceTotal > 0 ? Math.round(((conformance?.reported ?? 0) / occurrenceTotal) * 100) : 0,
       visitsByDay: visitsByDayData,
       visitsByRoute: visitsByRouteData,
       conformanceData,
@@ -88,7 +87,7 @@ export default function MetricsDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <AdminHeader
         title="Dashboard de métricas"
-        subtitle="Análise de desempenho e conformidade"
+        subtitle="Análise de desempenho e registros de ocorrência"
         onLogout={() => logout()}
       />
 
@@ -158,12 +157,12 @@ export default function MetricsDashboard() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                Taxa de Conformidade
+                Ocorrências registradas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-gray-900">{conformance?.total ? `${metrics.avgConformance}%` : '—'}</p>
-              <p className="text-xs text-gray-600 mt-2">Visitas conformes</p>
+              <p className="text-3xl font-bold text-gray-900">{conformance?.total ? `${conformance.reported}/${conformance.total}` : '—'}</p>
+              <p className="text-xs text-gray-600 mt-2">Visitas com ocorrência enviada</p>
             </CardContent>
           </Card>
         </div>
@@ -173,7 +172,7 @@ export default function MetricsDashboard() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="visits">Visitas por Dia</TabsTrigger>
             <TabsTrigger value="routes">Visitas por Rota</TabsTrigger>
-            <TabsTrigger value="conformance">Conformidade</TabsTrigger>
+            <TabsTrigger value="conformance">Ocorrências</TabsTrigger>
           </TabsList>
 
           {/* Visits by Day */}
@@ -248,8 +247,8 @@ export default function MetricsDashboard() {
           <TabsContent value="conformance" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Taxa de Conformidade</CardTitle>
-                <CardDescription>Proporção de visitas conformes vs não conformes</CardDescription>
+                  <CardTitle>Registros de ocorrência</CardTitle>
+                  <CardDescription>Proporção de visitas com relato enviado e pendente</CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
@@ -259,8 +258,8 @@ export default function MetricsDashboard() {
                 ) : metrics.conformanceData.length === 0 ? (
                   <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 text-center">
                     <CheckCircle2 className="mb-3 h-8 w-8 text-gray-400" />
-                    <p className="font-medium text-gray-800">Conformidade ainda não disponível</p>
-                    <p className="mt-1 max-w-md text-sm text-gray-500">Preencha os itens do checklist e finalize a visita para gerar esta análise.</p>
+                    <p className="font-medium text-gray-800">Registros ainda não disponíveis</p>
+                    <p className="mt-1 max-w-md text-sm text-gray-500">Envie o relato obrigatório da visita para gerar esta análise.</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -308,7 +307,7 @@ export default function MetricsDashboard() {
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-gray-600">
-                  <strong>Conformidade:</strong> {conformance?.total ? `${metrics.avgConformance}%` : 'Sem dados'}
+                  <strong>Ocorrências enviadas:</strong> {conformance?.total ? `${metrics.occurrenceRate}%` : 'Sem dados'}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Rotas Ativas:</strong> {metrics.visitsByRoute.length}

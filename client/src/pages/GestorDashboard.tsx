@@ -66,7 +66,7 @@ function scheduleAppearance(assignment: string) {
   return config[assignment] ?? config.off;
 }
 
-function checklistStatus(status: string) {
+function visitStatus(status: string) {
   const config: Record<string, { label: string; className: string }> = {
     pending: { label: "Pendente", className: "bg-slate-100 text-slate-700" },
     in_progress: { label: "Em atendimento", className: "bg-amber-100 text-amber-800" },
@@ -76,34 +76,10 @@ function checklistStatus(status: string) {
   return config[status] ?? config.pending;
 }
 
-function checklistPresentation(checklist: any) {
-  const total = Number(checklist?.total ?? 0);
-  const compliant = Number(checklist?.compliant ?? 0);
-  const nonCompliant = Number(checklist?.nonCompliant ?? 0);
-  const unanswered = Number(checklist?.unanswered ?? 0);
-  if (total === 0) return { label: "Checklist não iniciado", detail: "Nenhum item preenchido", className: "bg-slate-100 text-slate-700" };
-  if (nonCompliant > 0) return { label: "Requer atenção", detail: `${nonCompliant} item(ns) não conforme(s)`, className: "bg-rose-100 text-rose-800" };
-  if (unanswered > 0) return { label: "Preenchimento pendente", detail: `${unanswered} item(ns) aguardando resposta`, className: "bg-amber-100 text-amber-800" };
-  return { label: "Checklist conforme", detail: `${compliant} item(ns) verificado(s)`, className: "bg-emerald-100 text-emerald-800" };
-}
-
-function checklistItemPresentation(item: any) {
-  if (item.isCompliant === true) return { label: "Conforme", className: "bg-emerald-100 text-emerald-800" };
-  if (item.isCompliant === false) return { label: "Não conforme", className: "bg-rose-100 text-rose-800" };
-  return { label: "Sem resposta", className: "bg-slate-100 text-slate-700" };
-}
-
-function ChecklistPreview({ checklist, items = [], status }: { checklist: any; items?: any[]; status?: string }) {
-  if (status === "pending") return <div className="space-y-1"><Badge className="bg-slate-100 text-slate-700">Aguardando visita</Badge><p className="text-xs text-slate-600">Checklist será liberado após a chegada ao posto</p></div>;
-  if (status === "skipped") return <div className="space-y-1"><Badge className="bg-slate-100 text-slate-700">Checklist não realizado</Badge><p className="text-xs text-slate-600">Não há itens preenchidos para esta visita</p></div>;
-  const presentation = checklistPresentation(checklist);
-  return <div className="space-y-2"><Badge className={presentation.className}>{presentation.label}</Badge><p className="text-xs text-slate-600">{presentation.detail}</p>{items.length > 0 && <details className="group rounded-lg border border-slate-200 bg-white"><summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-blue-700 marker:content-none">Ver {items.length} item(ns) do checklist<ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform duration-200 group-open:rotate-180" /></summary><div className="divide-y divide-slate-100 border-t border-slate-100">{items.map((item, index) => { const itemStatus = checklistItemPresentation(item); return <article key={item.id ?? `${item.category}-${item.description}-${index}`} className="space-y-1.5 px-3 py-2.5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium text-slate-900">{item.description}</p><Badge className={itemStatus.className}>{itemStatus.label}</Badge></div><p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{item.category}</p>{item.notes && <p className="text-xs leading-5 text-slate-600"><strong>Observação:</strong> {item.notes}</p>}</article>; })}</div></details>}</div>;
-}
-
-function ChecklistDetails({ visits }: { visits: any[] }) {
-  const entries = visits.filter((visit) => (visit.status === "visited" || visit.status === "in_progress") && ((visit.checklistItems?.length ?? 0) > 0 || Number(visit.checklistSummary?.total ?? visit.checklist?.total ?? 0) > 0));
-  if (!entries.length) return null;
-  return <section className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4"><div className="mb-3"><p className="flex items-center gap-2 font-semibold text-slate-950"><ClipboardCheck className="h-4 w-4 text-blue-700" /> Checklist por visita</p><p className="mt-1 text-xs leading-5 text-slate-600">Leitura rápida do resultado. Abra um cartão para consultar os itens e as observações registradas.</p></div><div className="grid gap-3 lg:grid-cols-2">{entries.map((visit, index) => <article key={`${visit.id ?? visit.postName}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold text-slate-900">{visit.postName}</p><p className="mt-1 text-xs text-slate-500">{visit.postRegion ?? visit.region}</p></div><Badge className={checklistStatus(visit.status).className}>{checklistStatus(visit.status).label}</Badge></div><ChecklistPreview checklist={visit.checklistSummary ?? visit.checklist} items={visit.checklistItems} status={visit.status} /></article>)}</div></section>;
+function OccurrencePreview({ report, status }: { report?: string | null; status?: string }) {
+  if (status === "pending") return <div className="space-y-1"><Badge className="bg-slate-100 text-slate-700">Aguardando visita</Badge><p className="text-xs text-slate-600">O relato será enviado após a chegada ao posto.</p></div>;
+  if (!report?.trim()) return <div className="space-y-1"><Badge className="bg-amber-100 text-amber-800">Registro pendente</Badge><p className="text-xs text-slate-600">A ocorrência obrigatória ainda não foi enviada.</p></div>;
+  return <div className="space-y-2"><Badge className="bg-violet-100 text-violet-800">Registro enviado</Badge><p className="whitespace-pre-wrap text-xs leading-5 text-slate-700">{report}</p></div>;
 }
 
 function operationStatus(status: string) {
@@ -133,21 +109,21 @@ function downloadDailyReportCsv(report: any) {
     [],
     ["Resumo executivo"],
     ["Postos previstos", (report.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)],
-    ["Postos auditados", summary.completedVisits ?? 0],
+    ["Visitas concluídas", summary.completedVisits ?? 0],
     ["KM total percorrido", summary.kmCovered ?? 0],
-    ["Ocorrências marcadas", summary.nonCompliantItems ?? 0],
+    ["Ocorrências enviadas", summary.reportedOccurrences ?? 0],
     [],
-    ["Vistorias em ordem cronológica"],
-    ["Data", "Hora", "Supervisor", "Rota / Turno", "Posto / Condomínio", "Status da Vistoria", "Início da Visita", "Fim da Visita", "Duração (min)", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrências", "Observações", "GPS de Chegada", "GPS de Saída", "Alertas"],
+    ["Visitas em ordem cronológica"],
+    ["Data", "Hora", "Supervisor", "Rota / Turno", "Posto / Condomínio", "Status da Visita", "Início da Visita", "Fim da Visita", "Duração (min)", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrência / relatório", "Justificativa adicional", "GPS de Chegada", "GPS de Saída", "Alertas"],
   ];
   for (const supervisor of report.supervisors ?? []) {
     const visits = supervisor.route?.visits?.length ? supervisor.route.visits : [null];
     for (const visit of visits) {
-      const referenceTime = visit?.arrivalTime ?? visit?.auditSubmittedAt ?? supervisor.route?.startedAt ?? null;
+      const referenceTime = visit?.arrivalTime ?? visit?.occurrenceSubmittedAt ?? supervisor.route?.startedAt ?? null;
       rows.push([
-        referenceTime ? new Date(referenceTime).toLocaleDateString("pt-BR") : "—", referenceTime ? new Date(referenceTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", supervisor.supervisorName, `${supervisor.route?.name ?? "Sem rota"} · ${supervisor.route?.shiftType === "day" ? "Diurno" : supervisor.route?.shiftType === "night" ? "Noturno" : "Turno não informado"}`, visit?.postName ?? "—", visit ? checklistStatus(visit.status).label : "—",
+        referenceTime ? new Date(referenceTime).toLocaleDateString("pt-BR") : "—", referenceTime ? new Date(referenceTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", supervisor.supervisorName, `${supervisor.route?.name ?? "Sem rota"} · ${supervisor.route?.shiftType === "day" ? "Diurno" : supervisor.route?.shiftType === "night" ? "Noturno" : "Turno não informado"}`, visit?.postName ?? "—", visit ? visitStatus(visit.status).label : "—",
         visit?.arrivalTime ? new Date(visit.arrivalTime).toLocaleString("pt-BR") : "—", visit?.departureTime ? new Date(visit.departureTime).toLocaleString("pt-BR") : "—", visit?.durationMinutes ?? "—",
-        supervisor.route?.kmInitial ?? "—", supervisor.route?.kmFinal ?? "—", supervisor.route?.kmCovered ?? "—", Number(visit?.checklist?.nonCompliant ?? 0) > 0 ? `${visit?.checklist?.nonCompliant} ocorrência(s)` : "Sem ocorrência", visit?.observations ?? visit?.coverageReason ?? "Sem observações", visit ? formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude) : "Não registrado", visit ? formatCoordinates(visit.departureLatitude, visit.departureLongitude) : "Não registrado",
+        supervisor.route?.kmInitial ?? "—", supervisor.route?.kmFinal ?? "—", supervisor.route?.kmCovered ?? "—", visit?.occurrenceReport ?? "Registro pendente", visit?.coverageReason ?? "—", visit ? formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude) : "Não registrado", visit ? formatCoordinates(visit.departureLatitude, visit.departureLongitude) : "Não registrado",
         (supervisor.alerts ?? []).map((alert: any) => alert.title).join(" | ") || "Sem alertas",
       ]);
     }
@@ -204,7 +180,7 @@ export default function GestorDashboard() {
       ]);
       const section = buildSupervisorPdfSection(supervisor);
       await downloadOperationalReportPdf({
-        title: "Relatório de rota e auditorias",
+        title: "Relatório de rota e ocorrências",
         periodLabel: liveShiftLabel,
         sections: [section],
         contextLines: [
@@ -213,9 +189,9 @@ export default function GestorDashboard() {
         ],
         executiveMetrics: [
           { label: "Postos previstos", value: String(section.plannedPosts ?? section.visits.length) },
-          { label: "Auditados", value: String(section.visits.filter((visit) => visit.status === "visited" || visit.auditSubmittedAt).length) },
+          { label: "Registros enviados", value: String(section.visits.filter((visit) => visit.status === "visited" || visit.occurrenceSubmittedAt).length) },
           { label: "KM percorrido", value: section.kmCovered != null ? `${Number(section.kmCovered).toLocaleString("pt-BR")} km` : "Pendente" },
-          { label: "Ocorrências", value: String(section.visits.reduce((total, visit) => total + (visit.checklistItems ?? []).filter((item) => item.isCompliant === false).length, 0)), alert: section.visits.some((visit) => (visit.checklistItems ?? []).some((item) => item.isCompliant === false)) },
+          { label: "Ocorrências", value: String(section.visits.filter((visit) => visit.occurrenceReport?.trim()).length), alert: section.visits.some((visit) => visit.occurrenceReport?.trim()) },
         ],
         summaryLines: [
           `Supervisor: ${section.supervisorName}${section.supervisorUsername ? ` (@${section.supervisorUsername})` : ""}.`,
@@ -252,9 +228,9 @@ export default function GestorDashboard() {
         ],
         executiveMetrics: [
           { label: "Postos previstos", value: String((dailyReport.data.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)) },
-          { label: "Auditados", value: String(dailyReport.data.summary?.completedVisits ?? 0) },
+          { label: "Registros enviados", value: String(dailyReport.data.summary?.reportedOccurrences ?? 0) },
           { label: "KM total", value: `${Number(dailyReport.data.summary?.kmCovered ?? 0).toLocaleString("pt-BR")} km` },
-          { label: "Ocorrências", value: String(dailyReport.data.summary?.nonCompliantItems ?? 0), alert: Number(dailyReport.data.summary?.nonCompliantItems ?? 0) > 0 },
+          { label: "Ocorrências", value: String(dailyReport.data.summary?.reportedOccurrences ?? 0), alert: Number(dailyReport.data.summary?.reportedOccurrences ?? 0) > 0 },
         ],
         summaryLines: buildDailyReportSummaryLines(dailyReport.data),
         fileName: `pro-allen-relatorio-${reportDate.toISOString().slice(0, 10)}.pdf`,
@@ -299,13 +275,13 @@ export default function GestorDashboard() {
 
       <div className="mx-auto max-w-7xl space-y-7 px-4 py-7 sm:px-6 lg:px-8">
         <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl shadow-slate-950/10 sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, checklist, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, ocorrências, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
 
         <OperationalKpiBlock kpis={kpis} loading={dashboard.isLoading} fetching={dashboard.isFetching} unavailable={Boolean(dashboard.error)} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
 
         <section className="space-y-4">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Acompanhamento em tempo real</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Supervisores, postos e tempo de atendimento</h2><p className="mt-1 text-sm text-slate-600">Cada supervisor permanece aberto para consulta imediata de posto atual, tempo no local, GPS, KM, checklist, observações, alertas e próximas ações.</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Acompanhamento em tempo real</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Supervisores, postos e tempo de atendimento</h2><p className="mt-1 text-sm text-slate-600">Cada supervisor permanece aberto para consulta imediata de posto atual, tempo no local, GPS, KM, ocorrências, observações, alertas e próximas ações.</p></div>
           {pdfError && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{pdfError}</p>}
           {dashboard.error && <div className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between"><span>{supervisorErrorMessage(dashboard.error, "Não foi possível atualizar o painel operacional.")}</span><Button type="button" variant="outline" onClick={() => void dashboard.refetch()} className="border-rose-300 bg-white text-rose-900">Tentar novamente</Button></div>}
           {dashboard.isLoading ? <LoadingRows /> : supervisors.length ? <div className="space-y-4">{supervisors.map((supervisor) => <SupervisorOperationalCard key={supervisor.supervisorId} supervisor={supervisor} onExportPdf={() => exportSupervisorPdf(supervisor)} exporting={isExportingPdf === `supervisor-${supervisor.supervisorId}`} />)}</div> : <EmptyState title="Nenhum supervisor cadastrado" description="Os supervisores aparecerão nesta área quando tiverem acesso operacional configurado." />}
@@ -343,7 +319,7 @@ export default function GestorDashboard() {
 
         <GestorPostsManagementPanel management={postsManagement.data} loading={postsManagement.isLoading} />
 
-        <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm text-blue-950"><p className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Central do Gestor protegida</p><p className="mt-1 text-blue-800">O Gestor acompanha a operação sem alterar registros de campo. Chegadas, saídas, checklist, observações, KM e GPS continuam sendo registrados pelo supervisor.</p></section>
+        <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm text-blue-950"><p className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Central do Gestor protegida</p><p className="mt-1 text-blue-800">O Gestor acompanha a operação sem alterar registros de campo. Chegadas, saídas, ocorrências, observações, KM e GPS continuam sendo registrados pelo supervisor.</p></section>
       </div>
     </main>
   );
@@ -372,18 +348,17 @@ function DailyOperationalReport({ report }: { report: any }) {
   const summary = report.summary;
   return <div className="space-y-6 p-6">
     <div className="flex flex-col gap-2 rounded-2xl bg-blue-50 p-4 text-sm text-blue-950 sm:flex-row sm:items-center sm:justify-between"><p><strong>Data:</strong> {new Date(report.reportDate).toLocaleDateString("pt-BR")}</p><p><strong>Gerado às:</strong> {new Date(report.generatedAt).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p></div>
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><ReportMetric label="Supervisores em rota" value={`${summary.supervisorsOnRoute}/${summary.supervisors}`} /><ReportMetric label="Visitas concluídas" value={summary.completedVisits} /><ReportMetric label="Postos pendentes" value={summary.pendingVisits} /><ReportMetric label="Em atendimento" value={summary.visitsInProgress} /><ReportMetric label="Coberturas" value={summary.coverages} /><ReportMetric label="KM percorridos" value={`${Number(summary.kmCovered).toLocaleString("pt-BR")} km`} /><ReportMetric label="Não conformidades" value={summary.nonCompliantItems} alert={summary.nonCompliantItems > 0} /><ReportMetric label="Alertas abertos" value={summary.alerts} alert={summary.alerts > 0} /></div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><ReportMetric label="Supervisores em rota" value={`${summary.supervisorsOnRoute}/${summary.supervisors}`} /><ReportMetric label="Visitas concluídas" value={summary.completedVisits} /><ReportMetric label="Postos pendentes" value={summary.pendingVisits} /><ReportMetric label="Em atendimento" value={summary.visitsInProgress} /><ReportMetric label="Coberturas" value={summary.coverages} /><ReportMetric label="KM percorridos" value={`${Number(summary.kmCovered).toLocaleString("pt-BR")} km`} /><ReportMetric label="Ocorrências enviadas" value={summary.reportedOccurrences} alert={summary.pendingOccurrenceReports > 0} /><ReportMetric label="Alertas abertos" value={summary.alerts} alert={summary.alerts > 0} /></div>
     <div className="space-y-3">{report.supervisors.map((supervisor: any) => {
       const visits = supervisor.route?.visits ?? [];
+      const occurrenceTotals = supervisor.occurrenceTotals ?? { total: visits.length, reported: visits.filter((visit: any) => Boolean(visit.occurrenceReport?.trim())).length };
       return <details key={supervisor.supervisorId} className="rounded-2xl border border-slate-200 bg-slate-50" open={supervisor.operationalStatus === "em_atendimento"}>
         <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-1 text-sm text-slate-600">{supervisor.route ? `${supervisor.route.name} · ${supervisor.route.region}` : "Nenhuma rota preparada"}</p></div><div className="flex flex-wrap gap-2"><Badge className={operationStatus(supervisor.operationalStatus).className}>{supervisor.operationalStatusLabel}</Badge>{supervisor.route && <Badge variant="outline">{supervisor.route.completedVisits}/{supervisor.route.totalPosts} postos</Badge>}</div></summary>
         <div className="space-y-4 border-t border-slate-200 bg-white p-5">
           <div className="grid gap-3 md:grid-cols-3"><InfoBlock icon={Activity} label="Atendimento" value={supervisor.route?.activeVisit?.postName ?? "Sem atendimento ativo"} detail={supervisor.route?.activeVisit ? `Desde ${formatTime(supervisor.route.activeVisit.arrivalTime)} · ${formatDuration(supervisor.route.activeVisit.durationMinutes)}` : "Sem posto em atendimento"} /><InfoBlock icon={Car} label="Quilometragem" value={supervisor.route?.kmInitial != null ? `${Number(supervisor.route.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM não informado"} detail={supervisor.route?.kmCovered != null ? `${Number(supervisor.route.kmCovered).toLocaleString("pt-BR")} km percorridos` : "KM final pendente"} /><InfoBlock icon={Crosshair} label="Último GPS" value={supervisor.latestLocation ? formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude) : "Sem GPS"} detail={supervisor.latestLocation?.recordedAt ? formatDateTime(supervisor.latestLocation.recordedAt) : "Localização não recebida"} /></div>
-          {(supervisor.activities?.length ?? 0) > 1 && <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4"><p className="text-sm font-semibold text-indigo-950">Sequência de atividades do dia</p><div className="mt-3 grid gap-2 md:grid-cols-2">{supervisor.activities.map((activity: any) => <div key={activity.id} className="rounded-lg border border-indigo-100 bg-white p-3 text-sm"><p className="font-semibold text-slate-900">{activity.name}</p><p className="mt-1 text-xs text-slate-600">{activity.startedAt ? `Início: ${formatTime(activity.startedAt)}` : "Aguardando início"}{activity.completedAt ? ` · Fim: ${formatTime(activity.completedAt)}` : ""}</p><p className="mt-1 text-xs text-slate-600">{activity.kmInitial != null ? `${Number(activity.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM inicial pendente"}{activity.kmFinal != null ? ` · ${Number(activity.kmFinal).toLocaleString("pt-BR")} km final` : ""}</p></div>)}</div></div>}
-          <div className="grid gap-3 sm:grid-cols-4"><ReportMetric label="Itens conformes" value={supervisor.checklistTotals.compliant} /><ReportMetric label="Requer atenção" value={supervisor.checklistTotals.nonCompliant} alert={supervisor.checklistTotals.nonCompliant > 0} /><ReportMetric label="Aguardando resposta" value={supervisor.checklistTotals.unanswered} /><ReportMetric label="Coberturas" value={supervisor.coverageCount} /></div>
+          <div className="grid gap-3 sm:grid-cols-4"><ReportMetric label="Relatos enviados" value={occurrenceTotals.reported} /><ReportMetric label="Relatos pendentes" value={Math.max(0, occurrenceTotals.total - occurrenceTotals.reported)} alert={occurrenceTotals.total > occurrenceTotals.reported} /><ReportMetric label="Visitas registradas" value={occurrenceTotals.total} /><ReportMetric label="Coberturas" value={supervisor.coverageCount} /></div>
           {supervisor.alerts.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><strong>Alertas:</strong> {supervisor.alerts.map((alert: any) => alert.title).join(" · ")}</div>}
-          <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[960px] w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-3 py-3">Posto</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Horários</th><th className="px-3 py-3">Resumo do checklist</th><th className="px-3 py-3">Cobertura / observações</th></tr></thead><tbody className="divide-y divide-slate-100">{visits.map((visit: any, index: number) => <tr key={`${visit.postName}-${index}`} className="align-top"><td className="px-3 py-3 font-semibold text-slate-900">{visit.postName}<p className="mt-1 font-normal text-slate-500">{visit.region}</p></td><td className="px-3 py-3"><Badge className={checklistStatus(visit.status).className}>{checklistStatus(visit.status).label}</Badge></td><td className="px-3 py-3 text-slate-600">Chegada: {formatTime(visit.arrivalTime)}<br />Saída: {formatTime(visit.departureTime)}{visit.durationMinutes != null && <><br />Duração: {formatDuration(visit.durationMinutes)}</>}</td><td className="min-w-[220px] px-3 py-3"><ChecklistPreview checklist={visit.checklist} items={visit.checklistItems} status={visit.status} /></td><td className="max-w-[260px] px-3 py-3 text-slate-600">{visit.isCoverage && <p className="mb-2 rounded bg-violet-50 p-2 text-violet-950"><strong>Cobertura:</strong> {visit.coverageReason}</p>}{visit.observations || "Sem observações"}</td></tr>)}</tbody></table></div>
-          <ChecklistDetails visits={visits} />
+          <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[960px] w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-3 py-3">Posto</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Horários</th><th className="px-3 py-3">Ocorrência / relatório</th><th className="px-3 py-3">Cobertura / justificativa</th></tr></thead><tbody className="divide-y divide-slate-100">{visits.map((visit: any, index: number) => <tr key={`${visit.postName}-${index}`} className="align-top"><td className="px-3 py-3 font-semibold text-slate-900">{visit.postName}<p className="mt-1 font-normal text-slate-500">{visit.region}</p></td><td className="px-3 py-3"><Badge className={visitStatus(visit.status).className}>{visitStatus(visit.status).label}</Badge></td><td className="px-3 py-3 text-slate-600">Chegada: {formatTime(visit.arrivalTime)}<br />Saída: {formatTime(visit.departureTime)}{visit.durationMinutes != null && <><br />Duração: {formatDuration(visit.durationMinutes)}</>}</td><td className="min-w-[260px] px-3 py-3"><OccurrencePreview report={visit.occurrenceReport} status={visit.status} /></td><td className="max-w-[260px] px-3 py-3 text-slate-600">{visit.isCoverage ? <><strong className="text-violet-950">Justificativa:</strong> {visit.coverageReason || "Não informada"}</> : "—"}</td></tr>)}</tbody></table></div>
         </div>
       </details>;
     })}</div>
@@ -397,9 +372,9 @@ function ReportMetric({ label, value, alert = false }: { label: string; value: s
 function OperationalKpiBlock({ kpis, loading, fetching, unavailable = false, shiftLabel }: { kpis: any; loading: boolean; fetching: boolean; unavailable?: boolean; shiftLabel: string }) {
   const formatNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
   const inspections = kpis?.inspections;
-  const duration = kpis?.auditDuration;
+  const duration = kpis?.visitDuration;
   const fleet = kpis?.fleet;
-  const compliance = kpis?.compliance;
+  const occurrences = kpis?.occurrences;
   const periodLabel = kpis?.period ? `${new Date(kpis.period.start).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} até ${new Date(kpis.period.end).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Período em apuração";
 
   return <section className="rounded-3xl border border-amber-200 bg-white p-6 shadow-sm">
@@ -416,15 +391,15 @@ function OperationalKpiBlock({ kpis, loading, fetching, unavailable = false, shi
       <KpiCard
         icon={ClipboardCheck}
         tone="blue"
-        label="Vistorias realizadas vs. meta"
-        value={loading && !kpis ? "—" : unavailable ? "0/0" : `${inspections?.audited ?? 0}/${inspections?.target ?? 0}`}
+        label="Relatos enviados vs. meta"
+        value={loading && !kpis ? "—" : unavailable ? "0/0" : `${inspections?.reported ?? 0}/${inspections?.target ?? 0}`}
         detail={inspections?.completionRate != null ? `${formatNumber(inspections.completionRate, "%")} da meta das rotas · ${inspections?.completed ?? 0} visitas encerradas` : "Meta indisponível: nenhuma rota preparada no período"}
         progress={inspections?.completionRate ?? null}
       />
       <KpiCard
         icon={Clock3}
         tone="indigo"
-        label="Tempo médio por auditoria"
+        label="Tempo médio por visita"
         value={!unavailable && duration?.averageMinutes != null ? formatDuration(Math.round(duration.averageMinutes)) : "—"}
         detail={duration?.measuredVisits ? `Base de cálculo: ${duration.measuredVisits} visita(s) com chegada e saída registradas` : "Ainda sem visitas com chegada e saída no período"}
       />
@@ -436,12 +411,12 @@ function OperationalKpiBlock({ kpis, loading, fetching, unavailable = false, shi
         detail={fleet?.routesPendingKm ? `${fleet.routesWithKm} rota(s) fechada(s) · ${fleet.routesPendingKm} aguardando KM final` : `${fleet?.routesWithKm ?? 0} rota(s) com KM inicial e final informados`}
       />
       <KpiCard
-        icon={ShieldCheck}
-        tone={!unavailable && compliance?.rate != null && compliance.rate < 80 ? "red" : "amber"}
-        label="Índice de conformidade"
-        value={!unavailable && compliance?.rate != null ? formatNumber(compliance.rate, "%") : "—"}
-        detail={!unavailable && compliance?.evaluatedVisits ? `${compliance.compliantVisits} de ${compliance.evaluatedVisits} checklists sem ocorrência · ${compliance.nonCompliantItems} item(ns) em não conformidade` : "Nenhum checklist respondido no período"}
-        progress={unavailable ? null : compliance?.rate ?? null}
+        icon={FileText}
+        tone={occurrences?.pendingReports ? "red" : "amber"}
+        label="Registro de ocorrências"
+        value={!unavailable ? `${occurrences?.reportedVisits ?? 0}/${occurrences?.totalVisits ?? 0}` : "0/0"}
+        detail={occurrences?.pendingReports ? `${occurrences.pendingReports} visita(s) ainda sem relato obrigatório` : "Todas as visitas possuem registro enviado"}
+        progress={occurrences?.totalVisits ? (occurrences.reportedVisits / occurrences.totalVisits) * 100 : null}
       />
     </div>
   </section>;
@@ -470,20 +445,19 @@ function SupervisorOperationalCard({ supervisor, onExportPdf, exporting = false 
   const route = supervisor.route;
   const activities = supervisor.activities ?? (route ? [route] : []);
   const status = operationStatus(supervisor.status);
-  const progress = route?.totalPosts ? Math.round((route.auditedVisits / route.totalPosts) * 100) : 0;
+  const progress = route?.totalPosts ? Math.round((route.reportedVisits / route.totalPosts) * 100) : 0;
   const gpsDescription = supervisor.latestLocation ? `${formatCoordinates(supervisor.latestLocation.latitude, supervisor.latestLocation.longitude)} · ${supervisor.latestLocation.accuracy != null ? `precisão ${Number(supervisor.latestLocation.accuracy).toFixed(0)} m` : "precisão não informada"}` : "GPS ainda não recebido";
 
   return <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm" open>
-    <summary className="flex cursor-pointer list-none flex-col gap-4 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">{String(supervisor.supervisorName ?? "S").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-lg font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-0.5 truncate text-sm text-slate-500">{supervisor.supervisorUsername ? `@${supervisor.supervisorUsername}` : "Usuário operacional"} {route ? `· ${route.routeName}` : ""}</p></div></div><div className="flex flex-wrap items-center gap-2"><Badge className={status.className}>{status.label}</Badge>{route && <span className="text-sm font-medium text-slate-700">{route.routeActivityType === "operational_base" ? "Atividade interna" : `${route.auditedVisits}/${route.totalPosts} auditados`}</span>}{onExportPdf && <Button type="button" size="sm" variant="outline" disabled={!route || exporting} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onExportPdf(); }} className="gap-2 border-slate-300"><FileDown className="h-4 w-4" /> {exporting ? "Gerando PDF..." : "Exportar PDF"}</Button>}<ChevronDown className="h-5 w-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" /></div></summary>
+    <summary className="flex cursor-pointer list-none flex-col gap-4 p-5 marker:content-none sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">{String(supervisor.supervisorName ?? "S").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-lg font-semibold text-slate-950">{supervisor.supervisorName}</p><p className="mt-0.5 truncate text-sm text-slate-500">{supervisor.supervisorUsername ? `@${supervisor.supervisorUsername}` : "Usuário operacional"} {route ? `· ${route.routeName}` : ""}</p></div></div><div className="flex flex-wrap items-center gap-2"><Badge className={status.className}>{status.label}</Badge>{route && <span className="text-sm font-medium text-slate-700">{route.routeActivityType === "operational_base" ? "Atividade interna" : `${route.reportedVisits}/${route.totalPosts} relatos`}</span>}{onExportPdf && <Button type="button" size="sm" variant="outline" disabled={!route || exporting} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onExportPdf(); }} className="gap-2 border-slate-300"><FileDown className="h-4 w-4" /> {exporting ? "Gerando PDF..." : "Exportar PDF"}</Button>}<ChevronDown className="h-5 w-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" /></div></summary>
     <div className="border-t border-slate-100 p-5">
       {!route ? <EmptyState title="Nenhuma rota preparada hoje" description="Ainda não há registros de rota para este supervisor no dia de hoje." /> : <div className="space-y-6">
-        <div className="grid gap-4 lg:grid-cols-4"><InfoBlock icon={Route} label={route.routeActivityType === "operational_base" ? "Atividade" : "Rota"} value={route.routeActivityType === "operational_base" ? "Base Operacional" : `${route.routeName} · ${route.routeRegion}`} detail={route.routeActivityType === "operational_base" ? "Atividade interna sem postos de cliente" : route.startedAt ? `Iniciada às ${formatTime(route.startedAt)}` : "Ainda não iniciada"} /><InfoBlock icon={Activity} label={route.routeActivityType === "operational_base" ? "Situação atual" : "Posto atual e tempo"} value={route.routeActivityType === "operational_base" ? "Em atividade na base" : route.activeVisit?.postName ?? "Em deslocamento"} detail={route.routeActivityType === "operational_base" ? "Sem checklist de visita previsto" : route.activeVisit ? `No posto há ${formatDuration(route.activeVisit.durationMinutes)} · chegada ${formatTime(route.activeVisit.arrivalTime)}` : route.nextPost ? `Próximo posto: ${route.nextPost.postName}` : "Sem próximos postos"} /><InfoBlock icon={Car} label="Viatura e KM" value={route.kmInitial != null ? `${Number(route.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM inicial pendente"} detail={route.kmFinal != null ? `${Number(route.kmFinal).toLocaleString("pt-BR")} km final · ${Number(route.kmCovered ?? 0).toLocaleString("pt-BR")} km rodados` : "KM final não informado"} /><InfoBlock icon={Crosshair} label="Último GPS" value={supervisor.latestLocation ? `${supervisor.latestLocation.recordedAt ? `há ${route.gpsAgeMinutes ?? 0} min` : "recebido"}` : "Sem localização"} detail={gpsDescription} /></div>
+        <div className="grid gap-4 lg:grid-cols-4"><InfoBlock icon={Route} label={route.routeActivityType === "operational_base" ? "Atividade" : "Rota"} value={route.routeActivityType === "operational_base" ? "Base Operacional" : `${route.routeName} · ${route.routeRegion}`} detail={route.routeActivityType === "operational_base" ? "Atividade interna sem postos de cliente" : route.startedAt ? `Iniciada às ${formatTime(route.startedAt)}` : "Ainda não iniciada"} /><InfoBlock icon={Activity} label={route.routeActivityType === "operational_base" ? "Situação atual" : "Posto atual e tempo"} value={route.routeActivityType === "operational_base" ? "Em atividade na base" : route.activeVisit?.postName ?? "Em deslocamento"} detail={route.routeActivityType === "operational_base" ? "Sem visitas de cliente previstas" : route.activeVisit ? `No posto há ${formatDuration(route.activeVisit.durationMinutes)} · chegada ${formatTime(route.activeVisit.arrivalTime)}` : route.nextPost ? `Próximo posto: ${route.nextPost.postName}` : "Sem próximos postos"} /><InfoBlock icon={Car} label="Viatura e KM" value={route.kmInitial != null ? `${Number(route.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM inicial pendente"} detail={route.kmFinal != null ? `${Number(route.kmFinal).toLocaleString("pt-BR")} km final · ${Number(route.kmCovered ?? 0).toLocaleString("pt-BR")} km rodados` : "KM final não informado"} /><InfoBlock icon={Crosshair} label="Último GPS" value={supervisor.latestLocation ? `${supervisor.latestLocation.recordedAt ? `há ${route.gpsAgeMinutes ?? 0} min` : "recebido"}` : "Sem localização"} detail={gpsDescription} /></div>
         <FleetConsumptionDetails route={route} />
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">Progresso da rota</p><p className="mt-1 text-sm text-slate-600">{route.auditedVisits} auditados · {route.completedVisits} visitas concluídas · {route.pendingVisits} pendentes · {route.skippedVisits} não realizados</p></div><p className="text-sm font-bold text-slate-950">{progress}%</p></div><Progress value={progress} className="mt-3 h-2" /></div>
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">Progresso dos registros</p><p className="mt-1 text-sm text-slate-600">{route.reportedVisits} relatos enviados · {route.completedVisits} visitas concluídas · {route.pendingVisits} pendentes · {route.skippedVisits} não realizados</p></div><p className="text-sm font-bold text-slate-950">{progress}%</p></div><Progress value={progress} className="mt-3 h-2" /></div>
         {activities.length > 1 && <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4"><p className="text-sm font-semibold text-indigo-950">Sequência de atividades no dia</p><div className="mt-3 grid gap-3 md:grid-cols-2">{activities.map((activity: any) => <div key={activity.id} className="rounded-lg border border-indigo-100 bg-white p-3"><div className="flex items-center justify-between gap-2"><p className="font-semibold text-slate-900">{activity.routeActivityType === "operational_base" ? "Base Operacional" : activity.routeName}</p><Badge className={activity.routeStatus === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}>{activity.routeStatus === "completed" ? "Encerrada" : activity.routeStatus === "in_progress" ? "Em andamento" : "Aguardando KM"}</Badge></div><p className="mt-1 text-xs text-slate-600">{activity.startedAt ? `Início: ${formatTime(activity.startedAt)}` : "Aguardando início"}{activity.completedAt ? ` · Fim: ${formatTime(activity.completedAt)}` : ""}</p><p className="mt-1 text-xs text-slate-600">{activity.kmInitial != null ? `${Number(activity.kmInitial).toLocaleString("pt-BR")} km inicial` : "KM inicial pendente"}{activity.kmFinal != null ? ` · ${Number(activity.kmFinal).toLocaleString("pt-BR")} km final` : ""}</p></div>)}</div></div>}
         {supervisor.alerts.length > 0 && <div className="flex flex-wrap gap-2">{supervisor.alerts.map((alert: any, index: number) => <Badge key={`${alert.code}-${index}`} variant="outline" className={alertAppearance(alert.severity)}>{alert.title}</Badge>)}</div>}
-        <div><div className="mb-3 flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-blue-700" /><h3 className="font-semibold text-slate-950">Postos e checklist da rota</h3></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[960px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Posto</th><th className="px-4 py-3">Situação</th><th className="px-4 py-3">Horários</th><th className="px-4 py-3">Resumo do checklist</th><th className="px-4 py-3">Observações</th></tr></thead><tbody className="divide-y divide-slate-100">{route.checklistVisits.map((visit: any) => { const visitStatus = checklistStatus(visit.status); return <tr key={visit.id} className="align-top"><td className="px-4 py-4"><p className="font-semibold text-slate-900">{visit.postName}</p>{visit.isCoverage && <Badge className="mt-2 bg-violet-100 text-violet-800 hover:bg-violet-100">Cobertura fora da rota</Badge>}<p className="mt-1 text-xs text-slate-500">{visit.postRegion}{visit.postAddress ? ` · ${visit.postAddress}` : ""}</p></td><td className="px-4 py-4"><Badge className={visitStatus.className}>{visitStatus.label}</Badge>{visit.status === "in_progress" && <p className="mt-2 text-xs font-medium text-amber-700">{formatDuration(visit.durationMinutes)}</p>}</td><td className="px-4 py-4 text-xs text-slate-600"><p>Chegada: {formatTime(visit.arrivalTime)}</p><p className="mt-1">Saída: {formatTime(visit.departureTime)}</p><p className="mt-1">Registro: {formatDateTime(visit.visitedAt ?? visit.arrivalTime)}</p></td><td className="min-w-[220px] px-4 py-4"><ChecklistPreview checklist={visit.checklistSummary} items={visit.checklistItems} status={visit.status} /></td><td className="max-w-[240px] px-4 py-4 text-xs leading-5 text-slate-600">{visit.isCoverage && <p className="mb-2 rounded bg-violet-50 p-2 text-violet-950"><strong>Motivo:</strong> {visit.coverageReason}</p>}{visit.observations || "Sem observações"}</td></tr>; })}</tbody></table></div></div>
-        <ChecklistDetails visits={route.checklistVisits} />
+        <div><div className="mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-violet-700" /><h3 className="font-semibold text-slate-950">Postos e ocorrências da rota</h3></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[960px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Posto</th><th className="px-4 py-3">Situação</th><th className="px-4 py-3">Horários</th><th className="px-4 py-3">Ocorrência / relatório</th><th className="px-4 py-3">Cobertura / justificativa</th></tr></thead><tbody className="divide-y divide-slate-100">{(route.visits).map((visit: any) => <tr key={visit.id} className="align-top"><td className="px-4 py-4"><p className="font-semibold text-slate-900">{visit.postName}</p>{visit.isCoverage && <Badge className="mt-2 bg-violet-100 text-violet-800 hover:bg-violet-100">Cobertura fora da rota</Badge>}<p className="mt-1 text-xs text-slate-500">{visit.postRegion}{visit.postAddress ? ` · ${visit.postAddress}` : ""}</p></td><td className="px-4 py-4"><Badge className={visitStatus(visit.status).className}>{visitStatus(visit.status).label}</Badge>{visit.status === "in_progress" && <p className="mt-2 text-xs font-medium text-amber-700">{formatDuration(visit.durationMinutes)}</p>}</td><td className="px-4 py-4 text-xs text-slate-600"><p>Chegada: {formatTime(visit.arrivalTime)}</p><p className="mt-1">Saída: {formatTime(visit.departureTime)}</p><p className="mt-1">Registro: {formatDateTime(visit.visitedAt ?? visit.arrivalTime)}</p></td><td className="min-w-[260px] px-4 py-4"><OccurrencePreview report={visit.occurrenceReport} status={visit.status} /></td><td className="max-w-[240px] px-4 py-4 text-xs leading-5 text-slate-600">{visit.isCoverage ? <><strong>Justificativa:</strong> {visit.coverageReason || "Não informada"}</> : "—"}</td></tr>)}</tbody></table></div></div>
       </div>}
     </div>
   </details>;

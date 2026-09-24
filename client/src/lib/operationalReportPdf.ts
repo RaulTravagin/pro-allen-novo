@@ -5,20 +5,13 @@ import type { jsPDF } from "jspdf";
  * A biblioteca é carregada sob demanda para não pesar no carregamento inicial do painel.
  */
 
-export type PdfChecklistItem = {
-  category?: string | null;
-  description?: string | null;
-  isCompliant?: boolean | null;
-  notes?: string | null;
-};
-
 export type PdfVisit = {
   postName?: string | null;
   region?: string | null;
   status?: string | null;
   arrivalTime?: Date | string | null;
   departureTime?: Date | string | null;
-  auditSubmittedAt?: Date | string | null;
+  occurrenceSubmittedAt?: Date | string | null;
   durationMinutes?: number | null;
   observations?: string | null;
   isCoverage?: boolean | null;
@@ -27,7 +20,7 @@ export type PdfVisit = {
   arrivalLongitude?: number | string | null;
   departureLatitude?: number | string | null;
   departureLongitude?: number | string | null;
-  checklistItems?: PdfChecklistItem[] | null;
+  occurrenceReport?: string | null;
   photos?: Array<{ url?: string | null; caption?: string | null }> | null;
 };
 
@@ -104,13 +97,7 @@ export function visitStatusLabel(status: string | null | undefined) {
   return ({ visited: "Concluído", in_progress: "Em atendimento", pending: "Pendente", skipped: "Não realizado" } as Record<string, string>)[status ?? ""] ?? "—";
 }
 
-export function checklistItemLabel(item: PdfChecklistItem) {
-  if (item.isCompliant === true) return "Conforme";
-  if (item.isCompliant === false) return "Não conforme";
-  return "Sem resposta";
-}
-
-/** Converte imagens de auditoria em data URL para embutir no PDF sem depender do servidor. */
+/** Converte imagens de ocorrência em data URL para embutir no PDF sem depender do servidor. */
 async function loadImageAsDataUrl(url: string) {
   try {
     const response = await fetch(url, { credentials: "include" });
@@ -305,20 +292,20 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     cursorY += 30;
 
     const chronologicalVisits = [...section.visits].sort((first, second) => {
-      const firstTime = new Date(first.arrivalTime ?? first.auditSubmittedAt ?? 0).getTime();
-      const secondTime = new Date(second.arrivalTime ?? second.auditSubmittedAt ?? 0).getTime();
+      const firstTime = new Date(first.arrivalTime ?? first.occurrenceSubmittedAt ?? 0).getTime();
+      const secondTime = new Date(second.arrivalTime ?? second.occurrenceSubmittedAt ?? 0).getTime();
       return firstTime - secondTime;
     });
     const visitRows = chronologicalVisits.map((visit) => [
       `${textOrDash(visit.postName)}${visit.isCoverage ? `\n(${visit.postName === "Base Operacional" ? "BASE OPERACIONAL" : "COBERTURA"})` : ""}${visit.region ? `\n${visit.region}` : ""}`,
       visitStatusLabel(visit.status),
       `Chegada: ${formatDateTime(visit.arrivalTime)}\nSaída: ${formatDateTime(visit.departureTime)}\nDuração: ${formatDuration(visit.durationMinutes)}`,
-      `Envio: ${formatDateTime(visit.auditSubmittedAt)}\n${visit.isCoverage && visit.coverageReason ? `Cobertura: ${visit.coverageReason}\n` : ""}${textOrDash(visit.observations)}`,
+      `Envio: ${formatDateTime(visit.occurrenceSubmittedAt)}\n${visit.isCoverage && visit.coverageReason ? `Cobertura: ${visit.coverageReason}\n` : ""}${textOrDash(visit.occurrenceReport ?? visit.observations)}`,
     ]);
 
     autoTable(doc, {
       startY: cursorY,
-      head: [["Posto", "Situação", "Atendimento", "Envio e observações"]],
+      head: [["Posto", "Situação", "Atendimento", "Envio e ocorrência"]],
       body: visitRows.length ? visitRows : [["Nenhum posto registrado", "—", "—", "—"]],
       theme: "grid",
       styles: { font: "helvetica", fontSize: 8, cellPadding: 2.2, textColor: BLACK, lineColor: [226, 232, 240] },
@@ -332,15 +319,12 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
     cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
     for (const visit of chronologicalVisits) {
-      const items = visit.checklistItems ?? [];
       const photos = (visit.photos ?? []).filter((photo) => photo?.url);
-      const nonCompliantItems = items.filter((item) => item.isCompliant === false);
       const occurrenceLines = [
-        ...(nonCompliantItems.length ? [`${nonCompliantItems.length} item(ns) não conforme(s) identificado(s).`] : []),
-        ...nonCompliantItems.map((item) => `${textOrDash(item.description)}${item.notes ? `: ${item.notes}` : ""}`),
+        ...(visit.occurrenceReport?.trim() ? [visit.occurrenceReport.trim()] : []),
         ...(visit.isCoverage && visit.coverageReason ? [`Cobertura justificada: ${visit.coverageReason}`] : []),
       ];
-      if (!items.length && !photos.length && !occurrenceLines.length) continue;
+      if (!photos.length && !occurrenceLines.length) continue;
 
       ensureSpace(28);
       doc.setFillColor(248, 250, 252);
@@ -349,11 +333,11 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(...BLACK);
-      doc.text(`VISTORIA DETALHADA · ${textOrDash(visit.postName)}`, marginX + 4, cursorY + 6);
+      doc.text(`OCORRÊNCIA DETALHADA · ${textOrDash(visit.postName)}`, marginX + 4, cursorY + 6);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(...GRAY);
-      doc.text(`Envio: ${formatDateTime(visit.auditSubmittedAt)} · Chegada: ${formatDateTime(visit.arrivalTime)} · Saída: ${formatDateTime(visit.departureTime)}`, marginX + 4, cursorY + 11);
+      doc.text(`Envio: ${formatDateTime(visit.occurrenceSubmittedAt)} · Chegada: ${formatDateTime(visit.arrivalTime)} · Saída: ${formatDateTime(visit.departureTime)}`, marginX + 4, cursorY + 11);
       doc.text(`GPS chegada: ${formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude)} · GPS saída: ${formatCoordinates(visit.departureLatitude, visit.departureLongitude)}`, marginX + 4, cursorY + 15.5);
       cursorY += 25;
 
@@ -376,22 +360,6 @@ export async function downloadOperationalReportPdf(input: PdfReportInput) {
       if (occurrenceLines.length) {
         ensureSpace(20 + occurrenceLines.length * 4);
         cursorY += drawOccurrenceBlock(doc, occurrenceLines, cursorY, pageWidth, marginX) + 5;
-      }
-
-      if (items.length) {
-        autoTable(doc, {
-          startY: cursorY,
-          head: [["Item verificado", "Resultado", "Anotação do supervisor"]],
-          body: items.map((item) => [`${textOrDash(item.category)}${item.description ? ` · ${item.description}` : ""}`, checklistItemLabel(item), textOrDash(item.notes)]),
-          theme: "striped",
-          styles: { font: "helvetica", fontSize: 8, cellPadding: 2, textColor: BLACK, lineColor: [226, 232, 240] },
-          headStyles: { fillColor: YELLOW, textColor: BLACK, fontStyle: "bold" },
-          columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" } },
-          margin: { top: PAGE_MARGIN_TOP, right: marginX, bottom: PAGE_MARGIN_BOTTOM, left: marginX },
-          rowPageBreak: "avoid",
-          didDrawPage: () => drawHeader(doc, input, generatedAt),
-        });
-        cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
       }
 
       if (photos.length) {

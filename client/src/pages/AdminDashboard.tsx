@@ -18,11 +18,11 @@ export default function AdminDashboard() {
 
   // Queries
   const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
-  const { data: reports, isLoading: reportsLoading } = trpc.reports.visitChecklistsByDateRange.useQuery({
+  const { data: reports, isLoading: reportsLoading } = trpc.reports.occurrencesByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
-  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.conformanceSummaryByDateRange.useQuery({
+  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.occurrenceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -60,7 +60,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <AdminHeader
         title="Painel administrativo"
-        subtitle="Acompanhe prioridades, visitas e conformidade"
+        subtitle="Acompanhe prioridades, visitas e ocorrências"
         onLogout={() => logout()}
       />
 
@@ -85,12 +85,12 @@ export default function AdminDashboard() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
-                Taxa de Conformidade
+                Ocorrências registradas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{conformanceLoading ? '...' : conformance?.total ? `${Math.round((conformance.compliant / conformance.total) * 100)}%` : '—'}</div>
-              <p className="text-xs text-gray-600 mt-2">Itens de checklist no período</p>
+              <div className="text-3xl font-bold text-gray-900">{conformanceLoading ? '...' : conformance?.total ? `${conformance.reported}/${conformance.total}` : '—'}</div>
+              <p className="text-xs text-gray-600 mt-2">Visitas com ocorrência enviada no período</p>
             </CardContent>
           </Card>
         </div>

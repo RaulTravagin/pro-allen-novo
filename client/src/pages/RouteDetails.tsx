@@ -600,7 +600,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
             <CardHeader>
               <CardTitle id="base-operational-title" className="flex items-center gap-2 text-violet-950"><Building2 className="h-5 w-5 text-violet-700" /> Atividade em Base Operacional</CardTitle>
-              <CardDescription>Esta atividade não possui postos de cliente ou checklist de visita. Registre o KM da viatura e mantenha a localização ativa enquanto estiver na base.</CardDescription>
+              <CardDescription>Esta atividade não possui postos de cliente. Registre o KM da viatura e, quando necessário, envie uma ocorrência sobre a atividade na base.</CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-violet-900">{route.status === "pending" ? "Informe o KM inicial para começar o registro da atividade na base." : route.status === "in_progress" ? "Atividade na base em andamento. Ao finalizar, informe o KM final para encerrar o registro do dia." : "Atividade na base encerrada."}</CardContent>
           </Card>
@@ -659,6 +659,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 postAddress={post?.address}
                 status={checklist.status as 'pending' | 'in_progress' | 'visited'}
                 observations={checklist.observations || undefined}
+                occurrenceReport={checklist.occurrenceReport}
                 isCoverage={checklist.isCoverage}
                 isOperationalBaseCoverage={Boolean(post && "routeActivityType" in post && post.routeActivityType === "operational_base")}
                 coverageReason={checklist.coverageReason}
@@ -688,8 +689,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       notifySupervisorError(error, "Erro ao registrar saída");
     }
                 }}
-                onOpenChecklist={(checklistId) => {
-                  window.location.href = `/supervisor/checklist/${checklistId}`;
+                onOpenOccurrence={(checklistId) => {
+                  window.location.href = `/supervisor/occurrence/${checklistId}`;
                 }}
                 hasActiveVisit={Boolean(activeChecklist && activeChecklist.id !== checklist.id)}
                 isActiveVisit={activeChecklist?.id === checklist.id}

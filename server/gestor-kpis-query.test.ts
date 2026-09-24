@@ -2,13 +2,9 @@ import { describe, expect, it } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import * as schema from "../drizzle/schema";
-import { checklistItems, posts, supervisorRoutes, visitChecklists } from "../drizzle/schema";
+import { posts, supervisorRoutes, visitChecklists } from "../drizzle/schema";
 import { getCurrentOperationalPeriod } from "./operational-shifts";
 
-/**
- * O banco externo não fica disponível no ambiente de testes, então validamos o SQL
- * efetivamente emitido pelo Drizzle: colunas qualificadas e ausência de colunas inexistentes.
- */
 const db = drizzle({ schema, connection: { connectionString: "postgres://user:pass@localhost:5432/db" } });
 const period = getCurrentOperationalPeriod(new Date("2026-08-21T12:00:00-03:00"));
 const routeFilter = and(gte(supervisorRoutes.shiftStartedAt, period.start), lt(supervisorRoutes.shiftStartedAt, period.end));
@@ -16,9 +12,7 @@ const routeKmInitial = sql`"supervisorRoutes"."kmInitial"`;
 const routeKmFinal = sql`"supervisorRoutes"."kmFinal"`;
 const routeRouteId = sql`"supervisorRoutes"."routeId"`;
 const postRouteId = sql`"posts"."routeId"`;
-const itemId = sql`"checklistItems"."id"`;
-const itemIsCompliant = sql`"checklistItems"."isCompliant"`;
-const answeredNonCompliant = sql`"answeredVisits"."nonCompliantItems"`;
+const occurrenceReport = sql`"visitChecklists"."occurrenceReport"`;
 
 function routeAggregateSql() {
   return db.select({
@@ -27,21 +21,13 @@ function routeAggregateSql() {
   }).from(supervisorRoutes).where(routeFilter).toSQL().sql;
 }
 
-function complianceAggregateSql() {
-  const answeredVisits = db.select({
-    visitId: visitChecklists.id,
-    nonCompliantItems: sql<number>`count(${itemId}) filter (where ${itemIsCompliant} = false)`.as("nonCompliantItems"),
+function occurrenceAggregateSql() {
+  return db.select({
+    totalVisits: sql<string | null>`count(*)`,
+    reportedVisits: sql<string | null>`count(*) filter (where nullif(trim(coalesce(${occurrenceReport}, '')), '') is not null)`,
   }).from(visitChecklists)
     .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-    .innerJoin(checklistItems, eq(checklistItems.visitChecklistId, visitChecklists.id))
-    .where(routeFilter)
-    .groupBy(visitChecklists.id)
-    .as("answeredVisits");
-
-  return db.select({
-    evaluatedVisits: sql<string | null>`count(*)`,
-    compliantVisits: sql<string | null>`count(*) filter (where ${answeredNonCompliant} = 0)`,
-  }).from(answeredVisits).toSQL().sql;
+    .where(routeFilter).toSQL().sql;
 }
 
 describe("consulta agregada dos indicadores do Gestor", () => {
@@ -62,8 +48,9 @@ describe("consulta agregada dos indicadores do Gestor", () => {
     expect(query).toContain('"supervisorRoutes"."shiftStartedAt"');
   });
 
-  it("referencia a coluna agregada da subconsulta pelo alias da própria subconsulta", () => {
-    const query = complianceAggregateSql();
-    expect(query).toContain('"answeredVisits"."nonCompliantItems"');
+  it("conta visitas com ocorrência enviada sem consultar itens antigos", () => {
+    const query = occurrenceAggregateSql();
+    expect(query).toContain('"visitChecklists"."occurrenceReport"');
+    expect(query).not.toContain("checklistItems");
   });
 });

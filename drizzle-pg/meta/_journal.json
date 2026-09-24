@@ -57,6 +57,13 @@
       "when": 1789487758426,
       "tag": "0007_personnel_access_and_ft_payment",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790266725336,
+      "tag": "0008_overconfident_miracleman",
+      "breakpoints": true
     }
   ]
 }

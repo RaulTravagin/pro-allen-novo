@@ -2,7 +2,7 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm"
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, checklistItems, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
@@ -730,12 +730,6 @@ export async function cancelPendingSupervisorRoute(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.transaction(async (transaction) => {
-    const preparedChecklists = await transaction.select({ id: visitChecklists.id })
-      .from(visitChecklists)
-      .where(eq(visitChecklists.supervisorRouteId, id));
-    for (const checklist of preparedChecklists) {
-      await transaction.delete(checklistItems).where(eq(checklistItems.visitChecklistId, checklist.id));
-    }
     await transaction.delete(visitChecklists).where(eq(visitChecklists.supervisorRouteId, id));
     await transaction.update(supervisorRoutes).set({ status: "cancelled" }).where(eq(supervisorRoutes.id, id));
   });
@@ -849,6 +843,19 @@ export async function updateVisitChecklist(id: number, updates: any) {
     .where(eq(visitChecklists.id, id));
 }
 
+/** Salva o relato obrigatório da visita e marca o horário do envio ao Gestor. */
+export async function submitVisitOccurrence(id: number, occurrenceReport: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const normalizedReport = occurrenceReport.trim();
+  if (normalizedReport.length < 8) throw new Error("O relato da ocorrência deve ter pelo menos 8 caracteres");
+  const result = await db.update(visitChecklists)
+    .set({ occurrenceReport: normalizedReport, occurrenceSubmittedAt: new Date() })
+    .where(eq(visitChecklists.id, id));
+  await touchSupervisorRouteFromChecklist(id);
+  return result;
+}
+
 /** Marca a atividade da rota como atualizada quando um item ou uma auditoria é salvo. */
 export async function touchSupervisorRouteFromChecklist(visitChecklistId: number) {
   const db = await getDb();
@@ -861,43 +868,6 @@ export async function touchSupervisorRouteFromChecklist(visitChecklistId: number
   await db.update(supervisorRoutes)
     .set({ updatedAt: new Date() })
     .where(eq(supervisorRoutes.id, checklist.supervisorRouteId));
-}
-
-// Checklist Items queries
-export async function createChecklistItem(visitChecklistId: number, category: string, description: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const result = await db.insert(checklistItems).values({
-    visitChecklistId,
-    category,
-    description,
-  }).returning({ id: checklistItems.id });
-
-  return getInsertedId(result);
-}
-
-export async function getChecklistItemsByVisit(visitChecklistId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  
-  return await db.select().from(checklistItems)
-    .where(eq(checklistItems.visitChecklistId, visitChecklistId));
-}
-
-export async function updateChecklistItem(id: number, updates: any) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [item] = await db.select({ visitChecklistId: checklistItems.visitChecklistId })
-    .from(checklistItems)
-    .where(eq(checklistItems.id, id))
-    .limit(1);
-  if (!item) throw new Error("Checklist item not found");
-  const result = await db.update(checklistItems)
-    .set(updates)
-    .where(eq(checklistItems.id, id));
-  await touchSupervisorRouteFromChecklist(item.visitChecklistId);
-  return result;
 }
 
 // Supervisor Locations queries
@@ -1013,7 +983,7 @@ export function calculateVisitPriority(lastVisitDate: Date | null): { priority: 
 }
 
 // Get visit checklists with times for reporting
-export async function getVisitChecklistsWithTimes(startDate: Date, endDate: Date) {
+export async function getVisitsWithTimes(startDate: Date, endDate: Date) {
   const db = await getDb();
   if (!db) return [];
   
@@ -1046,34 +1016,17 @@ export async function getVisitChecklistsWithTimes(startDate: Date, endDate: Date
     .orderBy(desc(visitChecklists.visitedAt));
 }
 
-
-export async function getChecklistItemById(id: number) {
+export async function getVisitOccurrenceSummary(startDate: Date, endDate: Date) {
   const db = await getDb();
-  if (!db) return null;
-  const result = await db.select().from(checklistItems).where(eq(checklistItems.id, id)).limit(1);
-  return result.length > 0 ? result[0] : null;
-}
-
-
-export async function getChecklistConformanceSummary(startDate: Date, endDate: Date) {
-  const db = await getDb();
-  if (!db) return { compliant: 0, nonCompliant: 0, unanswered: 0, total: 0 };
-
-  const rows = await db.select({
-    isCompliant: checklistItems.isCompliant,
-  })
-    .from(checklistItems)
-    .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
-    .where(and(
-      gte(visitChecklists.visitedAt, startDate),
-      lte(visitChecklists.visitedAt, endDate),
-      eq(visitChecklists.status, 'visited'),
-    ));
-
-  const compliant = rows.filter((row) => row.isCompliant === true).length;
-  const nonCompliant = rows.filter((row) => row.isCompliant === false).length;
-  const unanswered = rows.filter((row) => row.isCompliant === null).length;
-  return { compliant, nonCompliant, unanswered, total: rows.length };
+  if (!db) return { total: 0, reported: 0, pending: 0 };
+  const result = await db.select({
+    total: sql<string>`count(*)`,
+    reported: sql<string>`count(*) filter (where nullif(trim(coalesce(${visitChecklists.occurrenceReport}, '')), '') is not null)`,
+  }).from(visitChecklists)
+    .where(and(gte(visitChecklists.visitedAt, startDate), lte(visitChecklists.visitedAt, endDate)));
+  const total = Number(result[0]?.total ?? 0);
+  const reported = Number(result[0]?.reported ?? 0);
+  return { total, reported, pending: Math.max(0, total - reported) };
 }
 
 type OperationalAlert = {
@@ -1083,21 +1036,16 @@ type OperationalAlert = {
   description: string;
 };
 
-export function deriveAuditProgress(checklists: Array<{
+export function deriveVisitProgress(checklists: Array<{
   status: string;
-  auditSubmittedAt?: Date | string | null;
-  checklistSummary?: { total?: number; unanswered?: number };
+  occurrenceSubmittedAt?: Date | string | null;
+  occurrenceReport?: string | null;
 }>) {
   const completedVisits = checklists.filter((checklist) => checklist.status === "visited").length;
-  const auditedVisits = checklists.filter((checklist) => {
-    if (checklist.auditSubmittedAt) return true;
-    const total = Number(checklist.checklistSummary?.total ?? 0);
-    const unanswered = Number(checklist.checklistSummary?.unanswered ?? total);
-    return checklist.status === "visited" && total > 0 && unanswered < total;
-  }).length;
+  const reportedVisits = checklists.filter((checklist) => Boolean(checklist.occurrenceSubmittedAt || checklist.occurrenceReport?.trim())).length;
   const pendingVisits = checklists.filter((checklist) => checklist.status === "pending").length;
   const skippedVisits = checklists.filter((checklist) => checklist.status === "skipped").length;
-  return { completedVisits, auditedVisits, pendingVisits, skippedVisits, totalPosts: checklists.length };
+  return { completedVisits, reportedVisits, pendingVisits, skippedVisits, totalPosts: checklists.length };
 }
 
 /** Converte dados de rota em um estado legível e em alertas acionáveis para o Gestor. */
@@ -1163,7 +1111,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       ),
     );
 
-  const [todayRoutes, todayChecklists, latestLocations, todayChecklistItems, allUsers] = await Promise.all([
+  const [todayRoutes, todayChecklists, latestLocations, allUsers] = await Promise.all([
     db.select({
       id: supervisorRoutes.id,
       routeId: supervisorRoutes.routeId,
@@ -1203,7 +1151,8 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       arrivalTime: visitChecklists.arrivalTime,
       departureTime: visitChecklists.departureTime,
       visitedAt: visitChecklists.visitedAt,
-      auditSubmittedAt: visitChecklists.auditSubmittedAt,
+      occurrenceSubmittedAt: visitChecklists.occurrenceSubmittedAt,
+      occurrenceReport: visitChecklists.occurrenceReport,
       observations: visitChecklists.observations,
       isCoverage: visitChecklists.isCoverage,
       coverageReason: visitChecklists.coverageReason,
@@ -1217,18 +1166,6 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .innerJoin(posts, eq(posts.id, visitChecklists.postId))
       .where(routeWindowCondition),
     getAllSupervisorsLatestLocations(),
-    db.select({
-      id: checklistItems.id,
-      visitChecklistId: checklistItems.visitChecklistId,
-      category: checklistItems.category,
-      description: checklistItems.description,
-      isCompliant: checklistItems.isCompliant,
-      notes: checklistItems.notes,
-    })
-      .from(checklistItems)
-      .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
-      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-      .where(routeWindowCondition),
     db.select({ id: users.id, name: users.name, username: users.username, role: users.role, isOperational: users.isOperational }).from(users),
   ]);
 
@@ -1254,13 +1191,6 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
   const locationBySupervisor = new Map<number, (typeof latestLocations)[number]>();
   for (const location of latestLocations) locationBySupervisor.set(location.supervisorId, location);
 
-  const checklistItemsByVisit = new Map<number, Array<(typeof todayChecklistItems)[number]>>();
-  for (const item of todayChecklistItems) {
-    const collection = checklistItemsByVisit.get(item.visitChecklistId) ?? [];
-    collection.push(item);
-    checklistItemsByVisit.set(item.visitChecklistId, collection);
-  }
-
   const routeViews = todayRoutes.map((route) => {
     const fuelHistory = route.vehicleId ? (fuelHistoryByVehicle.get(route.vehicleId) ?? []) : [];
     const latestFuel = fuelHistory[0] ?? null;
@@ -1268,28 +1198,16 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       .filter((checklist) => checklist.supervisorRouteId === route.id)
       .sort((a, b) => a.postOrder - b.postOrder)
       .map((checklist) => {
-        const items = checklistItemsByVisit.get(checklist.id) ?? [];
-        const compliantItems = items.filter((item) => item.isCompliant === true).length;
-        const nonCompliantItems = items.filter((item) => item.isCompliant === false).length;
-        const unansweredItems = items.filter((item) => item.isCompliant === null).length;
         const referenceTime = checklist.departureTime ?? now;
         const durationMinutes = checklist.arrivalTime ? Math.max(0, Math.floor((referenceTime.getTime() - checklist.arrivalTime.getTime()) / 60_000)) : null;
         return {
           ...checklist,
           durationMinutes,
-          checklistSummary: { total: items.length, compliant: compliantItems, nonCompliant: nonCompliantItems, unanswered: unansweredItems },
-          checklistItems: items.map((item) => ({
-            id: item.id,
-            category: item.category,
-            description: item.description,
-            isCompliant: item.isCompliant,
-            notes: item.notes,
-          })),
         };
       });
     const activeVisit = routeChecklists.find((checklist) => checklist.status === "in_progress") ?? null;
     const nextPost = routeChecklists.find((checklist) => checklist.status === "pending") ?? null;
-    const auditProgress = deriveAuditProgress(routeChecklists);
+    const visitProgress = deriveVisitProgress(routeChecklists);
     const latestLocation = locationBySupervisor.get(route.supervisorId) ?? null;
     const state = deriveGestorOperationalState({
       routeStatus: route.status,
@@ -1313,10 +1231,10 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
       } : null,
       fuelLogs: fuelHistory.filter((log) => log.supervisorRouteId === route.id),
       fuelHistory: fuelHistory.slice(0, 8),
-      ...auditProgress,
+      ...visitProgress,
       activeVisit,
       nextPost,
-      checklistVisits: routeChecklists,
+      visits: routeChecklists,
       latestLocation,
       kmCovered,
       operationalStatus: state.status,
@@ -1378,7 +1296,7 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
   }).sort((a, b) => (a.supervisorName ?? "").localeCompare(b.supervisorName ?? "", "pt-BR"));
 
   const alerts = operationalSupervisors.flatMap((supervisor) => supervisor.alerts.map((alert) => ({ ...alert, supervisorId: supervisor.supervisorId, supervisorName: supervisor.supervisorName, routeId: supervisor.route?.id ?? null })));
-  const recentVisits = operationalRouteViews.flatMap((route) => route.checklistVisits
+  const recentVisits = operationalRouteViews.flatMap((route) => route.visits
     .filter((checklist) => checklist.status === "visited" || checklist.status === "in_progress")
     .map((checklist) => ({ ...checklist, routeName: route.routeName, supervisorId: route.supervisorId, supervisorName: route.supervisorName ?? `Supervisor #${route.supervisorId}` })))
     .sort((a, b) => {
@@ -1397,9 +1315,9 @@ export async function getGestorOperationalSnapshot(reportDate?: Date, options: {
     metrics: {
       supervisorsOnRoute: new Set(operationalRouteViews.filter((route) => route.status === "pending" || route.status === "in_progress").map((route) => route.supervisorId)).size,
       activeRoutes: operationalRouteViews.filter((route) => route.status === "in_progress").length,
-      visitsInProgress: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "in_progress").length, 0),
-      completedVisits: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "visited").length, 0),
-      pendingVisits: operationalRouteViews.reduce((total, route) => total + route.checklistVisits.filter((checklist) => checklist.status === "pending").length, 0),
+      visitsInProgress: operationalRouteViews.reduce((total, route) => total + route.visits.filter((checklist) => checklist.status === "in_progress").length, 0),
+      completedVisits: operationalRouteViews.reduce((total, route) => total + route.visits.filter((checklist) => checklist.status === "visited").length, 0),
+      pendingVisits: operationalRouteViews.reduce((total, route) => total + route.visits.filter((checklist) => checklist.status === "pending").length, 0),
       totalKm: Number(totalKm.toFixed(2)),
       gpsStale: alerts.filter((alert) => alert.code === "gps_stale" || alert.code === "gps_missing").length,
       alerts: alerts.length,
@@ -1426,10 +1344,10 @@ export type GestorKpiFilters = {
 
 export type GestorKpiSummary = {
   period: { start: Date; end: Date; shiftType: OperationShift | null; supervisorId: number | null };
-  inspections: { completed: number; audited: number; target: number; completionRate: number | null };
-  auditDuration: { averageMinutes: number | null; measuredVisits: number };
+  inspections: { completed: number; reported: number; target: number; completionRate: number | null };
+  visitDuration: { averageMinutes: number | null; measuredVisits: number };
   fleet: { totalKm: number; routesWithKm: number; routesPendingKm: number };
-  compliance: { rate: number | null; compliantVisits: number; evaluatedVisits: number; nonCompliantItems: number };
+  occurrences: { reportedVisits: number; totalVisits: number; pendingReports: number };
 };
 
 /**
@@ -1445,17 +1363,17 @@ export function buildEmptyGestorKpis(filters: GestorKpiFilters = {}): GestorKpiS
     })();
   return {
     period: { start: period.start, end: period.end, shiftType: filters.shiftType ?? null, supervisorId: filters.supervisorId ?? null },
-    inspections: { completed: 0, audited: 0, target: 0, completionRate: null },
-    auditDuration: { averageMinutes: null, measuredVisits: 0 },
+    inspections: { completed: 0, reported: 0, target: 0, completionRate: null },
+    visitDuration: { averageMinutes: null, measuredVisits: 0 },
     fleet: { totalKm: 0, routesWithKm: 0, routesPendingKm: 0 },
-    compliance: { rate: null, compliantVisits: 0, evaluatedVisits: 0, nonCompliantItems: 0 },
+    occurrences: { reportedVisits: 0, totalVisits: 0, pendingReports: 0 },
   };
 }
 
 /**
  * Indicadores do painel do Gestor calculados por agregação no PostgreSQL.
  * Cada métrica é resolvida em uma única consulta agregada, evitando trazer linhas
- * de rotas, visitas e itens para a aplicação apenas para contá-las.
+ * de rotas e visitas para a aplicação apenas para contá-las.
  * Toda coluna é referenciada pelo objeto de schema do Drizzle, que emite o nome
  * qualificado da tabela e elimina ambiguidade nas subconsultas correlacionadas.
  * Falhas de consulta retornam indicadores zerados em vez de propagar exceção.
@@ -1487,8 +1405,7 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
   };
 
   let routeAggregate: Array<{ totalKm: string | null; routesWithKm: string | null; routesPendingKm: string | null; plannedPosts: string | null }> = [];
-  let visitAggregate: Array<{ completed: string | null; audited: string | null; measuredVisits: string | null; averageMinutes: string | null }> = [];
-  let complianceAggregate: Array<{ evaluatedVisits: string | null; compliantVisits: string | null; nonCompliantItems: string | null }> = [];
+  let visitAggregate: Array<{ completed: string | null; reported: string | null; total: string | null; measuredVisits: string | null; averageMinutes: string | null }> = [];
 
   // Colunas qualificadas manualmente: dentro de `sql` cru o Drizzle emite apenas o nome
   // da coluna, o que gera ambiguidade em subconsultas correlacionadas com `posts`.
@@ -1497,28 +1414,11 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
   const routeRouteId = sql`"supervisorRoutes"."routeId"`;
   const postRouteId = sql`"posts"."routeId"`;
   const visitStatus = sql`"visitChecklists"."status"`;
-  const visitAuditSubmittedAt = sql`"visitChecklists"."auditSubmittedAt"`;
+  const visitOccurrenceReport = sql`"visitChecklists"."occurrenceReport"`;
   const visitArrival = sql`"visitChecklists"."arrivalTime"`;
   const visitDeparture = sql`"visitChecklists"."departureTime"`;
-  const itemId = sql`"checklistItems"."id"`;
-  const itemIsCompliant = sql`"checklistItems"."isCompliant"`;
-  const answeredNonCompliant = sql`"answeredVisits"."nonCompliantItems"`;
-
   try {
-    // Subconsulta agregada por visita: conta itens respondidos e não conformes de cada auditoria.
-    const answeredVisits = db.select({
-      visitId: visitChecklists.id,
-      answeredItems: sql<number>`count(${itemId}) filter (where ${itemIsCompliant} is not null)`.as("answeredItems"),
-      nonCompliantItems: sql<number>`count(${itemId}) filter (where ${itemIsCompliant} = false)`.as("nonCompliantItems"),
-    }).from(visitChecklists)
-      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-      .innerJoin(checklistItems, eq(checklistItems.visitChecklistId, visitChecklists.id))
-      .where(routeFilter)
-      .groupBy(visitChecklists.id)
-      .having(sql`count(${itemId}) filter (where ${itemIsCompliant} is not null) > 0`)
-      .as("answeredVisits");
-
-    [routeAggregate, visitAggregate, complianceAggregate] = await Promise.all([
+    [routeAggregate, visitAggregate] = await Promise.all([
       // Frota e meta das rotas: KM percorrido e total de postos previstos nas rotas do período.
       db.select({
         totalKm: sql<string | null>`coalesce(sum(greatest(${routeKmFinal} - ${routeKmInitial}, 0)) filter (where ${routeKmInitial} is not null and ${routeKmFinal} is not null), 0)`,
@@ -1526,21 +1426,16 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
         routesPendingKm: sql<string | null>`count(*) filter (where ${routeKmInitial} is not null and ${routeKmFinal} is null)`,
         plannedPosts: sql<string | null>`coalesce(sum((select count(*) from ${posts} where ${postRouteId} = ${routeRouteId})), 0)`,
       }).from(supervisorRoutes).where(routeFilter),
-      // Vistorias e tempo médio por auditoria, medido entre chegada e saída do posto.
+      // Visitas, ocorrências enviadas e tempo médio medido entre chegada e saída.
       db.select({
         completed: sql<string | null>`count(*) filter (where ${visitStatus} = 'visited')`,
-        audited: sql<string | null>`count(*) filter (where ${visitAuditSubmittedAt} is not null or ${visitStatus} = 'visited')`,
+        reported: sql<string | null>`count(*) filter (where nullif(trim(coalesce(${visitOccurrenceReport}, '')), '') is not null)`,
+        total: sql<string | null>`count(*)`,
         measuredVisits: sql<string | null>`count(*) filter (where ${visitArrival} is not null and ${visitDeparture} is not null and ${visitDeparture} >= ${visitArrival})`,
         averageMinutes: sql<string | null>`avg(extract(epoch from (${visitDeparture} - ${visitArrival})) / 60) filter (where ${visitArrival} is not null and ${visitDeparture} is not null and ${visitDeparture} >= ${visitArrival})`,
       }).from(visitChecklists)
         .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
         .where(routeFilter),
-      // Índice de conformidade: percentual de auditorias respondidas sem nenhuma não conformidade.
-      db.select({
-        evaluatedVisits: sql<string | null>`count(*)`,
-        compliantVisits: sql<string | null>`count(*) filter (where ${answeredNonCompliant} = 0)`,
-        nonCompliantItems: sql<string | null>`coalesce(sum(${answeredNonCompliant}), 0)`,
-      }).from(answeredVisits),
     ]);
   } catch (error) {
     console.error("[Indicadores] Falha ao calcular os indicadores operacionais do Gestor:", error);
@@ -1550,21 +1445,20 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
   const totalKm = Number(toNumber(routeAggregate[0]?.totalKm).toFixed(2));
   const target = toNumber(routeAggregate[0]?.plannedPosts);
   const completed = toNumber(visitAggregate[0]?.completed);
-  const audited = toNumber(visitAggregate[0]?.audited);
+  const reported = toNumber(visitAggregate[0]?.reported);
+  const totalVisits = toNumber(visitAggregate[0]?.total);
   const measuredVisits = toNumber(visitAggregate[0]?.measuredVisits);
   const rawAverage = visitAggregate[0]?.averageMinutes;
-  const evaluatedVisits = toNumber(complianceAggregate[0]?.evaluatedVisits);
-  const compliantVisits = toNumber(complianceAggregate[0]?.compliantVisits);
 
   return {
     period: { start: period.start, end: period.end, shiftType, supervisorId },
     inspections: {
       completed,
-      audited,
+      reported,
       target,
-      completionRate: target > 0 ? Number(((audited / target) * 100).toFixed(1)) : null,
+      completionRate: target > 0 ? Number(((reported / target) * 100).toFixed(1)) : null,
     },
-    auditDuration: {
+    visitDuration: {
       averageMinutes: measuredVisits > 0 && rawAverage !== null && rawAverage !== undefined ? Number(Number(rawAverage).toFixed(1)) : null,
       measuredVisits,
     },
@@ -1573,11 +1467,10 @@ export async function getGestorOperationalKpis(filters: GestorKpiFilters = {}): 
       routesWithKm: toNumber(routeAggregate[0]?.routesWithKm),
       routesPendingKm: toNumber(routeAggregate[0]?.routesPendingKm),
     },
-    compliance: {
-      rate: evaluatedVisits > 0 ? Number(((compliantVisits / evaluatedVisits) * 100).toFixed(1)) : null,
-      compliantVisits,
-      evaluatedVisits,
-      nonCompliantItems: toNumber(complianceAggregate[0]?.nonCompliantItems),
+    occurrences: {
+      reportedVisits: reported,
+      totalVisits,
+      pendingReports: Math.max(0, totalVisits - reported),
     },
   };
 }
@@ -1589,7 +1482,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   const empty = {
     filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
     filterOptions: { supervisors: [], vehicles: [] },
-    summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, plannedPosts: 0, auditedPosts: 0, compliantItems: 0, nonCompliantItems: 0, complianceRate: null as number | null },
+    summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null as number | null, inspections: 0, plannedPosts: 0, reportedVisits: 0, pendingReports: 0 },
     routes: [], fuelLogs: [], visits: [],
   };
   if (!db) return empty;
@@ -1632,7 +1525,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
   const reportRouteIds = new Set(routeRows.map((route) => route.id));
   fuelConditions.push(inArray(fuelLogs.supervisorRouteId, Array.from(reportRouteIds)));
 
-  const [visitRows, itemRows, fuelRows, reportSupervisors, reportVehicles, postRows] = await Promise.all([
+  const [visitRows, fuelRows, reportSupervisors, reportVehicles, postRows] = await Promise.all([
     db.select({
       id: visitChecklists.id,
       supervisorRouteId: visitChecklists.supervisorRouteId,
@@ -1641,7 +1534,8 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       status: visitChecklists.status,
       arrivalTime: visitChecklists.arrivalTime,
       departureTime: visitChecklists.departureTime,
-      auditSubmittedAt: visitChecklists.auditSubmittedAt,
+      occurrenceSubmittedAt: visitChecklists.occurrenceSubmittedAt,
+      occurrenceReport: visitChecklists.occurrenceReport,
       observations: visitChecklists.observations,
       isCoverage: visitChecklists.isCoverage,
       coverageReason: visitChecklists.coverageReason,
@@ -1658,14 +1552,7 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
       .leftJoin(vehicles, eq(vehicles.id, supervisorRoutes.vehicleId))
       .where(and(...routeConditions))
-      .orderBy(asc(visitChecklists.arrivalTime), asc(visitChecklists.auditSubmittedAt), asc(visitChecklists.createdAt)),
-    db.select({
-      visitChecklistId: checklistItems.visitChecklistId,
-      isCompliant: checklistItems.isCompliant,
-    }).from(checklistItems)
-      .innerJoin(visitChecklists, eq(visitChecklists.id, checklistItems.visitChecklistId))
-      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
-      .where(and(...routeConditions)),
+      .orderBy(asc(visitChecklists.arrivalTime), asc(visitChecklists.occurrenceSubmittedAt), asc(visitChecklists.createdAt)),
     db.select({
       id: fuelLogs.id,
       vehicleId: fuelLogs.vehicleId,
@@ -1693,26 +1580,17 @@ export async function getOperationalManagementReport(input: OperationalReportFil
 
   const enrichedFuelRows = Array.from(new Set(fuelRows.map((row) => row.vehicleId))).flatMap((vehicleId) => enrichFuelHistory(fuelRows.filter((row) => row.vehicleId === vehicleId)));
   const periodFuelLogs = enrichedFuelRows.filter((row) => reportRouteIds.has(row.supervisorRouteId) && row.createdAt >= startDate && row.createdAt < endDate);
-  const itemStatsByVisit = new Map<number, { compliant: number; nonCompliant: number }>();
-  for (const item of itemRows) {
-    const current = itemStatsByVisit.get(item.visitChecklistId) ?? { compliant: 0, nonCompliant: 0 };
-    if (item.isCompliant === true) current.compliant += 1;
-    if (item.isCompliant === false) current.nonCompliant += 1;
-    itemStatsByVisit.set(item.visitChecklistId, current);
-  }
-  const visits = visitRows.map((visit) => ({ ...visit, ...(itemStatsByVisit.get(visit.id) ?? { compliant: 0, nonCompliant: 0 }) }));
+  const visits = visitRows;
   const totalKm = routeRows.reduce((total, route) => route.kmInitial !== null && route.kmFinal !== null ? total + Math.max(0, Number(route.kmFinal) - Number(route.kmInitial)) : total, 0);
   const totalFuelAmount = periodFuelLogs.reduce((total, log) => total + Number(log.amount), 0);
   const totalConsumptionDistance = periodFuelLogs.reduce((total, log) => total + (log.distanceSincePrevious ?? 0), 0);
   const totalConsumptionLiters = periodFuelLogs.reduce((total, log) => total + (log.distanceSincePrevious != null ? Number(log.liters) : 0), 0);
-  const compliantItems = visits.reduce((total, visit) => total + visit.compliant, 0);
-  const nonCompliantItems = visits.reduce((total, visit) => total + visit.nonCompliant, 0);
   const plannedPostsByRoute = new Map<number, number>();
   for (const post of postRows) {
     plannedPostsByRoute.set(post.routeId, (plannedPostsByRoute.get(post.routeId) ?? 0) + 1);
   }
   const plannedPosts = routeRows.reduce((total, route) => total + (plannedPostsByRoute.get(route.routeId) ?? 0), 0);
-  const auditedPosts = visits.filter((visit) => visit.status === "visited" || visit.auditSubmittedAt !== null).length;
+  const reportedVisits = visits.filter((visit) => Boolean(visit.occurrenceSubmittedAt || visit.occurrenceReport?.trim())).length;
 
   return {
     filters: { startDate, endDate, supervisorId: input.supervisorId ?? null, vehicleId: input.vehicleId ?? null, shiftType: input.shiftType ?? null },
@@ -1723,10 +1601,8 @@ export async function getOperationalManagementReport(input: OperationalReportFil
       averageConsumptionKmPerLiter: totalConsumptionLiters > 0 ? Number((totalConsumptionDistance / totalConsumptionLiters).toFixed(2)) : null,
       inspections: visits.filter((visit) => visit.status === "visited").length,
       plannedPosts,
-      auditedPosts,
-      compliantItems,
-      nonCompliantItems,
-      complianceRate: compliantItems + nonCompliantItems > 0 ? Number(((compliantItems / (compliantItems + nonCompliantItems)) * 100).toFixed(1)) : null,
+      reportedVisits,
+      pendingReports: Math.max(0, visits.length - reportedVisits),
     },
     routes: routeRows.map((route) => ({ ...route, kmCovered: route.kmInitial !== null && route.kmFinal !== null ? Number((Number(route.kmFinal) - Number(route.kmInitial)).toFixed(2)) : null })),
     fuelLogs: periodFuelLogs,

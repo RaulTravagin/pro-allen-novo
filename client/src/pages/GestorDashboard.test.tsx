@@ -35,7 +35,7 @@ const route = {
   gpsAgeMinutes: 2,
   activeVisit: { postName: "Kelvion", arrivalTime: new Date("2026-08-12T14:30:00.000Z"), durationMinutes: 30 },
   nextPost: { postName: "Supertec" },
-  checklistVisits: [{
+  visits: [{
     id: 701,
     postName: "Kelvion",
     postRegion: "Jordanésia",
@@ -44,10 +44,8 @@ const route = {
     arrivalTime: new Date("2026-08-12T14:30:00.000Z"),
     departureTime: null,
     visitedAt: null,
-    observations: "Verificar troca de uniforme.",
+    occurrenceReport: "Verificar troca de uniforme.",
     durationMinutes: 30,
-    checklistSummary: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
-    checklistItems: [{ id: 1, category: "Uniforme", description: "Uniforme e apresentação pessoal", isCompliant: true, notes: "Em ordem" }, { id: 2, category: "Limpeza", description: "Limpeza e organização", isCompliant: false, notes: "Ajustar área comum" }],
   }],
 };
 
@@ -103,7 +101,7 @@ vi.mock("@/lib/trpc", () => ({
           data: {
             reportDate: now,
             generatedAt: now,
-            summary: { supervisors: 1, supervisorsOnRoute: 1, completedVisits: 1, pendingVisits: 2, visitsInProgress: 1, coverages: 0, kmCovered: 0, nonCompliantItems: 1, unansweredItems: 4, alerts: 1 },
+            summary: { supervisors: 1, supervisorsOnRoute: 1, completedVisits: 1, pendingVisits: 2, visitsInProgress: 1, coverages: 0, kmCovered: 0, reportedOccurrences: 1, pendingOccurrenceReports: 0, alerts: 1 },
             supervisors: [{
               supervisorId: 41,
               supervisorName: "Paulo Murashita",
@@ -111,9 +109,9 @@ vi.mock("@/lib/trpc", () => ({
               operationalStatusLabel: "Em atendimento",
               latestLocation: { latitude: "-23.1", longitude: "-46.5", recordedAt: now },
               alerts: [{ title: "Atendimento prolongado" }],
-              checklistTotals: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 },
+              occurrenceTotals: { total: 1, reported: 1 },
               coverageCount: 0,
-              route: { name: "Rota 1", region: "Jundiaí", totalPosts: 4, completedVisits: 1, kmInitial: "1250", kmCovered: 0, activeVisit: { postName: "Kelvion", arrivalTime: now, durationMinutes: 30 }, visits: [{ postName: "Kelvion", region: "Jordanésia", status: "in_progress", arrivalTime: now, departureTime: null, durationMinutes: 30, observations: "Verificar troca de uniforme.", isCoverage: false, checklist: { total: 9, compliant: 4, nonCompliant: 1, unanswered: 4 }, checklistItems: route.checklistVisits[0].checklistItems }] },
+              route: { name: "Rota 1", region: "Jundiaí", totalPosts: 4, completedVisits: 1, kmInitial: "1250", kmCovered: 0, activeVisit: { postName: "Kelvion", arrivalTime: now, durationMinutes: 30 }, visits: [{ postName: "Kelvion", region: "Jordanésia", status: "in_progress", arrivalTime: now, departureTime: null, durationMinutes: 30, occurrenceReport: "Verificar troca de uniforme.", isCoverage: false }] },
             }],
           },
         }),
@@ -172,14 +170,12 @@ describe("GestorDashboard", () => {
     expect(screen.getAllByText("Kelvion").length).toBeGreaterThan(0);
     expect(screen.getByText("Verificar troca de uniforme.")).toBeTruthy();
     expect(screen.getByText("Atendimento prolongado · Paulo Murashita")).toBeTruthy();
-    expect(screen.getByText("Postos e checklist da rota")).toBeTruthy();
+    expect(screen.getByText("Postos e ocorrências da rota")).toBeTruthy();
     expect(screen.getByText("Viatura, abastecimentos e consumo")).toBeTruthy();
     expect(screen.getAllByText("ABC1D23 · Fiat Mobi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("9 km/L").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0,72/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Checklist por visita").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Requer atenção").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Uniforme e apresentação pessoal").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Ocorrência / relatório").length).toBeGreaterThan(0);
     expect(screen.getByText("Escala de plantão")).toBeTruthy();
     expect(screen.getByText("Plantão Noite")).toBeTruthy();
     expect(screen.getByText("Plantão realizado das 06h às 18h")).toBeTruthy();
@@ -260,6 +256,6 @@ describe("GestorDashboard", () => {
     fireEvent.click(exportButton);
     await waitFor(() => expect(wordExport).toHaveBeenCalled());
     expect(screen.getAllByText("Paulo Murashita").length).toBeGreaterThan(1);
-    expect(screen.getByText("Itens conformes")).toBeTruthy();
+    expect(screen.getByText("Relatos enviados")).toBeTruthy();
   });
 });

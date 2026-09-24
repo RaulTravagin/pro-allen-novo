@@ -38,7 +38,7 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
     vehicle: route.vehicle ?? null,
   }));
 
-  const visits: AnyRecord[] = routeViews.flatMap((route: AnyRecord) => (route.checklistVisits ?? []).map((visit: AnyRecord) => ({
+  const visits: AnyRecord[] = routeViews.flatMap((route: AnyRecord) => (route.visits ?? []).map((visit: AnyRecord) => ({
     id: visit.id,
     supervisorRouteId: route.id,
     routeName: route.routeName,
@@ -50,7 +50,8 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
     arrivalTime: visit.arrivalTime ?? null,
     departureTime: visit.departureTime ?? null,
     visitedAt: visit.visitedAt ?? null,
-    auditSubmittedAt: visit.auditSubmittedAt ?? null,
+    occurrenceSubmittedAt: visit.occurrenceSubmittedAt ?? null,
+    occurrenceReport: visit.occurrenceReport ?? visit.observations ?? null,
     durationMinutes: visit.durationMinutes ?? null,
     observations: visit.observations ?? null,
     isCoverage: Boolean(visit.isCoverage),
@@ -59,9 +60,7 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
     arrivalLongitude: visit.arrivalLongitude ?? null,
     departureLatitude: visit.departureLatitude ?? null,
     departureLongitude: visit.departureLongitude ?? null,
-    checklistSummary: visit.checklistSummary ?? { total: 0, compliant: 0, nonCompliant: 0, unanswered: 0 },
-    checklistItems: visit.checklistItems ?? [],
-  }))).sort((first: AnyRecord, second: AnyRecord) => chronologicalValue(first.arrivalTime ?? first.auditSubmittedAt ?? first.visitedAt) - chronologicalValue(second.arrivalTime ?? second.auditSubmittedAt ?? second.visitedAt));
+  }))).sort((first: AnyRecord, second: AnyRecord) => chronologicalValue(first.arrivalTime ?? first.occurrenceSubmittedAt ?? first.visitedAt) - chronologicalValue(second.arrivalTime ?? second.occurrenceSubmittedAt ?? second.visitedAt));
 
   const fuelById = new Map<number, AnyRecord>();
   for (const route of routeViews) {
@@ -72,7 +71,7 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
   const lastActivity = activities.at(-1);
   const kmCovered = activities.reduce((total: number, activity: AnyRecord) => total + (activity.kmCovered ?? 0), 0);
   const observations: AnyRecord[] = visits.flatMap((visit: AnyRecord) => [
-    visit.observations?.trim() ? { type: "observation", postName: visit.postName, text: visit.observations.trim() } : null,
+    visit.occurrenceReport?.trim() ? { type: "occurrence", postName: visit.postName, text: visit.occurrenceReport.trim() } : null,
     visit.isCoverage && visit.coverageReason?.trim() ? { type: "coverage", postName: visit.postName, text: visit.coverageReason.trim() } : null,
   ].filter(Boolean) as AnyRecord[]);
 
@@ -102,7 +101,7 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
       pendingVisits: visits.filter((visit: AnyRecord) => visit.status === "pending").length,
       visitsInProgress: visits.filter((visit: AnyRecord) => visit.status === "in_progress").length,
       coverageCount: visits.filter((visit: AnyRecord) => visit.isCoverage).length,
-      nonCompliantItems: visits.reduce((total: number, visit: AnyRecord) => total + Number(visit.checklistSummary?.nonCompliant ?? 0), 0),
+      occurrenceCount: visits.filter((visit: AnyRecord) => Boolean(visit.occurrenceReport?.trim())).length,
       observationCount: observations.length,
       fuelCount: fuelLogs.length,
       fuelAmount: Number(fuelLogs.reduce((total: number, fuel: AnyRecord) => total + Number(fuel.amount ?? 0), 0).toFixed(2)),
