@@ -38,6 +38,7 @@ import { downloadStyledWorkbook } from "@/lib/xlsxExport";
 import { personnelEmployeeEmptyState } from "@/lib/personnelEmptyState";
 import { formatDateInputValue } from "@/lib/reportDateRange";
 import { PersonnelWorkSchedules } from "@/components/PersonnelWorkSchedules";
+import { PersonnelMovementReport } from "@/components/PersonnelMovementReport";
 import { civilDateFromLegacyFt, getFtSettlementPeriod, isCivilDate } from "@shared/personnel-schedules";
 import { civilDateAsLocalDate, formatCivilDate, localCivilToday } from "@/lib/personnelCivilCalendar";
 
@@ -178,7 +179,7 @@ async function fileToPayload(file: File): Promise<FilePayload> {
   return { name: file.name, mimeType: file.type, base64 };
 }
 
-type PersonnelSection = "workspace" | "employees" | "users" | "finance";
+type PersonnelSection = "workspace" | "employees" | "users" | "finance" | "reports";
 
 export default function PersonnelDashboard({
   initialSection = "workspace",
@@ -340,6 +341,14 @@ export default function PersonnelDashboard({
                 onClick={() => setActiveSection("finance")}
               />
             )}
+            {(isReviewer || role === "FINANCEIRO") && (
+              <NavButton
+                active={activeSection === "reports"}
+                icon={FileText}
+                label="Relatórios FT e extras"
+                onClick={() => setActiveSection("reports")}
+              />
+            )}
           </nav>
           <div className="mt-5 rounded-xl bg-[#0d1b2a] p-3 text-white">
             <p className="text-xs font-semibold text-[#f6c915]">
@@ -407,6 +416,9 @@ export default function PersonnelDashboard({
           )}
           {activeSection === "finance" && isFinance && (
             <FinanceQueue data={data} onRefresh={invalidateDashboard} />
+          )}
+          {activeSection === "reports" && (isReviewer || role === "FINANCEIRO") && (
+            <PersonnelMovementReport audience={role} />
           )}
         </main>
       </div>

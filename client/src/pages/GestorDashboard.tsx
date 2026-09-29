@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { supervisorErrorMessage } from "@/lib/networkFeedback";
 import GestorPostsManagementPanel from "@/components/GestorPostsManagementPanel";
+import { PersonnelMovementReport } from "@/components/PersonnelMovementReport";
 import { downloadStyledWorkbook } from "@/lib/xlsxExport";
 import { formatDateInputValue } from "@/lib/reportDateRange";
 
@@ -142,6 +143,7 @@ async function downloadDailyReportXlsx(report: any) {
 export default function GestorDashboard() {
   const [, navigate] = useLocation();
   const [showDailyReport, setShowDailyReport] = useState(false);
+  const [showPersonnelMovementReport, setShowPersonnelMovementReport] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -272,7 +274,7 @@ export default function GestorDashboard() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white">CT3</div><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Central operacional</p><h1 className="text-2xl font-bold tracking-tight">Painel do Gestor</h1></div></div>
-          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><label className="grid gap-1 text-[11px] font-semibold text-slate-600">Turno em tempo real<select aria-label="Turno em tempo real" value={liveShiftType} onChange={(event) => setLiveShiftType(event.target.value as "" | "day" | "night")} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os plantões</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => navigate("/gestor/relatorios")} className="gap-2"><FileDown className="h-4 w-4" /> Relatórios</Button><Button variant="outline" onClick={() => setShowDailyReport(true)} className="gap-2"><FileText className="h-4 w-4" /> Relatório do dia</Button><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
+          <div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Radio className="h-3.5 w-3.5" /> Atualização automática a cada 15 s</div><label className="grid gap-1 text-[11px] font-semibold text-slate-600">Turno em tempo real<select aria-label="Turno em tempo real" value={liveShiftType} onChange={(event) => setLiveShiftType(event.target.value as "" | "day" | "night")} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os plantões</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => navigate("/gestor/relatorios")} className="gap-2"><FileDown className="h-4 w-4" /> Relatórios</Button><Button variant="outline" aria-expanded={showPersonnelMovementReport} onClick={() => setShowPersonnelMovementReport((current) => !current)} className="gap-2"><ClipboardCheck className="h-4 w-4" /> FTs e extras</Button><Button variant="outline" onClick={() => setShowDailyReport(true)} className="gap-2"><FileText className="h-4 w-4" /> Relatório do dia</Button><Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending} className="gap-2"><LogOut className="h-4 w-4" /> Sair</Button></div>
         </div>
       </header>
 
@@ -280,6 +282,8 @@ export default function GestorDashboard() {
         <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl shadow-slate-950/10 sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-emerald-300"><Activity className="h-4 w-4" /> Monitoramento de ponta a ponta</p><h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Toda a operação de campo, supervisor por supervisor.</h2><p className="mt-3 max-w-3xl text-slate-300">Acompanhe rotas, atendimentos, postos pendentes, ocorrências, horários, observações, quilometragem, GPS e exceções operacionais em uma única central.</p></div><p className="text-sm text-slate-400">Última atualização: <span className="font-semibold text-white">{updatedAt}</span></p></div>
         </section>
+
+        {showPersonnelMovementReport && <PersonnelMovementReport audience="GESTOR" />}
 
         <OperationalKpiBlock kpis={kpis} loading={dashboard.isLoading} fetching={dashboard.isFetching} unavailable={Boolean(dashboard.error)} shiftLabel={liveShiftType === "day" ? "Plantão Dia · 06h–18h" : liveShiftType === "night" ? "Plantão Noite · 18h–06h" : "Plantão vigente"} />
 

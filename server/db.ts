@@ -1,9 +1,10 @@
-import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
 import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
+import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
@@ -2649,4 +2650,117 @@ export async function getPersonnelDashboardData(supervisorId: number, role: Pers
       employeesCount: employees.filter((employee) => employee.isActive).length,
     },
   };
+}
+
+
+function personnelFtCivilDateExpression() {
+  return sql<string>`COALESCE(${personnelFts.civilDate}::text, to_char(${personnelFts.date} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD'))`;
+}
+
+function personnelExtraCivilDateExpression() {
+  return sql<string>`to_char(${personnelExtras.date} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')`;
+}
+
+function personnelFtWindowCondition(startDate: string, endDate: string) {
+  return or(
+    and(gte(personnelFts.civilDate, startDate), lte(personnelFts.civilDate, endDate)),
+    and(
+      isNull(personnelFts.civilDate),
+      sql`(${personnelFts.date} AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ${startDate}::date AND ${endDate}::date`,
+    ),
+  );
+}
+
+function personnelExtraWindowCondition(startDate: string, endDate: string) {
+  return sql`(${personnelExtras.date} AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ${startDate}::date AND ${endDate}::date`;
+}
+
+/** Relatório para RH, Financeiro e ADM: as consultas já chegam limitadas à janela civil solicitada. */
+export async function getPersonnelMovementReport(month: string, period: MovementPeriod, role: PersonnelRole) {
+  const window = getPersonnelMovementWindow(month, period);
+  const database = await getDb();
+  if (!database) return { window, rows: [] };
+
+  const ftDate = personnelFtCivilDateExpression();
+  const extraDate = personnelExtraCivilDateExpression();
+  const ftRows = role === "FINANCEIRO"
+    ? await database.select({
+      kind: sql<"FT">`'FT'`,
+      civilDate: ftDate,
+      employeeName: personnelEmployees.name,
+      status: personnelFts.status,
+      amount: personnelFts.amount,
+      paymentDate: personnelFts.paymentDate,
+    }).from(personnelFts)
+      .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelFts.employeeId))
+      .where(personnelFtWindowCondition(window.startDate, window.endDate))
+      .orderBy(asc(ftDate))
+    : await database.select({
+      kind: sql<"FT">`'FT'`,
+      civilDate: ftDate,
+      employeeName: personnelEmployees.name,
+      position: personnelEmployees.position,
+      post: personnelEmployees.post,
+      status: personnelFts.status,
+      amount: personnelFts.amount,
+      reason: personnelFts.reason,
+    }).from(personnelFts)
+      .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelFts.employeeId))
+      .where(personnelFtWindowCondition(window.startDate, window.endDate))
+      .orderBy(asc(ftDate));
+  const extraRows = role === "FINANCEIRO"
+    ? await database.select({
+      kind: sql<"EXTRA">`'EXTRA'`,
+      civilDate: extraDate,
+      employeeName: personnelEmployees.name,
+      status: personnelExtras.status,
+      amount: personnelExtras.amount,
+    }).from(personnelExtras)
+      .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelExtras.employeeId))
+      .where(personnelExtraWindowCondition(window.startDate, window.endDate))
+      .orderBy(asc(extraDate))
+    : await database.select({
+      kind: sql<"EXTRA">`'EXTRA'`,
+      civilDate: extraDate,
+      employeeName: personnelEmployees.name,
+      position: personnelEmployees.position,
+      post: personnelEmployees.post,
+      status: personnelExtras.status,
+      amount: personnelExtras.amount,
+      hoursOrDaily: personnelExtras.hoursOrDaily,
+      description: personnelExtras.description,
+    }).from(personnelExtras)
+      .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelExtras.employeeId))
+      .where(personnelExtraWindowCondition(window.startDate, window.endDate))
+      .orderBy(asc(extraDate));
+  const rows = [...ftRows, ...extraRows].sort((left, right) =>
+    left.civilDate.localeCompare(right.civilDate) || left.kind.localeCompare(right.kind),
+  );
+  return { window, rows };
+}
+
+/** O relatório do Gestor só retorna contagens por dia e tipo, nunca linhas individuais ou dados financeiros. */
+export async function getGestorPersonnelMovementReport(month: string, period: MovementPeriod) {
+  const window = getPersonnelMovementWindow(month, period);
+  const database = await getDb();
+  if (!database) return { window, rows: [] };
+  const ftDate = personnelFtCivilDateExpression();
+  const extraDate = personnelExtraCivilDateExpression();
+  const [ftCounts, extraCounts] = await Promise.all([
+    database.select({ civilDate: ftDate, count: sql<number>`count(*)::int` })
+      .from(personnelFts)
+      .where(personnelFtWindowCondition(window.startDate, window.endDate))
+      .groupBy(ftDate)
+      .orderBy(asc(ftDate)),
+    database.select({ civilDate: extraDate, count: sql<number>`count(*)::int` })
+      .from(personnelExtras)
+      .where(personnelExtraWindowCondition(window.startDate, window.endDate))
+      .groupBy(extraDate)
+      .orderBy(asc(extraDate)),
+  ]);
+  const rows = [
+    ...ftCounts.map((row) => ({ civilDate: row.civilDate, kind: "FT" as const, count: row.count })),
+    ...extraCounts.map((row) => ({ civilDate: row.civilDate, kind: "EXTRA" as const, count: row.count })),
+  ].sort((left, right) => left.civilDate.localeCompare(right.civilDate) || left.kind.localeCompare(right.kind));
+  return { window, rows };
 }

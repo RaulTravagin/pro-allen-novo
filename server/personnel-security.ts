@@ -29,6 +29,32 @@ function projectFinancialRow(row: RecordValue) {
   return withoutFields(row, ["employeePixKey", "pixKey"]);
 }
 
+/** Campos de relatório por allowlist: nada de CPF, PIX, identificadores internos ou anexos privados. */
+export function projectPersonnelMovementRow(row: RecordValue, role: PersonnelRole) {
+  if (role === "FINANCEIRO") {
+    return {
+      kind: row.kind,
+      civilDate: row.civilDate,
+      employeeName: row.employeeName,
+      status: row.status,
+      amount: row.amount,
+      ...(row.kind === "FT" ? { paymentDate: row.paymentDate } : {}),
+    };
+  }
+  return {
+    kind: row.kind,
+    civilDate: row.civilDate,
+    employeeName: row.employeeName,
+    position: row.position,
+    post: row.post,
+    status: row.status,
+    amount: row.amount,
+    ...(row.kind === "FT"
+      ? { reason: row.reason }
+      : { hoursOrDaily: row.hoursOrDaily, description: row.description }),
+  };
+}
+
 export function projectPersonnelDashboard<T extends RecordValue>(data: T, role: PersonnelRole) {
   const fts = mapRows(data.fts, projectFinancialRow);
   const extras = mapRows(data.extras, projectFinancialRow);
@@ -66,5 +92,26 @@ export function projectGestorPersonnelOverview<T extends RecordValue>(data: T) {
       approved: Number(source.approved ?? 0),
       paid: Number(source.paid ?? 0),
     },
+  };
+}
+
+
+export function projectGestorPersonnelMovementReport<T extends RecordValue>(report: T) {
+  const window = report.window && typeof report.window === "object"
+    ? report.window as RecordValue
+    : {};
+  const rows = Array.isArray(report.rows) ? report.rows : [];
+  return {
+    window: {
+      month: window.month,
+      period: window.period,
+      startDate: window.startDate,
+      endDate: window.endDate,
+      label: window.label,
+    },
+    rows: rows.map((row) => {
+      const entry = row && typeof row === "object" ? row as RecordValue : {};
+      return { civilDate: entry.civilDate, kind: entry.kind, count: Number(entry.count ?? 0) };
+    }),
   };
 }

@@ -22,11 +22,14 @@ import {
 } from "./local-supervisor-auth";
 import { buildDailyOperationalReport } from "./daily-operational-report";
 import {
+  projectGestorPersonnelMovementReport,
   projectGestorPersonnelOverview,
   projectPersonnelDashboard,
   projectPersonnelEmployee,
+  projectPersonnelMovementRow,
   projectPersonnelOccurrence,
 } from "./personnel-security";
+import type { MovementPeriod } from "../shared/personnel-movement-report";
 import type { User } from "../drizzle/schema";
 import { RouteClosureError } from "./route-closure";
 
@@ -101,6 +104,8 @@ async function runChecklistMutation<T>(mutation: () => Promise<T>): Promise<T> {
 
 const civilDateSchema = z.string().refine(isCivilDate, "Use uma data civil válida no formato AAAA-MM-DD");
 const civilMonthSchema = z.string().refine(isCivilMonth, "Use um mês válido no formato AAAA-MM");
+const movementPeriodSchema = z.enum(["ALL", "FIRST_HALF", "SECOND_HALF"] as const);
+const movementReportInput = z.object({ month: civilMonthSchema, period: movementPeriodSchema });
 const schedulePatternSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("WEEKLY"), minutesByDay: z.array(z.number().int().min(0).max(1440)).length(7) }),
   z.object({ kind: z.literal("CYCLE"), minutesByDay: z.array(z.number().int().min(0).max(1440)).min(2).max(42) }),
@@ -125,6 +130,17 @@ export const appRouter = router({
       const data = await db.getPersonnelDashboardData(ctx.user.id, role);
       return { role, ...projectPersonnelDashboard(data, role) };
     }),
+
+    movementReport: protectedProcedure
+      .input(movementReportInput)
+      .query(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "FINANCEIRO" && role !== "ADM") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH, Financeiro ou ADM pode consultar este relatório" });
+        }
+        const report = await db.getPersonnelMovementReport(input.month, input.period as MovementPeriod, role);
+        return { ...report, rows: report.rows.map((row) => projectPersonnelMovementRow(row, role)) };
+      }),
 
     employees: protectedProcedure.query(async ({ ctx }) => {
       const role = db.getPersonnelRole(ctx.user);
@@ -476,6 +492,9 @@ export const appRouter = router({
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true, shiftType: input?.shiftType ?? null }));
     }),
     personnelOverview: gestorProcedure.query(async () => projectGestorPersonnelOverview(await db.getGestorPersonnelOverview())),
+    personnelMovementReport: gestorProcedure
+      .input(movementReportInput)
+      .query(async ({ input }) => projectGestorPersonnelMovementReport(await db.getGestorPersonnelMovementReport(input.month, input.period as MovementPeriod))),
     operationalReport: gestorOrAdminProcedure.input(z.object({
       startDate: z.date(),
       endDate: z.date(),
