@@ -41,6 +41,7 @@ import { PersonnelWorkSchedules } from "@/components/PersonnelWorkSchedules";
 import { PersonnelMovementReport } from "@/components/PersonnelMovementReport";
 import { civilDateFromLegacyFt, getFtSettlementPeriod, isCivilDate } from "@shared/personnel-schedules";
 import { civilDateAsLocalDate, formatCivilDate, localCivilToday } from "@/lib/personnelCivilCalendar";
+import { MAX_UPLOAD_FILE_BYTES, PERSONNEL_DOCUMENT_FILE_ACCEPT, resolvePersonnelDocumentMimeType } from "@shared/upload-file-types";
 
 type EntryType =
   | "FT"
@@ -166,7 +167,7 @@ function statusClass(status: string) {
   );
 }
 
-async function fileToPayload(file: File): Promise<FilePayload> {
+async function fileToPayload(file: File, mimeType: string): Promise<FilePayload> {
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Não foi possível ler o arquivo"));
@@ -176,7 +177,7 @@ async function fileToPayload(file: File): Promise<FilePayload> {
     };
     reader.readAsDataURL(file);
   });
-  return { name: file.name, mimeType: file.type, base64 };
+  return { name: file.name, mimeType, base64 };
 }
 
 type PersonnelSection = "workspace" | "employees" | "users" | "finance" | "reports";
@@ -770,16 +771,22 @@ function EntryForm({
               <Input
                 id="personnel-file"
                 type="file"
-                accept="application/pdf,image/jpeg,image/png,image/webp"
+                accept={PERSONNEL_DOCUMENT_FILE_ACCEPT}
                 onChange={async event => {
                   const selected = event.target.files?.[0];
                   if (!selected) return;
-                  if (selected.size > 10 * 1024 * 1024) {
-                    toast.error("O arquivo deve ter no máximo 10 MB");
+                  setFile(null);
+                  if (selected.size <= 0 || selected.size > MAX_UPLOAD_FILE_BYTES) {
+                    toast.error("O arquivo deve ter entre 1 byte e 10 MB");
+                    return;
+                  }
+                  const mimeType = resolvePersonnelDocumentMimeType(selected.name, selected.type);
+                  if (!mimeType) {
+                    toast.error("São aceitos PDF, JPG/JPEG, PNG ou WEBP. SVG não é aceito.");
                     return;
                   }
                   try {
-                    setFile(await fileToPayload(selected));
+                    setFile(await fileToPayload(selected, mimeType));
                   } catch (error) {
                     toast.error(
                       error instanceof Error

@@ -13,6 +13,7 @@ import { storagePut } from "./storage";
 import { randomUUID } from "node:crypto";
 import { hasRouteClosurePendencies, RouteClosureError, summarizeRouteClosure } from "./route-closure";
 import { withLockedSupervisorRoute } from "./route-checklist-lock";
+import { MAX_UPLOAD_FILE_BYTES, isValidUploadBase64, resolvePersonnelDocumentMimeType } from "../shared/upload-file-types";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -2679,12 +2680,13 @@ export async function payPersonnelExtra(id: number, paidBy: number) {
 }
 
 export async function uploadPersonnelDocument(userId: number, file: { name: string; mimeType: string; base64: string }) {
-  const allowedMimeTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
-  if (!allowedMimeTypes.has(file.mimeType)) throw new Error("Formato de atestado não suportado");
+  const mimeType = resolvePersonnelDocumentMimeType(file.name, file.mimeType);
+  if (!mimeType) throw new Error("Formato de atestado não suportado");
+  if (!isValidUploadBase64(file.base64)) throw new Error("Arquivo em formato inválido");
   const bytes = Buffer.from(file.base64, "base64");
-  if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) throw new Error("O arquivo deve ter entre 1 byte e 10 MB");
+  if (bytes.length === 0 || bytes.length > MAX_UPLOAD_FILE_BYTES) throw new Error("O arquivo deve ter entre 1 byte e 10 MB");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120) || "atestado";
-  const result = await storagePut(`personnel/occurrences/${userId}/${randomUUID()}-${safeName}`, bytes, file.mimeType);
+  const result = await storagePut(`personnel/occurrences/${userId}/${randomUUID()}-${safeName}`, bytes, mimeType);
   return { ...result, name: safeName };
 }
 

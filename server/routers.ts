@@ -34,7 +34,13 @@ import type { User } from "../drizzle/schema";
 import { RouteClosureError } from "./route-closure";
 import { randomUUID } from "node:crypto";
 import { storageGetSignedUrl, storagePut } from "./storage";
-import { canManagePostPops, isAllowedPostPopFile } from "./post-pops-access";
+import { canManagePostPops } from "./post-pops-access";
+import {
+  MAX_UPLOAD_BASE64_LENGTH,
+  isValidUploadBase64,
+  resolvePersonnelDocumentMimeType,
+  resolvePostPopMimeType,
+} from "../shared/upload-file-types";
 
 type PublicUser = Pick<User, "id" | "name" | "username" | "role" | "isOperational" | "defaultShift"> & {
   personnelRole: User["personnelRole"] | "SUPERVISOR" | "ADM";
@@ -115,6 +121,12 @@ async function runChecklistMutation<T>(mutation: () => Promise<T>): Promise<T> {
 
 const civilDateSchema = z.string().refine(isCivilDate, "Use uma data civil válida no formato AAAA-MM-DD");
 const civilMonthSchema = z.string().refine(isCivilMonth, "Use um mês válido no formato AAAA-MM");
+const uploadBase64Schema = z.string().min(4).max(MAX_UPLOAD_BASE64_LENGTH).refine(isValidUploadBase64, "Arquivo em formato inválido");
+const personnelDocumentSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  mimeType: z.string().max(128).optional().default(""),
+  base64: uploadBase64Schema,
+});
 const movementPeriodSchema = z.enum(["ALL", "FIRST_HALF", "SECOND_HALF"] as const);
 const movementReportInput = z.object({ month: civilMonthSchema, period: movementPeriodSchema });
 const schedulePatternSchema = z.discriminatedUnion("kind", [
@@ -361,14 +373,22 @@ export const appRouter = router({
         type: z.enum(["FALTA_JUSTIFICADA", "FALTA_INJUSTIFICADA", "ATESTADO"]),
         date: z.coerce.date(),
         observation: z.string().trim().max(2_000).optional().nullable(),
-        document: z.object({ name: z.string().min(1).max(255), mimeType: z.string(), base64: z.string().min(1) }).optional().nullable(),
+        document: personnelDocumentSchema.optional().nullable(),
       }))
       .mutation(async ({ ctx, input }) => {
         const role = db.getPersonnelRole(ctx.user);
         if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode lançar ocorrências" });
         if (input.type === "ATESTADO" && !input.document) throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe o atestado médico em PDF ou imagem" });
+        const documentMimeType = input.document
+          ? resolvePersonnelDocumentMimeType(input.document.name, input.document.mimeType)
+          : null;
+        if (input.document && !documentMimeType) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe um arquivo PDF, JPG/JPEG, PNG ou WEBP; SVG não é aceito" });
+        }
         try {
-          const document = input.document ? await db.uploadPersonnelDocument(ctx.user.id, input.document) : null;
+          const document = input.document && documentMimeType
+            ? await db.uploadPersonnelDocument(ctx.user.id, { ...input.document, mimeType: documentMimeType })
+            : null;
           const occurrence = await db.createPersonnelOccurrence({ employeeId: input.employeeId, supervisorId: ctx.user.id, type: input.type, date: input.date, observation: input.observation || null, documentKey: document?.key ?? null, documentUrl: document?.url ?? null, documentName: document?.name ?? null, status: "PENDING" });
           return occurrence ? projectPersonnelOccurrence(occurrence, role) : occurrence;
         } catch (error) {
@@ -614,16 +634,13 @@ export const appRouter = router({
       upload: postPopManagerProcedure.input(z.object({
         postId: z.number().int().positive(),
         name: z.string().trim().min(1).max(255),
-        mimeType: z.enum([
-          "application/pdf",
-          "application/msword",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ]),
-        base64: z.string().min(1).max(14 * 1024 * 1024).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+        mimeType: z.string().max(128).optional().default(""),
+        base64: uploadBase64Schema,
       })).mutation(async ({ ctx, input }) => {
         const post = await db.getPostById(input.postId);
         if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Posto não encontrado" });
-        if (!isAllowedPostPopFile(input.mimeType, input.name)) {
+        const mimeType = resolvePostPopMimeType(input.name, input.mimeType);
+        if (!mimeType) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe um POP em PDF, DOC ou DOCX" });
         }
         const bytes = Buffer.from(input.base64, "base64");
@@ -633,11 +650,11 @@ export const appRouter = router({
         const safeName = input.name.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "").slice(-200) || "procedimento";
         const key = `posts/pops/${input.postId}/${randomUUID()}-${safeName}`;
         try {
-          const stored = await storagePut(key, bytes, input.mimeType);
+          const stored = await storagePut(key, bytes, mimeType);
           const document = await db.createPostPopDocument({
             postId: input.postId,
             originalName: input.name,
-            mimeType: input.mimeType,
+            mimeType,
             storageKey: stored.key,
             uploadedBy: ctx.user?.id ?? null,
           });

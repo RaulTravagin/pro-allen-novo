@@ -93,6 +93,7 @@ describe("proxy de arquivos pessoais", () => {
   it("aceita apenas namespaces conhecidos e chaves sem traversal", () => {
     expect(isSafeStorageKey(authorizedKey)).toBe(true);
     expect(isSafeStorageKey(postPopKey)).toBe(true);
+    expect(isSafeStorageKey("posts/pops/31/private-word-object.docx")).toBe(true);
     expect(isSafeStorageKey("generated/1730000000000.png")).toBe(true);
     expect(isSafeStorageKey("/personnel/occurrences/17/file.pdf")).toBe(false);
     expect(isSafeStorageKey("personnel/occurrences/17/../file.pdf")).toBe(false);
@@ -120,6 +121,22 @@ describe("proxy de arquivos pessoais", () => {
     expect(upstreamFetch).toHaveBeenCalledTimes(1);
     expect(response.set).toHaveBeenCalledWith("Cache-Control", "no-store");
     expect(response.redirect).toHaveBeenCalledWith(307, "https://signed-fixture.invalid/file");
+  });
+
+  it.each(["jpg", "jpeg", "png", "webp"])("mantém privado o caminho de visualização RH para imagem .%s", async (extension) => {
+    const imageKey = `personnel/occurrences/17/fake-medical-image.${extension}`;
+    proxyMocks.isAuthorizedPersonnelOccurrenceDocument.mockResolvedValueOnce(true);
+    const response = await invokeProxy("rh", imageKey);
+    expect(proxyMocks.isAuthorizedPersonnelOccurrenceDocument).toHaveBeenCalledWith(imageKey);
+    expect(response.set).toHaveBeenCalledWith("Cache-Control", "no-store");
+    expect(response.redirect).toHaveBeenCalledWith(307, "https://signed-fixture.invalid/file");
+  });
+
+  it("não expõe URL assinada de imagem médica ao Supervisor", async () => {
+    const response = await invokeProxy("supervisor", "personnel/occurrences/17/fake-medical-image.webp");
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(upstreamFetch).not.toHaveBeenCalled();
+    expect(proxyMocks.isAuthorizedPersonnelOccurrenceDocument).not.toHaveBeenCalled();
   });
 
   it("permite ADM preexistente somente quando o documento está registrado", async () => {

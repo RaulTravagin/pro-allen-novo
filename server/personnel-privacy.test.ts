@@ -167,6 +167,51 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     expect(created).not.toHaveProperty("documentKey");
   });
 
+  it.each([
+    ["atestado.jpg", "image/jpeg", "image/jpeg"],
+    ["atestado.jpeg", "application/octet-stream", "image/jpeg"],
+    ["atestado.png", "", "image/png"],
+    ["atestado.webp", "image/webp", "image/webp"],
+  ])("aceita atestado raster %s com MIME compatível ou genérico", async (name, reportedMime, canonicalMime) => {
+    const caller = appRouter.createCaller(contextFor(userFor("SUPERVISOR")));
+    await caller.personnel.createOccurrence({
+      employeeId: 81,
+      type: "ATESTADO",
+      date: new Date("2026-01-15T12:00:00Z"),
+      document: { name, mimeType: reportedMime, base64: "ZmljdGljaW8=" },
+    });
+    expect(db.uploadPersonnelDocument).toHaveBeenCalledWith(17, expect.objectContaining({ mimeType: canonicalMime }));
+  });
+
+  it("recusa SVG e pares MIME/extensão incompatíveis antes do armazenamento", async () => {
+    const caller = appRouter.createCaller(contextFor(userFor("SUPERVISOR")));
+    for (const document of [
+      { name: "atestado.svg", mimeType: "image/svg+xml", base64: "ZmljdGljaW8=" },
+      { name: "atestado.png", mimeType: "image/jpeg", base64: "ZmljdGljaW8=" },
+    ]) {
+      await expect(caller.personnel.createOccurrence({
+        employeeId: 81,
+        type: "ATESTADO",
+        date: new Date("2026-01-15T12:00:00Z"),
+        document,
+      })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    expect(db.uploadPersonnelDocument).not.toHaveBeenCalled();
+  });
+
+  it("mantém bloqueado o upload de atestado para RH e Financeiro", async () => {
+    for (const role of ["RH", "FINANCEIRO"] as const) {
+      const caller = appRouter.createCaller(contextFor(userFor(role)));
+      await expect(caller.personnel.createOccurrence({
+        employeeId: 81,
+        type: "ATESTADO",
+        date: new Date("2026-01-15T12:00:00Z"),
+        document: { name: "atestado.jpg", mimeType: "image/jpeg", base64: "ZmljdGljaW8=" },
+      })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    expect(db.uploadPersonnelDocument).not.toHaveBeenCalled();
+  });
+
   it("não entrega roster nem ocorrências ao Financeiro e bloqueia sua rota de listagem", async () => {
     const caller = appRouter.createCaller(contextFor(userFor("FINANCEIRO")));
     const dashboard = await caller.personnel.dashboard();

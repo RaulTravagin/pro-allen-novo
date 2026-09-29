@@ -95,6 +95,32 @@ describe("autorização tRPC de POPs por posto", () => {
     await expect(manager.gestor.postPops.delete({ postId: 31, documentId: 77 })).resolves.toEqual({ id: 77, deleted: true });
   });
 
+  it.each([
+    ["procedimento.doc", "application/octet-stream", "application/msword", "AA=="],
+    ["procedimento.docx", "", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "UEsDBA=="],
+  ])("envia POP Word %s ao storage privado com MIME canônico", async (name, reportedMime, canonicalMime, base64) => {
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+    await caller.gestor.postPops.upload({ postId: 31, name, mimeType: reportedMime, base64 });
+
+    expect(popMocks.storagePut).toHaveBeenCalledWith(
+      expect.stringMatching(/^posts\/pops\/31\/[0-9a-f-]+-/),
+      Buffer.from(base64, "base64"),
+      canonicalMime,
+    );
+    expect(popMocks.createPostPopDocument).toHaveBeenCalledWith(expect.objectContaining({ mimeType: canonicalMime }));
+  });
+
+  it("rejeita extensão Word com MIME de outro formato antes de chamar storage", async () => {
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+    await expect(caller.gestor.postPops.upload({
+      postId: 31,
+      name: "procedimento.docx",
+      mimeType: "application/pdf",
+      base64: "UEsDBA==",
+    })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(popMocks.storagePut).not.toHaveBeenCalled();
+  });
+
   it("lista anexos ao supervisor apenas na instância de rota vinculada ao posto", async () => {
     const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "SUPERVISOR", id: 21 }));
     await expect(caller.supervisorRoutes.getPostPops({ supervisorRouteId: 88, postId: 31 })).resolves.toHaveLength(1);
@@ -110,5 +136,21 @@ describe("autorização tRPC de POPs por posto", () => {
     popMocks.supervisorRouteCanAccessPost.mockResolvedValueOnce(false);
     await expect(caller.postPops.downloadUrl({ postId: 31, documentId: 77, supervisorRouteId: 89 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(popMocks.storageGetSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserva o download privado de POP DOCX para ADM usando a chave registrada", async () => {
+    const wordDocument = {
+      ...doc,
+      originalName: "Procedimento.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      storageKey: "posts/pops/31/private-word-object.docx",
+    };
+    popMocks.getPostPopDocumentById.mockResolvedValueOnce(wordDocument);
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+
+    await expect(caller.postPops.downloadUrl({ postId: 31, documentId: 77 })).resolves.toEqual({
+      url: "https://private-storage.invalid/signed-token",
+    });
+    expect(popMocks.storageGetSignedUrl).toHaveBeenCalledWith(wordDocument.storageKey);
   });
 });

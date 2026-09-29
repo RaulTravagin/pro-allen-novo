@@ -1,21 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { MAX_UPLOAD_FILE_BYTES, POST_POP_FILE_ACCEPT, resolvePostPopMimeType } from "@shared/upload-file-types";
 import { Download, FileText, Loader2, Trash2, Upload } from "lucide-react";
 import React, { useRef } from "react";
 import { toast } from "sonner";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-type PopMimeType = "application/pdf" | "application/msword" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-function allowedMimeType(file: File): PopMimeType | null {
-  const extension = file.name.toLowerCase().split(".").pop();
-  const fallback = extension === "pdf" ? "application/pdf"
-    : extension === "doc" ? "application/msword"
-      : extension === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : null;
-  const mimeType = file.type || fallback;
-  return mimeType === "application/pdf" || mimeType === "application/msword" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ? mimeType
-    : null;
+function allowedMimeType(file: File): string | null {
+  return resolvePostPopMimeType(file.name, file.type);
 }
 
 function fileToBase64(file: File) {
@@ -56,7 +47,7 @@ export default function PostPopManagement({ postId }: { postId: number }) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (file.size <= 0 || file.size > MAX_FILE_BYTES) {
+    if (file.size <= 0 || file.size > MAX_UPLOAD_FILE_BYTES) {
       toast.error("O arquivo deve ter até 10 MB.");
       return;
     }
@@ -90,7 +81,7 @@ export default function PostPopManagement({ postId }: { postId: number }) {
         <input
           ref={fileInput}
           type="file"
-          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept={POST_POP_FILE_ACCEPT}
           className="sr-only"
           aria-label={`Selecionar POP para o posto ${postId}`}
           onChange={onFileSelected}
