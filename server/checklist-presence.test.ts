@@ -2,13 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
 vi.mock("./db", () => ({
-  createVisitChecklist: vi.fn(),
-  createChecklistItem: vi.fn(),
-  getVisitChecklistById: vi.fn(),
-  getSupervisorRouteById: vi.fn(),
-  getVisitChecklistsByRoute: vi.fn(),
-  updateVisitChecklist: vi.fn(),
-  recordPostVisit: vi.fn(),
+  checkInVisitForRoute: vi.fn(),
+  checkOutVisitForRoute: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -33,98 +28,28 @@ const ownerContext: TrpcContext = {
 describe("checklists.checkIn e checkOut", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({
-      id: 22,
-      supervisorRouteId: 11,
-      postId: 3,
-      status: "pending",
-    } as never);
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({
-      id: 11,
-      supervisorId: 7,
-      routeId: 1,
-      status: "in_progress",
-    } as never);
-    vi.mocked(db.getVisitChecklistsByRoute).mockResolvedValue([
-      { id: 22, status: "visited" },
-    ] as never);
-    vi.mocked(db.createVisitChecklist).mockResolvedValue(99);
   });
 
-  it("executa chegada, saída e disponibiliza uma nova chegada no mesmo posto", async () => {
+  it("delega chegada, saída e nova visita à camada transacional com o supervisor autenticado", async () => {
+    const arrivalTime = new Date("2026-09-29T10:00:00.000Z");
+    const departureTime = new Date("2026-09-29T11:00:00.000Z");
+    vi.mocked(db.checkInVisitForRoute).mockResolvedValue({ success: true, checklistId: 22, arrivalTime } as never);
+    vi.mocked(db.checkOutVisitForRoute).mockResolvedValue({ success: true, departureTime } as never);
     const caller = appRouter.createCaller(ownerContext);
 
-    await expect(caller.checklists.checkIn({ checklistId: 22, latitude: -23.5, longitude: -46.6 })).resolves.toMatchObject({
-      success: true,
-      checklistId: 22,
-    });
-    expect(db.updateVisitChecklist).toHaveBeenNthCalledWith(1, 22, expect.objectContaining({
-      status: "in_progress",
-      arrivalLatitude: -23.5,
-      arrivalLongitude: -46.6,
-    }));
+    await expect(caller.checklists.checkIn({ checklistId: 22, latitude: -23.5, longitude: -46.6 })).resolves.toMatchObject({ success: true, checklistId: 22 });
+    expect(db.checkInVisitForRoute).toHaveBeenCalledWith({ checklistId: 22, supervisorId: 7, latitude: -23.5, longitude: -46.6 });
 
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({
-      id: 22,
-      supervisorRouteId: 11,
-      postId: 3,
-      status: "in_progress",
-      occurrenceReport: "Visita realizada e posto em funcionamento.",
-    } as never);
-    await expect(caller.checklists.checkOut({ checklistId: 22, latitude: -23.5, longitude: -46.6 })).resolves.toMatchObject({
-      success: true,
-    });
-    expect(db.updateVisitChecklist).toHaveBeenNthCalledWith(2, 22, expect.objectContaining({
-      status: "visited",
-      departureLatitude: -23.5,
-      departureLongitude: -46.6,
-    }));
-
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({
-      id: 22,
-      supervisorRouteId: 11,
-      postId: 3,
-      status: "visited",
-    } as never);
-    await expect(caller.checklists.checkIn({ checklistId: 22 })).resolves.toMatchObject({
-      success: true,
-      checklistId: 99,
-    });
-    expect(db.createVisitChecklist).toHaveBeenCalledWith(11, 3);
-    expect(db.createChecklistItem).not.toHaveBeenCalled();
-    expect(db.updateVisitChecklist).toHaveBeenNthCalledWith(3, 99, expect.objectContaining({ status: "in_progress" }));
+    await expect(caller.checklists.checkOut({ checklistId: 22, latitude: -23.5, longitude: -46.6 })).resolves.toMatchObject({ success: true, departureTime });
+    expect(db.checkOutVisitForRoute).toHaveBeenCalledWith({ checklistId: 22, supervisorId: 7, latitude: -23.5, longitude: -46.6 });
   });
 
-  it("impede uma chegada quando outro posto estiver em atendimento", async () => {
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({
-      id: 22,
-      supervisorRouteId: 11,
-      postId: 3,
-      status: "visited",
-    } as never);
-    vi.mocked(db.getVisitChecklistsByRoute).mockResolvedValue([
-      { id: 22, status: "visited" },
-      { id: 23, status: "in_progress" },
-    ] as never);
+  it("traduz conflito devolvido pela transação sem repetir uma verificação vulnerável no router", async () => {
+    const { RouteClosureError } = await import("./route-closure");
+    vi.mocked(db.checkInVisitForRoute).mockRejectedValue(new RouteClosureError("CONFLICT", "A rota foi encerrada antes da chegada"));
     const caller = appRouter.createCaller(ownerContext);
 
-    await expect(caller.checklists.checkIn({ checklistId: 22 })).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(db.createVisitChecklist).not.toHaveBeenCalled();
-  });
-
-  it("permite registrar chegada mesmo sem a quilometragem da viatura ter sido informada", async () => {
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({
-      id: 11,
-      supervisorId: 7,
-      routeId: 1,
-      status: "pending",
-    } as never);
-    const caller = appRouter.createCaller(ownerContext);
-
-    await expect(caller.checklists.checkIn({ checklistId: 22 })).resolves.toMatchObject({
-      success: true,
-      checklistId: 22,
-    });
-    expect(db.updateVisitChecklist).toHaveBeenCalledWith(22, expect.objectContaining({ status: "in_progress" }));
+    await expect(caller.checklists.checkIn({ checklistId: 22 })).rejects.toMatchObject({ code: "CONFLICT", message: "A rota foi encerrada antes da chegada" });
+    expect(db.checkInVisitForRoute).toHaveBeenCalledWith({ checklistId: 22, supervisorId: 7, latitude: undefined, longitude: undefined });
   });
 });

@@ -2,13 +2,16 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm"
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule } from "../drizzle/schema";
+import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { storagePut } from "./storage";
 import { randomUUID } from "node:crypto";
+import { hasRouteClosurePendencies, RouteClosureError, summarizeRouteClosure } from "./route-closure";
+import { withLockedSupervisorRoute } from "./route-checklist-lock";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -725,33 +728,120 @@ export async function updateSupervisorRoute(id: number, updates: any) {
     .where(eq(supervisorRoutes.id, id));
 }
 
-/** Cancela uma preparação ainda pendente e remove os checklists ainda não utilizados dela. */
-export async function cancelPendingSupervisorRoute(id: number) {
+/** Fecha somente a rota ativa do supervisor autenticado; atualiza rota e trilha excepcional na mesma transação. */
+export async function closeSupervisorRoute(input: {
+  supervisorRouteId: number;
+  supervisorId: number;
+  kmFinal: number;
+  exceptionJustification?: string;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.transaction(async (transaction) => {
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId: input.supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["in_progress"],
+    statusMessage: "Somente uma rota ativa do supervisor pode ser encerrada",
+  }, async (route) => {
+    if (!Number.isFinite(input.kmFinal) || input.kmFinal < 0 || (route.kmInitial != null && input.kmFinal < Number(route.kmInitial))) {
+      throw new RouteClosureError("BAD_REQUEST", "O KM final informado é inválido ou menor que o KM inicial");
+    }
+
+    const [routeCatalog] = await transaction.select({ activityType: routes.activityType }).from(routes)
+      .where(eq(routes.id, route.routeId)).limit(1);
+    const [activePosts, checklistRows] = await Promise.all([
+      transaction.select({ id: posts.id, name: posts.name }).from(posts)
+        .where(and(eq(posts.routeId, route.routeId), eq(posts.isActive, true))),
+      transaction.select({
+        id: visitChecklists.id,
+        postId: visitChecklists.postId,
+        postName: posts.name,
+        status: visitChecklists.status,
+        isCoverage: visitChecklists.isCoverage,
+        arrivalTime: visitChecklists.arrivalTime,
+        departureTime: visitChecklists.departureTime,
+        occurrenceReport: visitChecklists.occurrenceReport,
+        occurrenceSubmittedAt: visitChecklists.occurrenceSubmittedAt,
+      }).from(visitChecklists)
+        .leftJoin(posts, eq(posts.id, visitChecklists.postId))
+        .where(eq(visitChecklists.supervisorRouteId, input.supervisorRouteId)),
+    ]);
+    const pendingSummary = summarizeRouteClosure({
+      posts: routeCatalog?.activityType === "operational_base" ? [] : activePosts,
+      checklists: routeCatalog?.activityType === "operational_base" ? [] : checklistRows,
+    });
+    const hasPendencies = hasRouteClosurePendencies(pendingSummary);
+    const justification = input.exceptionJustification?.trim();
+
+    if (hasPendencies && !justification) {
+      return { closed: false as const, requiresExceptionJustification: true as const, pendingSummary };
+    }
+    if (hasPendencies && (justification!.length < 8 || justification!.length > 2000)) {
+      throw new RouteClosureError("BAD_REQUEST", "A justificativa da exceção deve ter entre 8 e 2000 caracteres");
+    }
+
+    const closedAt = new Date();
+    await transaction.update(supervisorRoutes)
+      .set({ kmFinal: input.kmFinal.toFixed(2), status: "completed", completedAt: closedAt })
+      .where(and(
+        eq(supervisorRoutes.id, input.supervisorRouteId),
+        eq(supervisorRoutes.supervisorId, input.supervisorId),
+        eq(supervisorRoutes.status, "in_progress"),
+      ));
+
+    if (hasPendencies) {
+      await transaction.insert(supervisorRouteClosureExceptions).values({
+        supervisorRouteId: input.supervisorRouteId,
+        supervisorId: input.supervisorId,
+        closedAt,
+        justification: justification!,
+        pendingSummary,
+      });
+      return {
+        closed: true as const,
+        exceptionAudit: { supervisorRouteId: input.supervisorRouteId, supervisorId: input.supervisorId, closedAt, justification: justification!, pendingSummary },
+      };
+    }
+
+    return { closed: true as const, exceptionAudit: null };
+  }));
+}
+
+/** Cancela uma preparação ainda pendente e remove os checklists ainda não utilizados dela. */
+export async function cancelPendingSupervisorRoute(id: number, supervisorId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId: id,
+    supervisorId,
+    allowedStatuses: ["pending"],
+    statusMessage: "Somente uma rota ainda não iniciada pode ser cancelada",
+  }, async (route) => {
+    if (route.kmInitial != null || route.startedAt != null) {
+      throw new RouteClosureError("CONFLICT", "Somente uma rota ainda não iniciada pode ser cancelada");
+    }
     await transaction.delete(visitChecklists).where(eq(visitChecklists.supervisorRouteId, id));
-    await transaction.update(supervisorRoutes).set({ status: "cancelled" }).where(eq(supervisorRoutes.id, id));
-  });
+    await transaction.update(supervisorRoutes).set({ status: "cancelled" })
+      .where(and(eq(supervisorRoutes.id, id), eq(supervisorRoutes.supervisorId, supervisorId), eq(supervisorRoutes.status, "pending")));
+    return { cancelled: true as const, supervisorRouteId: id };
+  }));
 }
 
 // Visit Checklists queries
-export async function createVisitChecklist(
+async function insertVisitChecklist(
+  transaction: any,
   supervisorRouteId: number,
   postId: number,
   options: { isCoverage?: boolean; coverageReason?: string | null } = {},
 ) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const result = await db.insert(visitChecklists).values({
+  const result = await transaction.insert(visitChecklists).values({
     supervisorRouteId,
     postId,
-    status: 'pending',
+    status: "pending",
     isCoverage: options.isCoverage ?? false,
     coverageReason: options.coverageReason ?? null,
   }).returning({ id: visitChecklists.id });
-
   return getInsertedId(result);
 }
 
@@ -761,6 +851,31 @@ export async function getVisitChecklistsByRoute(supervisorRouteId: number) {
   
   return await db.select().from(visitChecklists)
     .where(eq(visitChecklists.supervisorRouteId, supervisorRouteId));
+}
+
+/** Cria checklists planejados sob o mesmo lock que serializa com o fechamento. */
+export async function createRouteChecklists(supervisorRouteId: number, supervisorId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId,
+    allowedStatuses: ["pending", "in_progress"],
+  }, async (route) => {
+    const existing = await transaction.select({ id: visitChecklists.id, isCoverage: visitChecklists.isCoverage })
+      .from(visitChecklists).where(eq(visitChecklists.supervisorRouteId, supervisorRouteId));
+    if (existing.some((item) => !item.isCoverage)) return existing.map((item) => item.id);
+
+    const routePosts = await transaction.select({ id: posts.id }).from(posts)
+      .where(and(eq(posts.routeId, route.routeId), eq(posts.isActive, true)))
+      .orderBy(posts.order);
+    const checklistIds: number[] = [];
+    for (const post of routePosts) {
+      checklistIds.push(await insertVisitChecklist(transaction, supervisorRouteId, post.id));
+    }
+    return checklistIds;
+  }));
 }
 
 /** Lista postos de outras rotas, elegíveis para cobertura excepcional. */
@@ -785,45 +900,34 @@ export async function getCoveragePostsBySupervisorRoute(supervisorRouteId: numbe
     .orderBy(routes.name, posts.order);
 }
 
-/** Garante um posto persistível para registrar atividade realizada na Base Operacional. */
-export async function getOrCreateOperationalBasePost() {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  let baseRoute: typeof routes.$inferSelect | undefined = (await db.select().from(routes)
-    .where(eq(routes.activityType, "operational_base"))
-    .limit(1))[0];
-
+/** Garante o posto operacional na mesma transação da cobertura, depois do lock/validação da rota. */
+async function getOrCreateOperationalBasePostInTransaction(transaction: any) {
+  // Coberturas de supervisores diferentes bloqueiam linhas de rota distintas; serializar a criação global evita duplicatas.
+  await transaction.execute(sql`SELECT pg_advisory_xact_lock(6072619, 1)`);
+  let [baseRoute] = await transaction.select({ id: routes.id }).from(routes)
+    .where(eq(routes.activityType, "operational_base")).limit(1);
   if (!baseRoute) {
-    const result = await db.insert(routes).values({
+    const result = await transaction.insert(routes).values({
       name: "Base Operacional",
       region: "Operação interna",
       description: "Atividade sem posto de cliente",
       activityType: "operational_base",
     }).returning({ id: routes.id });
-    const baseRouteId = getInsertedId(result);
-    baseRoute = await getRouteById(baseRouteId) ?? undefined;
+    baseRoute = { id: getInsertedId(result) };
   }
 
-  if (!baseRoute) throw new Error("Não foi possível preparar a Base Operacional");
-
-  let basePost: typeof posts.$inferSelect | undefined = (await db.select().from(posts)
-    .where(and(eq(posts.routeId, baseRoute.id), eq(posts.name, "Base Operacional")))
-    .limit(1))[0];
-
+  let [basePost] = await transaction.select({ id: posts.id }).from(posts)
+    .where(and(eq(posts.routeId, baseRoute.id), eq(posts.name, "Base Operacional"))).limit(1);
   if (!basePost) {
-    const result = await db.insert(posts).values({
+    const result = await transaction.insert(posts).values({
       routeId: baseRoute.id,
       name: "Base Operacional",
       region: "Operação interna",
       address: "Atividade interna sem posto de cliente",
       order: 1,
     }).returning({ id: posts.id });
-    const basePostId = getInsertedId(result);
-    basePost = await getPostById(basePostId) ?? undefined;
+    basePost = { id: getInsertedId(result) };
   }
-
-  if (!basePost) throw new Error("Não foi possível preparar o posto da Base Operacional");
   return basePost;
 }
 
@@ -834,40 +938,239 @@ export async function getVisitChecklistById(id: number) {
   return result.length > 0 ? result[0] : null;
 }
 
-export async function updateVisitChecklist(id: number, updates: any) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  return await db.update(visitChecklists)
-    .set(updates)
-    .where(eq(visitChecklists.id, id));
+async function getChecklistRouteReference(database: any, checklistId: number) {
+  const [reference] = await database.select({ supervisorRouteId: visitChecklists.supervisorRouteId })
+    .from(visitChecklists).where(eq(visitChecklists.id, checklistId)).limit(1);
+  if (!reference) throw new RouteClosureError("NOT_FOUND", "Visita não encontrada");
+  return reference.supervisorRouteId as number;
 }
 
-/** Salva o relato obrigatório da visita e marca o horário do envio ao Gestor. */
-export async function submitVisitOccurrence(id: number, occurrenceReport: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const normalizedReport = occurrenceReport.trim();
-  if (normalizedReport.length < 8) throw new Error("O relato da ocorrência deve ter pelo menos 8 caracteres");
-  const result = await db.update(visitChecklists)
-    .set({ occurrenceReport: normalizedReport, occurrenceSubmittedAt: new Date() })
-    .where(eq(visitChecklists.id, id));
-  await touchSupervisorRouteFromChecklist(id);
-  return result;
+async function getChecklistInRouteTransaction(transaction: any, checklistId: number, supervisorRouteId: number) {
+  const [checklist] = await transaction.select().from(visitChecklists)
+    .where(and(eq(visitChecklists.id, checklistId), eq(visitChecklists.supervisorRouteId, supervisorRouteId)))
+    .for("update").limit(1);
+  if (!checklist) throw new RouteClosureError("NOT_FOUND", "Visita não encontrada para esta rota");
+  return checklist;
 }
 
-/** Marca a atividade da rota como atualizada quando um item ou uma auditoria é salvo. */
-export async function touchSupervisorRouteFromChecklist(visitChecklistId: number) {
+/** Começa uma visita (ou cria uma nova ocorrência para posto já visitado) sob o lock comum da rota. */
+export async function startNewVisitForRoute(input: { checklistId: number; supervisorId: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [checklist] = await db.select({ supervisorRouteId: visitChecklists.supervisorRouteId })
-    .from(visitChecklists)
-    .where(eq(visitChecklists.id, visitChecklistId))
-    .limit(1);
-  if (!checklist) return;
-  await db.update(supervisorRoutes)
-    .set({ updatedAt: new Date() })
-    .where(eq(supervisorRoutes.id, checklist.supervisorRouteId));
+  const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["in_progress"],
+    statusMessage: "A rota precisa estar em andamento para iniciar uma nova visita",
+  }, async (route) => {
+    const checklist = await getChecklistInRouteTransaction(transaction, input.checklistId, route.id);
+    if (checklist.status !== "visited") {
+      throw new RouteClosureError("CONFLICT", "Somente uma visita concluída pode ser reiniciada");
+    }
+    const [activeVisit] = await transaction.select({ id: visitChecklists.id }).from(visitChecklists)
+      .where(and(eq(visitChecklists.supervisorRouteId, route.id), eq(visitChecklists.status, "in_progress"))).limit(1);
+    if (activeVisit) throw new RouteClosureError("CONFLICT", "Finalize a visita ativa antes de iniciar outro posto");
+
+    const checklistId = await insertVisitChecklist(transaction, route.id, checklist.postId, {
+      isCoverage: checklist.isCoverage,
+      coverageReason: checklist.coverageReason,
+    });
+    return { checklistId };
+  }));
+}
+
+/** Registra cobertura sob lock da rota e valida novamente o posto antes do insert. */
+export async function createCoverageVisit(input: {
+  supervisorRouteId: number;
+  supervisorId: number;
+  postId: number | "operational_base";
+  coverageReason: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId: input.supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["in_progress"],
+    statusMessage: "Inicie a rota pelo KM inicial antes de registrar uma cobertura",
+  }, async (route) => {
+    const postId = input.postId === "operational_base"
+      ? (await getOrCreateOperationalBasePostInTransaction(transaction)).id
+      : input.postId;
+    const [post] = await transaction.select({ id: posts.id, routeId: posts.routeId }).from(posts)
+      .where(eq(posts.id, postId)).limit(1);
+    if (!post) throw new RouteClosureError("NOT_FOUND", "Posto não encontrado");
+    if (post.routeId === route.routeId) {
+      throw new RouteClosureError("BAD_REQUEST", "Este posto já faz parte da rota planejada");
+    }
+    const [activeVisit] = await transaction.select({ id: visitChecklists.id }).from(visitChecklists)
+      .where(and(eq(visitChecklists.supervisorRouteId, route.id), eq(visitChecklists.status, "in_progress"))).limit(1);
+    if (activeVisit) throw new RouteClosureError("CONFLICT", "Finalize a visita ativa antes de registrar uma cobertura");
+
+    const checklistId = await insertVisitChecklist(transaction, route.id, post.id, {
+      isCoverage: true,
+      coverageReason: input.coverageReason,
+    });
+    return { checklistId };
+  }));
+}
+
+/** Registra chegada com verificação serializada de rota, checklist e demais visitas ativas. */
+export async function checkInVisitForRoute(input: {
+  checklistId: number;
+  supervisorId: number;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["pending", "in_progress"],
+    statusMessage: "Não é possível registrar chegada depois do encerramento da rota",
+  }, async (route) => {
+    const checklist = await getChecklistInRouteTransaction(transaction, input.checklistId, route.id);
+    if (checklist.status !== "pending" && checklist.status !== "visited") {
+      throw new RouteClosureError("CONFLICT", "Esta visita já está em andamento");
+    }
+    const [activeVisit] = await transaction.select({ id: visitChecklists.id }).from(visitChecklists)
+      .where(and(eq(visitChecklists.supervisorRouteId, route.id), eq(visitChecklists.status, "in_progress"))).limit(1);
+    if (activeVisit) throw new RouteClosureError("CONFLICT", "Finalize a visita ativa antes de iniciar outro posto");
+
+    const targetChecklistId = checklist.status === "visited"
+      ? await insertVisitChecklist(transaction, route.id, checklist.postId, {
+          isCoverage: checklist.isCoverage,
+          coverageReason: checklist.coverageReason,
+        })
+      : checklist.id;
+    const arrivalTime = new Date();
+    await transaction.update(visitChecklists).set({
+      status: "in_progress",
+      arrivalTime,
+      arrivalLatitude: input.latitude?.toString() ?? null,
+      arrivalLongitude: input.longitude?.toString() ?? null,
+    }).where(and(eq(visitChecklists.id, targetChecklistId), eq(visitChecklists.supervisorRouteId, route.id)));
+    await transaction.update(supervisorRoutes).set({ updatedAt: arrivalTime }).where(eq(supervisorRoutes.id, route.id));
+    return { success: true as const, checklistId: targetChecklistId, arrivalTime };
+  }));
+}
+
+/** Registra saída e histórico na mesma transação protegida pelo row lock da rota. */
+export async function checkOutVisitForRoute(input: {
+  checklistId: number;
+  supervisorId: number;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["pending", "in_progress"],
+    statusMessage: "Não é possível registrar saída depois do encerramento da rota",
+  }, async (route) => {
+    const checklist = await getChecklistInRouteTransaction(transaction, input.checklistId, route.id);
+    if (checklist.status !== "in_progress") {
+      throw new RouteClosureError("CONFLICT", "Só é possível registrar saída de uma visita em andamento");
+    }
+    if (!checklist.occurrenceReport?.trim()) {
+      throw new RouteClosureError("CONFLICT", "Envie o registro obrigatório da ocorrência antes de registrar a saída");
+    }
+
+    const completedAt = new Date();
+    await transaction.update(visitChecklists).set({
+      status: "visited",
+      departureTime: completedAt,
+      visitedAt: completedAt,
+      departureLatitude: input.latitude?.toString() ?? null,
+      departureLongitude: input.longitude?.toString() ?? null,
+    }).where(and(eq(visitChecklists.id, input.checklistId), eq(visitChecklists.supervisorRouteId, route.id)));
+    await transaction.insert(postVisitHistory).values({
+      postId: checklist.postId,
+      supervisorId: input.supervisorId,
+      visitedAt: completedAt,
+      observations: checklist.occurrenceReport,
+    });
+    await transaction.update(supervisorRoutes).set({ updatedAt: completedAt }).where(eq(supervisorRoutes.id, route.id));
+    return { success: true as const, departureTime: completedAt };
+  }));
+}
+
+/** Salva o relato obrigatório e seu timestamp do servidor dentro do lock da rota. */
+export async function submitOccurrenceForActiveRoute(input: { checklistId: number; supervisorId: number; occurrenceReport: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const normalizedReport = input.occurrenceReport.trim();
+  if (normalizedReport.length < 8 || normalizedReport.length > 5000) {
+    throw new RouteClosureError("BAD_REQUEST", "O relato da ocorrência deve ter entre 8 e 5000 caracteres");
+  }
+  const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["pending", "in_progress"],
+    statusMessage: "Não é possível enviar ou alterar relatos depois do encerramento da rota",
+  }, async (route) => {
+    const checklist = await getChecklistInRouteTransaction(transaction, input.checklistId, route.id);
+    if (checklist.status !== "in_progress" && checklist.status !== "visited") {
+      throw new RouteClosureError("CONFLICT", "Registre a chegada antes de enviar a ocorrência");
+    }
+    const submittedAt = new Date();
+    await transaction.update(visitChecklists).set({ occurrenceReport: normalizedReport, occurrenceSubmittedAt: submittedAt })
+      .where(and(eq(visitChecklists.id, input.checklistId), eq(visitChecklists.supervisorRouteId, route.id)));
+    await transaction.update(supervisorRoutes).set({ updatedAt: submittedAt }).where(eq(supervisorRoutes.id, route.id));
+    return { success: true as const, occurrenceSubmittedAt: submittedAt };
+  }));
+}
+
+/** Caminho legado mantido com timestamps do servidor e o mesmo lock compartilhado com o fechamento. */
+export async function markVisitVisitedForActiveRoute(input: { checklistId: number; supervisorId: number; occurrenceReport: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const occurrenceReport = input.occurrenceReport.trim();
+  if (occurrenceReport.length < 8 || occurrenceReport.length > 5000) {
+    throw new RouteClosureError("BAD_REQUEST", "O relato deve ter entre 8 e 5000 caracteres");
+  }
+  const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
+
+  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
+    supervisorRouteId,
+    supervisorId: input.supervisorId,
+    allowedStatuses: ["in_progress"],
+    statusMessage: "Não é possível alterar visitas depois do encerramento da rota",
+  }, async (route) => {
+    const checklist = await getChecklistInRouteTransaction(transaction, input.checklistId, route.id);
+    if (checklist.status !== "pending" && checklist.status !== "in_progress") {
+      throw new RouteClosureError("CONFLICT", "Somente uma visita pendente ou em atendimento pode ser concluída por este caminho");
+    }
+    const completedAt = new Date();
+    await transaction.update(visitChecklists).set({
+      status: "visited",
+      visitedAt: completedAt,
+      occurrenceReport,
+      occurrenceSubmittedAt: completedAt,
+      arrivalTime: checklist.arrivalTime ?? completedAt,
+      departureTime: completedAt,
+    }).where(and(eq(visitChecklists.id, input.checklistId), eq(visitChecklists.supervisorRouteId, route.id)));
+    await transaction.insert(postVisitHistory).values({
+      postId: checklist.postId,
+      supervisorId: input.supervisorId,
+      visitedAt: completedAt,
+      observations: occurrenceReport,
+    });
+    await transaction.update(supervisorRoutes).set({ updatedAt: completedAt }).where(eq(supervisorRoutes.id, route.id));
+    return { success: true as const, completedAt };
+  }));
 }
 
 // Supervisor Locations queries
@@ -924,23 +1227,6 @@ export async function getAllSupervisorsLatestLocations() {
 // Post Visit History queries
 export function getReportQueryPeriod(startDate: Date, endDate: Date) {
   return getOperationalRangeForCalendarDates(startDate, endDate);
-}
-
-export async function recordPostVisit(postId: number, supervisorId: number, observations?: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const values: any = {
-    postId,
-    supervisorId,
-    visitedAt: new Date(),
-  };
-  
-  if (observations) {
-    values.observations = observations;
-  }
-  
-  return await db.insert(postVisitHistory).values(values);
 }
 
 export async function getLastPostVisit(postId: number) {
@@ -1757,6 +2043,141 @@ export async function createPersonnelUser(input: {
   return getUserById(getInsertedId(result));
 }
 
+function toScheduleAssignment(row: {
+  startDate: string;
+  endDate: string | null;
+  cycleAnchorDate: string | null;
+  scheduleId: number;
+  scheduleName: string;
+  weeklyHours: string;
+  pattern: WorkSchedulePattern;
+}): PersonnelScheduleAssignment {
+  return {
+    startDate: row.startDate,
+    endDate: row.endDate,
+    cycleAnchorDate: row.cycleAnchorDate,
+    schedule: { id: row.scheduleId, name: row.scheduleName, weeklyHours: row.weeklyHours, pattern: row.pattern },
+  };
+}
+
+export async function listPersonnelWorkSchedules() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(personnelWorkSchedules).orderBy(asc(personnelWorkSchedules.name));
+}
+
+export async function createPersonnelWorkSchedule(input: { name: string; pattern: WorkSchedulePattern; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const name = input.name.trim();
+  if (name.length < 2 || name.length > 120) throw new Error("O nome da jornada deve ter entre 2 e 120 caracteres");
+  const patternError = validateWorkSchedulePattern(input.pattern);
+  if (patternError) throw new Error(patternError);
+  const duplicate = await db.select({ id: personnelWorkSchedules.id }).from(personnelWorkSchedules)
+    .where(sql`lower(${personnelWorkSchedules.name}) = ${name.toLocaleLowerCase("pt-BR")}`).limit(1);
+  if (duplicate.length) throw new Error("Já existe uma jornada com esse nome");
+  const values: InsertPersonnelWorkSchedule = {
+    name,
+    pattern: input.pattern,
+    weeklyHours: weeklyHoursFromPattern(input.pattern).toFixed(2),
+    createdBy: input.createdBy,
+  };
+  const inserted = await db.insert(personnelWorkSchedules).values(values).returning({ id: personnelWorkSchedules.id });
+  const id = getInsertedId(inserted);
+  return (await db.select().from(personnelWorkSchedules).where(eq(personnelWorkSchedules.id, id)).limit(1))[0];
+}
+
+export async function listPersonnelEmployeeScheduleAssignments(employeeId: number): Promise<PersonnelScheduleAssignment[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    startDate: personnelEmployeeScheduleAssignments.startDate,
+    endDate: personnelEmployeeScheduleAssignments.endDate,
+    cycleAnchorDate: personnelEmployeeScheduleAssignments.cycleAnchorDate,
+    scheduleId: personnelWorkSchedules.id,
+    scheduleName: personnelWorkSchedules.name,
+    weeklyHours: personnelWorkSchedules.weeklyHours,
+    pattern: personnelWorkSchedules.pattern,
+  }).from(personnelEmployeeScheduleAssignments)
+    .innerJoin(personnelWorkSchedules, eq(personnelWorkSchedules.id, personnelEmployeeScheduleAssignments.scheduleId))
+    .where(eq(personnelEmployeeScheduleAssignments.employeeId, employeeId))
+    .orderBy(asc(personnelEmployeeScheduleAssignments.startDate));
+  return rows.map(toScheduleAssignment);
+}
+
+export async function assignPersonnelWorkSchedule(input: {
+  employeeId: number;
+  scheduleId: number;
+  startDate: string;
+  cycleAnchorDate: string | null;
+  assignedBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!isCivilDate(input.startDate)) throw new Error("Informe uma data inicial válida no formato AAAA-MM-DD");
+  if (input.cycleAnchorDate !== null && !isCivilDate(input.cycleAnchorDate)) throw new Error("Informe uma data âncora válida no formato AAAA-MM-DD");
+
+  return db.transaction(async (transaction) => {
+    const lockedEmployee = await transaction.execute(sql`SELECT id FROM personnel_employees WHERE id = ${input.employeeId} FOR UPDATE`);
+    if (!lockedEmployee.rows?.length) throw new Error("Funcionário não encontrado");
+    const scheduleRows = await transaction.select().from(personnelWorkSchedules).where(eq(personnelWorkSchedules.id, input.scheduleId)).limit(1);
+    const schedule = scheduleRows[0];
+    if (!schedule) throw new Error("Jornada não encontrada");
+    if (schedule.pattern.kind === "CYCLE") {
+      if (!input.cycleAnchorDate) throw new Error("Informe a data âncora do ciclo; o primeiro dia da regra define trabalho ou folga");
+      if (input.cycleAnchorDate > input.startDate) throw new Error("A data âncora deve ser igual ou anterior ao início da vigência");
+    } else if (input.cycleAnchorDate) {
+      throw new Error("A grade semanal não usa data âncora de ciclo");
+    }
+
+    const existing = await transaction.select().from(personnelEmployeeScheduleAssignments)
+      .where(eq(personnelEmployeeScheduleAssignments.employeeId, input.employeeId))
+      .orderBy(asc(personnelEmployeeScheduleAssignments.startDate));
+    if (existing.some((row) => row.startDate === input.startDate)) {
+      throw new Error("Já existe uma atribuição com essa data inicial; use uma nova data para preservar o histórico");
+    }
+    const covering = existing.filter((row) => row.startDate < input.startDate && (!row.endDate || row.endDate >= input.startDate));
+    if (covering.length > 1) throw new Error("Há atribuições sobrepostas; revise o histórico antes de atribuir outra jornada");
+    const next = existing.find((row) => row.startDate > input.startDate);
+    let endDate = next ? addCivilDays(next.startDate, -1) : null;
+    if (covering[0]) {
+      const previousEnd = covering[0].endDate;
+      endDate = previousEnd && (!next || previousEnd < next.startDate)
+        ? previousEnd
+        : next ? addCivilDays(next.startDate, -1) : null;
+      await transaction.update(personnelEmployeeScheduleAssignments)
+        .set({ endDate: addCivilDays(input.startDate, -1) })
+        .where(eq(personnelEmployeeScheduleAssignments.id, covering[0].id));
+    }
+    if (endDate && next && endDate >= next.startDate) throw new Error("A nova vigência conflita com uma atribuição futura existente");
+    const inserted = await transaction.insert(personnelEmployeeScheduleAssignments).values({
+      employeeId: input.employeeId,
+      scheduleId: input.scheduleId,
+      startDate: input.startDate,
+      endDate,
+      cycleAnchorDate: input.cycleAnchorDate,
+      assignedBy: input.assignedBy,
+    }).returning({ id: personnelEmployeeScheduleAssignments.id });
+    return { id: getInsertedId(inserted), endDate };
+  });
+}
+
+export async function getPersonnelScheduleDay(employeeId: number, civilDate: string) {
+  if (!isCivilDate(civilDate)) throw new Error("Informe uma data válida no formato AAAA-MM-DD");
+  return classifyScheduleDay(await listPersonnelEmployeeScheduleAssignments(employeeId), civilDate);
+}
+
+export async function getPersonnelEmployeeScheduleCalendar(employeeId: number, month: string) {
+  if (!isCivilMonth(month)) throw new Error("Informe um mês válido no formato AAAA-MM");
+  const assignments = await listPersonnelEmployeeScheduleAssignments(employeeId);
+  return {
+    employeeId,
+    month,
+    assignments,
+    days: monthCalendarDays(month).map((date) => ({ date, ...classifyScheduleDay(assignments, date) })),
+  };
+}
+
 export async function listPersonnelFts(supervisorId: number, role: PersonnelRole) {
   const db = await getDb();
   if (!db) return [];
@@ -1768,6 +2189,7 @@ export async function listPersonnelFts(supervisorId: number, role: PersonnelRole
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
+    civilDate: personnelFts.civilDate,
     paymentDate: personnelFts.paymentDate,
     amount: personnelFts.amount,
     reason: personnelFts.reason,
@@ -1805,16 +2227,56 @@ export async function getGestorPersonnelOverview() {
   };
 }
 
-export async function createPersonnelFt(input: InsertPersonnelFt) {
+function civilDateTimestamp(civilDate: string) {
+  const [year, month, day] = civilDate.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+}
+
+export function calculateFtPaymentDateForCivilDate(civilDate: string) {
+  if (!isCivilDate(civilDate)) throw new Error("Informe uma data válida no formato AAAA-MM-DD");
+  const period = getFtSettlementPeriod(civilDate);
+  const [year, month] = civilDate.split("-").map(Number);
+  const dueYear = period.half === "FIRST_HALF" || month < 12 ? year : year + 1;
+  const dueMonth = period.half === "FIRST_HALF" ? month : month === 12 ? 1 : month + 1;
+  const dueDay = period.half === "FIRST_HALF" ? 20 : 15;
+  return new Date(Date.UTC(dueYear, dueMonth - 1, dueDay, 12, 0, 0, 0));
+}
+
+export async function createPersonnelFt(input: Omit<InsertPersonnelFt, "date" | "civilDate" | "paymentDate"> & { civilDate: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const employee = await getPersonnelEmployeeById(input.employeeId);
-  if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
-  const result = await db.insert(personnelFts).values({
-    ...input,
-    paymentDate: calculateFtPaymentDate(input.date),
-  }).returning({ id: personnelFts.id });
-  return getPersonnelFtById(getInsertedId(result));
+  if (!isCivilDate(input.civilDate)) throw new Error("Informe uma data válida no formato AAAA-MM-DD");
+  const id = await db.transaction(async (transaction) => {
+    const employeeRows = await transaction.select({ id: personnelEmployees.id, isActive: personnelEmployees.isActive })
+      .from(personnelEmployees)
+      .where(eq(personnelEmployees.id, input.employeeId))
+      .for("update")
+      .limit(1);
+    const employee = employeeRows[0];
+    if (!employee?.isActive) throw new Error("Funcionário inválido ou inativo");
+
+    const assignmentRows = await transaction.select({
+      startDate: personnelEmployeeScheduleAssignments.startDate,
+      endDate: personnelEmployeeScheduleAssignments.endDate,
+      cycleAnchorDate: personnelEmployeeScheduleAssignments.cycleAnchorDate,
+      scheduleId: personnelWorkSchedules.id,
+      scheduleName: personnelWorkSchedules.name,
+      weeklyHours: personnelWorkSchedules.weeklyHours,
+      pattern: personnelWorkSchedules.pattern,
+    }).from(personnelEmployeeScheduleAssignments)
+      .innerJoin(personnelWorkSchedules, eq(personnelWorkSchedules.id, personnelEmployeeScheduleAssignments.scheduleId))
+      .where(eq(personnelEmployeeScheduleAssignments.employeeId, input.employeeId))
+      .orderBy(asc(personnelEmployeeScheduleAssignments.startDate));
+    assertFtAllowedForScheduleDay(classifyScheduleDay(assignmentRows.map(toScheduleAssignment), input.civilDate));
+
+    const result = await transaction.insert(personnelFts).values({
+      ...input,
+      date: civilDateTimestamp(input.civilDate),
+      paymentDate: calculateFtPaymentDateForCivilDate(input.civilDate),
+    }).returning({ id: personnelFts.id });
+    return getInsertedId(result);
+  });
+  return getPersonnelFtById(id);
 }
 
 export async function getPersonnelFtById(id: number) {
@@ -1827,6 +2289,7 @@ export async function getPersonnelFtById(id: number) {
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
+    civilDate: personnelFts.civilDate,
     paymentDate: personnelFts.paymentDate,
     amount: personnelFts.amount,
     reason: personnelFts.reason,

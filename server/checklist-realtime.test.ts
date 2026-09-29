@@ -5,9 +5,7 @@ vi.mock("./db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./db")>();
   return {
     ...actual,
-    getVisitChecklistById: vi.fn(),
-    getSupervisorRouteById: vi.fn(),
-    submitVisitOccurrence: vi.fn(),
+    submitOccurrenceForActiveRoute: vi.fn(),
   };
 });
 
@@ -25,14 +23,16 @@ function supervisorContext(supervisorId = 17): TrpcContext {
 
 describe("sincronização imediata de ocorrência", () => {
   it("persiste a ocorrência do posto e toca a rota em andamento sem exigir KM final", async () => {
-    vi.mocked(db.getVisitChecklistById).mockResolvedValue({ id: 33, supervisorRouteId: 71, status: "in_progress" } as never);
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 71, supervisorId: 17, status: "in_progress", kmFinal: null } as never);
-    vi.mocked(db.submitVisitOccurrence).mockResolvedValue({} as never);
+    vi.mocked(db.submitOccurrenceForActiveRoute).mockResolvedValue({ success: true, occurrenceSubmittedAt: new Date() } as never);
 
     const caller = appRouter.createCaller(supervisorContext());
     await expect(caller.checklists.submitOccurrence({ checklistId: 33, occurrenceReport: "Visita concluída durante a rota" })).resolves.toBeDefined();
 
-    expect(db.submitVisitOccurrence).toHaveBeenCalledWith(33, "Visita concluída durante a rota");
+    expect(db.submitOccurrenceForActiveRoute).toHaveBeenCalledWith({
+      checklistId: 33,
+      supervisorId: 17,
+      occurrenceReport: "Visita concluída durante a rota",
+    });
   });
 
   it("contabiliza o relato no Gestor mesmo com a rota e a visita ainda em andamento", () => {

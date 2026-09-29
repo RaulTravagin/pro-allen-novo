@@ -63,11 +63,10 @@ describe("supervisorRoutes.create", () => {
   });
 
   it("cancela somente a rota pendente do próprio supervisor", async () => {
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 44, supervisorId: 1, status: "pending", kmInitial: null, startedAt: null } as never);
-    vi.mocked(db.cancelPendingSupervisorRoute).mockResolvedValue(undefined as never);
+    vi.mocked(db.cancelPendingSupervisorRoute).mockResolvedValue({ cancelled: true, supervisorRouteId: 44 } as never);
     const caller = appRouter.createCaller(context);
 
     await expect(caller.supervisorRoutes.cancelPending({ id: 44 })).resolves.toEqual({ cancelled: true, supervisorRouteId: 44 });
-    expect(db.cancelPendingSupervisorRoute).toHaveBeenCalledWith(44);
+    expect(db.cancelPendingSupervisorRoute).toHaveBeenCalledWith(44, 1);
   });
 });

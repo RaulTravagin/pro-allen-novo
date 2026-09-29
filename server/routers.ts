@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { isCivilDate, isCivilMonth } from "../shared/personnel-schedules";
 import { TRPCError } from "@trpc/server";
 import {
   createGestorSession,
@@ -27,6 +28,7 @@ import {
   projectPersonnelOccurrence,
 } from "./personnel-security";
 import type { User } from "../drizzle/schema";
+import { RouteClosureError } from "./route-closure";
 
 type PublicUser = Pick<User, "id" | "name" | "username" | "role" | "isOperational" | "defaultShift"> & {
   personnelRole: User["personnelRole"] | "SUPERVISOR" | "ADM";
@@ -86,15 +88,23 @@ function normalizePersonnelIdentifier(value: string) {
   return digits.length === 11 ? digits : trimmed;
 }
 
-async function createVisitRecord(
-  supervisorRouteId: number,
-  postId: number,
-  options: { isCoverage?: boolean; coverageReason?: string | null } = {},
-) {
-  return options.isCoverage !== undefined || options.coverageReason !== undefined
-    ? db.createVisitChecklist(supervisorRouteId, postId, options)
-    : db.createVisitChecklist(supervisorRouteId, postId);
+async function runChecklistMutation<T>(mutation: () => Promise<T>): Promise<T> {
+  try {
+    return await mutation();
+  } catch (error) {
+    if (error instanceof RouteClosureError) {
+      throw new TRPCError({ code: error.code, message: error.message });
+    }
+    throw error;
+  }
 }
+
+const civilDateSchema = z.string().refine(isCivilDate, "Use uma data civil válida no formato AAAA-MM-DD");
+const civilMonthSchema = z.string().refine(isCivilMonth, "Use um mês válido no formato AAAA-MM");
+const schedulePatternSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("WEEKLY"), minutesByDay: z.array(z.number().int().min(0).max(1440)).length(7) }),
+  z.object({ kind: z.literal("CYCLE"), minutesByDay: z.array(z.number().int().min(0).max(1440)).min(2).max(42) }),
+]);
 
 export const appRouter = router({
   system: systemRouter,
@@ -128,6 +138,53 @@ export const appRouter = router({
       if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar os postos" });
       return db.listPersonnelPosts();
     }),
+
+    workSchedules: protectedProcedure.query(async ({ ctx }) => {
+      const role = db.getPersonnelRole(ctx.user);
+      if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar as jornadas" });
+      return db.listPersonnelWorkSchedules();
+    }),
+
+    createWorkSchedule: protectedProcedure
+      .input(z.object({ name: z.string().trim().min(2).max(120), pattern: schedulePatternSchema }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode cadastrar jornadas" });
+        try {
+          return await db.createPersonnelWorkSchedule({ ...input, createdBy: ctx.user.id });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar a jornada" });
+        }
+      }),
+
+    assignWorkSchedule: protectedProcedure
+      .input(z.object({ employeeId: z.number().int().positive(), scheduleId: z.number().int().positive(), startDate: civilDateSchema, cycleAnchorDate: civilDateSchema.nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode atribuir jornadas" });
+        try {
+          return await db.assignPersonnelWorkSchedule({ ...input, assignedBy: ctx.user.id });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível atribuir a jornada" });
+        }
+      }),
+
+    employeeScheduleCalendar: protectedProcedure
+      .input(z.object({ employeeId: z.number().int().positive(), month: civilMonthSchema }))
+      .query(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar o calendário de jornadas" });
+        return db.getPersonnelEmployeeScheduleCalendar(input.employeeId, input.month);
+      }),
+
+    classifyFtDate: protectedProcedure
+      .input(z.object({ employeeId: z.number().int().positive(), civilDate: civilDateSchema }))
+      .query(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "SUPERVISOR" && role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode consultar a classificação de FT" });
+        const result = await db.getPersonnelScheduleDay(input.employeeId, input.civilDate);
+        return { status: result.status };
+      }),
 
     createEmployee: protectedProcedure
       .input(z.object({
@@ -222,7 +279,7 @@ export const appRouter = router({
       }),
 
     createFt: protectedProcedure
-      .input(z.object({ employeeId: z.number().int().positive(), date: z.coerce.date(), amount: z.number().finite().positive().max(9999999999.99), reason: z.string().trim().min(5).max(2_000) }))
+      .input(z.object({ employeeId: z.number().int().positive(), civilDate: civilDateSchema, amount: z.number().finite().positive().max(9999999999.99), reason: z.string().trim().min(5).max(2_000) }))
       .mutation(async ({ ctx, input }) => {
         const role = db.getPersonnelRole(ctx.user);
         if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode lançar FTs" });
@@ -625,26 +682,31 @@ export const appRouter = router({
       }),
 
     finishShift: protectedProcedure
-      .input(z.object({ supervisorRouteId: z.number().int().positive(), kmFinal: z.number().finite().nonnegative() }))
+      .input(z.object({
+        supervisorRouteId: z.number().int().positive(),
+        kmFinal: z.number().finite().nonnegative(),
+        exceptionJustification: z.string().trim().min(8, "Informe uma justificativa com pelo menos 8 caracteres").max(2000).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (route.status !== 'in_progress') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma rota em andamento pode encerrar o turno' });
+        let closure;
+        try {
+          closure = await db.closeSupervisorRoute({
+            supervisorRouteId: input.supervisorRouteId,
+            supervisorId: ctx.user.id,
+            kmFinal: input.kmFinal,
+            exceptionJustification: input.exceptionJustification,
+          });
+        } catch (error) {
+          if (error instanceof RouteClosureError) {
+            throw new TRPCError({ code: error.code, message: error.message });
+          }
+          throw error;
         }
-        const kmInitial = route.kmInitial == null ? null : Number(route.kmInitial);
-        if (kmInitial !== null && input.kmFinal < kmInitial) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'O KM final não pode ser menor que o KM inicial' });
-        }
-        await db.updateSupervisorRoute(input.supervisorRouteId, {
-          kmFinal: input.kmFinal,
-          status: 'completed',
-          completedAt: new Date(),
-        });
+        if (!closure.closed) return closure;
         const report = await db.getSupervisorShiftReport(ctx.user.id, input.supervisorRouteId);
         if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Turno encerrado, mas o relatório não pôde ser consolidado' });
-        return { closed: true, report };
+        return { ...closure, report };
       }),
     
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
@@ -656,13 +718,7 @@ export const appRouter = router({
 
     cancelPending: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-      const route = await db.getSupervisorRouteById(input.id);
-      if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (route.status !== 'pending' || route.kmInitial != null || route.startedAt != null) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma rota ainda não iniciada pode ser cancelada' });
-      }
-      await db.cancelPendingSupervisorRoute(input.id);
-      return { cancelled: true, supervisorRouteId: input.id };
+      return runChecklistMutation(() => db.cancelPendingSupervisorRoute(input.id, ctx.user.id));
     }),
     
     updateKm: protectedProcedure
@@ -671,6 +727,12 @@ export const appRouter = router({
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         const route = await db.getSupervisorRouteById(input.id);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (route.status === 'completed' || route.status === 'cancelled') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Rotas encerradas não podem ser alteradas por updateKm' });
+        }
+        if (input.kmFinal !== undefined) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'O KM final só pode encerrar a rota pelo fluxo canônico “Encerrar turno”' });
+        }
         const updates: Record<string, unknown> = {};
         if (input.kmInitial !== undefined) {
           if (!Number.isFinite(input.kmInitial) || input.kmInitial < 0 || route.status !== 'pending') {
@@ -688,18 +750,6 @@ export const appRouter = router({
           updates.status = 'in_progress';
           updates.startedAt = new Date();
         }
-        if (input.kmFinal !== undefined) {
-          const initial = route.kmInitial == null ? null : Number(route.kmInitial);
-          if (!Number.isFinite(input.kmFinal) || input.kmFinal < 0 || route.status !== 'in_progress') {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Informe um KM final válido para uma rota em andamento' });
-          }
-          if (initial !== null && input.kmFinal < initial) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'O KM final não pode ser menor que o KM inicial' });
-          }
-          updates.kmFinal = input.kmFinal;
-          updates.status = 'completed';
-          updates.completedAt = new Date();
-        }
         if (Object.keys(updates).length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nenhuma alteração informada' });
         return await db.updateSupervisorRoute(input.id, updates);
       }),
@@ -711,47 +761,14 @@ export const appRouter = router({
       .input(z.object({ supervisorRouteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        const existing = await db.getVisitChecklistsByRoute(input.supervisorRouteId);
-        const hasPlannedChecklists = existing.some((item) => !item.isCoverage);
-        if (hasPlannedChecklists) return existing.map((item) => item.id);
-        
-        const posts = await db.getPostsByRouteId(route.routeId);
-        const checklistIds = [];
-        
-        for (const post of posts) {
-          const checklistId = await createVisitRecord(input.supervisorRouteId, post.id);
-          checklistIds.push(checklistId);
-        }
-        
-        return checklistIds;
+        return runChecklistMutation(() => db.createRouteChecklists(input.supervisorRouteId, ctx.user.id));
       }),
 
     startNewVisit: protectedProcedure
       .input(z.object({ checklistId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const checklist = await db.getVisitChecklistById(input.checklistId);
-        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (route.status !== 'in_progress') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'A rota precisa estar em andamento para iniciar uma nova visita' });
-        }
-        if (checklist.status !== 'visited') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Somente uma visita concluída pode ser reiniciada' });
-        }
-        const routeChecklists = await db.getVisitChecklistsByRoute(checklist.supervisorRouteId);
-        if (routeChecklists.some((item) => item.status === 'in_progress')) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
-        }
-
-        const newChecklistId = await createVisitRecord(checklist.supervisorRouteId, checklist.postId, {
-          isCoverage: checklist.isCoverage,
-          coverageReason: checklist.coverageReason,
-        });
-        return { checklistId: newChecklistId };
+        return runChecklistMutation(() => db.startNewVisitForRoute({ checklistId: input.checklistId, supervisorId: ctx.user.id }));
       }),
     
     getByRoute: protectedProcedure
@@ -780,27 +797,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const route = await db.getSupervisorRouteById(input.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (route.status !== 'in_progress') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Inicie a rota pelo KM inicial antes de registrar uma cobertura' });
-        }
-        const post = input.postId === "operational_base"
-          ? await db.getOrCreateOperationalBasePost()
-          : await db.getPostById(input.postId);
-        if (!post) throw new TRPCError({ code: 'NOT_FOUND', message: 'Posto não encontrado' });
-        if (post.routeId === route.routeId) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este posto já faz parte da rota planejada' });
-        }
-        const routeChecklists = await db.getVisitChecklistsByRoute(input.supervisorRouteId);
-        if (routeChecklists.some((item) => item.status === 'in_progress')) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de registrar uma cobertura' });
-        }
-        const checklistId = await createVisitRecord(input.supervisorRouteId, post.id, {
-          isCoverage: true,
+        return runChecklistMutation(() => db.createCoverageVisit({
+          supervisorRouteId: input.supervisorRouteId,
+          supervisorId: ctx.user.id,
+          postId: input.postId,
           coverageReason: input.coverageReason,
-        });
-        return { checklistId };
+        }));
       }),
     
     getById: protectedProcedure
@@ -818,40 +820,22 @@ export const appRouter = router({
       .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8, 'Informe pelo menos 8 caracteres no relato da ocorrência').max(5000) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const visit = await db.getVisitChecklistById(input.checklistId);
-        if (!visit) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(visit.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (visit.status !== 'in_progress' && visit.status !== 'visited') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Registre a chegada antes de enviar a ocorrência' });
-        }
-        await db.submitVisitOccurrence(input.checklistId, input.occurrenceReport);
-        return { success: true, occurrenceSubmittedAt: new Date() };
+        return runChecklistMutation(() => db.submitOccurrenceForActiveRoute({
+          checklistId: input.checklistId,
+          supervisorId: ctx.user.id,
+          occurrenceReport: input.occurrenceReport,
+        }));
       }),
     
     markVisited: protectedProcedure
-      .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8), arrivalTime: z.date().optional(), departureTime: z.date().optional() }))
+      .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8).max(5000) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        
-        const checklist = await db.getVisitChecklistById(input.checklistId);
-        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        
-        await db.updateVisitChecklist(input.checklistId, {
-          status: 'visited',
-          visitedAt: new Date(),
+        return runChecklistMutation(() => db.markVisitVisitedForActiveRoute({
+          checklistId: input.checklistId,
+          supervisorId: ctx.user.id,
           occurrenceReport: input.occurrenceReport,
-          occurrenceSubmittedAt: new Date(),
-          arrivalTime: input.arrivalTime,
-          departureTime: input.departureTime,
-        });
-        
-        // Record in visit history
-        await db.recordPostVisit(checklist.postId, ctx.user.id, input.occurrenceReport);
-        
-        return { success: true };
+        }));
       }),
     
     checkIn: protectedProcedure
@@ -862,35 +846,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        
-        const checklist = await db.getVisitChecklistById(input.checklistId);
-        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (checklist.status !== 'pending' && checklist.status !== 'visited') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Esta visita já está em andamento' });
-        }
-        const routeChecklists = await db.getVisitChecklistsByRoute(checklist.supervisorRouteId);
-        if (routeChecklists.some((item) => item.status === 'in_progress')) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Finalize a visita ativa antes de iniciar outro posto' });
-        }
-
-        const targetChecklistId = checklist.status === 'visited'
-          ? await createVisitRecord(checklist.supervisorRouteId, checklist.postId, {
-              isCoverage: checklist.isCoverage,
-              coverageReason: checklist.coverageReason,
-            })
-          : checklist.id;
-        const arrivalTime = new Date();
-        
-        await db.updateVisitChecklist(targetChecklistId, {
-          status: 'in_progress',
-          arrivalTime,
-          arrivalLatitude: input.latitude ?? null,
-          arrivalLongitude: input.longitude ?? null,
-        });
-        
-        return { success: true, checklistId: targetChecklistId, arrivalTime };
+        return runChecklistMutation(() => db.checkInVisitForRoute({
+          checklistId: input.checklistId,
+          supervisorId: ctx.user.id,
+          latitude: input.latitude,
+          longitude: input.longitude,
+        }));
       }),
     
     checkOut: protectedProcedure
@@ -901,27 +862,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        
-        const checklist = await db.getVisitChecklistById(input.checklistId);
-        if (!checklist) throw new TRPCError({ code: 'NOT_FOUND' });
-        const route = await db.getSupervisorRouteById(checklist.supervisorRouteId);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (checklist.status !== 'in_progress') throw new TRPCError({ code: 'CONFLICT', message: 'Só é possível registrar saída de uma visita em andamento' });
-        if (!checklist.occurrenceReport?.trim()) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Envie o registro obrigatório da ocorrência antes de registrar a saída' });
-        }
-        
-        await db.updateVisitChecklist(input.checklistId, {
-          status: 'visited',
-          departureTime: new Date(),
-          visitedAt: new Date(),
-          departureLatitude: input.latitude ?? null,
-          departureLongitude: input.longitude ?? null,
-        });
-        
-        await db.recordPostVisit(checklist.postId, ctx.user.id, checklist.occurrenceReport);
-        
-        return { success: true, departureTime: new Date() };
+        return runChecklistMutation(() => db.checkOutVisitForRoute({
+          checklistId: input.checklistId,
+          supervisorId: ctx.user.id,
+          latitude: input.latitude,
+          longitude: input.longitude,
+        }));
       }),
   }),
 

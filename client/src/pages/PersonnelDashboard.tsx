@@ -37,6 +37,8 @@ import { useLocation } from "wouter";
 import { downloadStyledWorkbook } from "@/lib/xlsxExport";
 import { personnelEmployeeEmptyState } from "@/lib/personnelEmptyState";
 import { formatDateInputValue } from "@/lib/reportDateRange";
+import { PersonnelWorkSchedules } from "@/components/PersonnelWorkSchedules";
+import { civilDateFromLegacyFt, getFtSettlementPeriod } from "@shared/personnel-schedules";
 
 type EntryType =
   | "FT"
@@ -102,6 +104,28 @@ function formatCurrency(value: unknown) {
 function formatDate(value: unknown) {
   if (!value) return "—";
   return new Date(value as string).toLocaleDateString("pt-BR");
+}
+
+function ftCivilDate(row: any) {
+  return civilDateFromLegacyFt(row.date, row.civilDate);
+}
+
+function formatFtReferenceDate(row: any) {
+  const civilDate = ftCivilDate(row);
+  return civilDate
+    ? new Date(`${civilDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })
+    : formatDate(row.date);
+}
+
+function ftSettlementLabel(row: any) {
+  const civilDate = ftCivilDate(row);
+  return civilDate ? getFtSettlementPeriod(civilDate).label : "Data legada sem período";
+}
+
+function ftMatchesPeriod(row: any, filter: "ALL" | "FIRST_HALF" | "SECOND_HALF") {
+  if (filter === "ALL") return true;
+  const civilDate = ftCivilDate(row);
+  return !civilDate || getFtSettlementPeriod(civilDate).half === filter;
 }
 
 function roleLabel(role: PersonnelRole) {
@@ -530,6 +554,10 @@ function EntryForm({
   const createFt = trpc.personnel.createFt.useMutation();
   const createOccurrence = trpc.personnel.createOccurrence.useMutation();
   const createExtra = trpc.personnel.createExtra.useMutation();
+  const ftDayQuery = trpc.personnel.classifyFtDate.useQuery(
+    { employeeId: Number(employeeId) || 0, civilDate: date },
+    { enabled: entryType === "FT" && Boolean(employeeId) && Boolean(date) },
+  );
   const isOccurrence =
     entryType === "FALTA_JUSTIFICADA" ||
     entryType === "FALTA_INJUSTIFICADA" ||
@@ -561,7 +589,8 @@ function EntryForm({
       };
       if (entryType === "FT")
         await createFt.mutateAsync({
-          ...base,
+          employeeId: Number(selectedEmployeeId),
+          civilDate: date,
           amount: Number(amount),
           reason:
             reason.trim() || "Folga trabalhada registrada pelo supervisor",
@@ -675,6 +704,11 @@ function EntryForm({
               />
             </div>
           </div>
+          {entryType === "FT" && (
+            <div className={`rounded-xl border p-3 text-sm ${ftDayQuery.data?.status === "OFF_DAY" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : ftDayQuery.data?.status === "WORKDAY" ? "border-rose-200 bg-rose-50 text-rose-900" : ftDayQuery.data?.status === "NO_SCHEDULE" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+              {ftDayQuery.isLoading ? "Verificando a jornada para esta data…" : ftDayQuery.error ? ftDayQuery.error.message : ftDayQuery.data?.status === "OFF_DAY" ? `Folga programada — FT pode ser lançada. Período: ${getFtSettlementPeriod(date).label}.` : ftDayQuery.data?.status === "WORKDAY" ? "Dia programado de trabalho — FT não permitida nesta data." : ftDayQuery.data?.status === "NO_SCHEDULE" ? "Sem jornada vigente para esta data. Peça ao RH para atribuir uma jornada ao funcionário." : "Selecione o funcionário e a data para verificar a jornada."}
+            </div>
+          )}
           {(entryType === "FT" || entryType === "EXTRA") && (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -772,7 +806,7 @@ function EntryForm({
             </p>
             <Button
               type="submit"
-              disabled={submitting || employees.length === 0}
+              disabled={submitting || employees.length === 0 || (entryType === "FT" && ftDayQuery.data?.status !== "OFF_DAY")}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting ? (
@@ -891,7 +925,7 @@ function ReviewQueue({
                     </span>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                    <span>{formatDate(row.date)}</span>
+                    <span>{row.kind === "FT" ? formatFtReferenceDate(row) : formatDate(row.date)}</span>
                     {row.amount !== undefined && (
                       <span className="font-bold text-slate-700">
                         {formatCurrency(row.amount)}
@@ -956,16 +990,17 @@ function FinanceQueue({
 }) {
   const payFt = trpc.personnel.payFt.useMutation();
   const payExtra = trpc.personnel.payExtra.useMutation();
+  const [ftPeriodFilter, setFtPeriodFilter] = useState<"ALL" | "FIRST_HALF" | "SECOND_HALF">("ALL");
   const rows = useMemo(
     () => [
       ...(data?.fts ?? [])
-        .filter((row: any) => row.status === "APPROVED")
-        .map((row: any) => ({ ...row, kind: "FT", label: "Folga trabalhada" })),
+        .filter((row: any) => row.status === "APPROVED" && ftMatchesPeriod(row, ftPeriodFilter))
+        .map((row: any) => ({ ...row, kind: "FT", label: "Folga trabalhada", settlementPeriod: ftSettlementLabel(row) })),
       ...(data?.extras ?? [])
         .filter((row: any) => row.status === "APPROVED")
         .map((row: any) => ({ ...row, kind: "EXTRA", label: "Serviço extra" })),
     ],
-    [data]
+    [data, ftPeriodFilter]
   );
   const total = rows.reduce(
     (sum: number, row: any) => sum + Number(row.amount),
@@ -987,25 +1022,26 @@ function FinanceQueue({
   };
   const exportExcel = async () => {
     const allRows = [
-      ...(data?.fts ?? []).map((row: any) => ({ ...row, kind: "FT" })),
+      ...(data?.fts ?? []).filter((row: any) => ftMatchesPeriod(row, ftPeriodFilter)).map((row: any) => ({ ...row, kind: "FT", settlementPeriod: ftSettlementLabel(row) })),
       ...(data?.extras ?? []).map((row: any) => ({ ...row, kind: "EXTRA" })),
     ];
     await downloadStyledWorkbook(`relatorio-financeiro-${formatDateInputValue(new Date())}.xlsx`, [{
       name: "Pagamentos",
       title: "Pro Allen — Relatório financeiro",
       subtitle: `Gerado em ${new Date().toLocaleString("pt-BR")} · Total de registros: ${allRows.length}`,
-      headers: ["Funcionário", "Tipo", "Data de referência", "Pagamento previsto", "Valor", "Chave PIX", "Status"],
+      headers: ["Funcionário", "Tipo", "Data de referência", "Período FT", "Pagamento previsto", "Valor", "Chave PIX", "Status"],
       rows: allRows.map((row: any) => [
         row.employeeName,
         row.kind,
-        row.date ? new Date(row.date) : null,
+        row.kind === "FT" ? (ftCivilDate(row) ? new Date(`${ftCivilDate(row)}T12:00:00Z`) : row.date ? new Date(row.date) : null) : row.date ? new Date(row.date) : null,
+        row.kind === "FT" ? row.settlementPeriod : "—",
         row.kind === "FT" && row.paymentDate ? new Date(row.paymentDate) : null,
         Number(row.amount),
         row.employeePixKey || "",
         statusLabel(row.status),
       ]),
-      widths: [30, 16, 18, 20, 16, 34, 16],
-      formats: { 2: "dd/mm/yyyy", 3: "dd/mm/yyyy", 4: "R$ #,##0.00" },
+      widths: [30, 16, 18, 24, 20, 16, 34, 16],
+      formats: { 2: "dd/mm/yyyy", 4: "dd/mm/yyyy", 5: "R$ #,##0.00" },
       tabColor: "10B981",
     }, {
       name: "Resumo",
@@ -1027,10 +1063,16 @@ function FinanceQueue({
             Fila de pagamentos
           </CardTitle>
           <CardDescription>
-            Somente lançamentos aprovados pelo RH podem ser quitados.
+            Somente lançamentos aprovados pelo RH podem ser quitados. As FTs podem ser filtradas por 01–15 ou 16–último dia, sem fechamento de lote.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
+          <Label htmlFor="ft-period-filter" className="sr-only">Filtrar FTs pelo período</Label>
+          <select id="ft-period-filter" value={ftPeriodFilter} onChange={(event) => setFtPeriodFilter(event.target.value as "ALL" | "FIRST_HALF" | "SECOND_HALF")} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs">
+            <option value="ALL">Todas as janelas</option>
+            <option value="FIRST_HALF">FTs 01–15</option>
+            <option value="SECOND_HALF">FTs 16–fim do mês</option>
+          </select>
           <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-black text-emerald-700">
             {formatCurrency(total)}
           </span>
@@ -1048,13 +1090,14 @@ function FinanceQueue({
           />
         ) : (
           <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-sm">
+              <table className="w-full min-w-[980px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-3">Favorecido</th>
                   <th className="px-3 py-3">PIX</th>
                   <th className="px-3 py-3">Tipo</th>
                   <th className="px-3 py-3">Referência</th>
+                  <th className="px-3 py-3">Período FT</th>
                   <th className="px-3 py-3">Pagamento previsto</th>
                   <th className="px-3 py-3">Valor</th>
                   <th className="px-3 py-3 text-right">Ação</th>
@@ -1071,8 +1114,9 @@ function FinanceQueue({
                     </td>
                     <td className="px-3 py-3 text-slate-600">{row.label}</td>
                     <td className="px-3 py-3 text-slate-600">
-                      {formatDate(row.date)}
+                      {row.kind === "FT" ? formatFtReferenceDate(row) : formatDate(row.date)}
                     </td>
+                    <td className="px-3 py-3 text-xs text-slate-600">{row.kind === "FT" ? row.settlementPeriod : "—"}</td>
                     <td className="px-3 py-3 font-semibold text-blue-700">
                       {row.kind === "FT" ? formatDate(row.paymentDate) : "—"}
                     </td>
@@ -1162,7 +1206,7 @@ function RecentEntries({ data }: { data: any }) {
                     {row.label.toLowerCase()}
                   </p>
                   <p className="mt-1 truncate text-xs text-slate-500">
-                    {formatDate(row.date)} · {row.detail || "Sem observação"}
+                    {row.kind === "FT" ? formatFtReferenceDate(row) : formatDate(row.date)} · {row.detail || "Sem observação"}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -1450,6 +1494,15 @@ function EmployeesSection({
           </CardContent>
         </Card>
       </div>
+      {canManageSensitiveFields && (
+        <PersonnelWorkSchedules
+          employees={(data?.employees ?? []).map((employee: any) => ({
+            id: employee.id,
+            name: employee.name,
+            position: employee.position,
+          }))}
+        />
+      )}
     </div>
   );
 }

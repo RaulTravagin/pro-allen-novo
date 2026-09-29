@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
+import { RouteClosureError } from "./route-closure";
 
 vi.mock("./db", () => ({
-  createVisitChecklist: vi.fn(),
-  createChecklistItem: vi.fn(),
-  getPostById: vi.fn(),
-  getOrCreateOperationalBasePost: vi.fn(),
-  getSupervisorRouteById: vi.fn(),
-  getVisitChecklistsByRoute: vi.fn(),
+  createCoverageVisit: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -33,32 +29,26 @@ const ownerContext: TrpcContext = {
   res: {} as TrpcContext["res"],
 };
 
+const coverageReason = "Cobertura emergencial por ausência no posto";
+
 describe("checklists.createCoverage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 11, supervisorId: 7, routeId: 1, status: "in_progress" } as never);
-    vi.mocked(db.getPostById).mockResolvedValue({ id: 92, routeId: 2, name: "Posto de cobertura" } as never);
-    vi.mocked(db.getOrCreateOperationalBasePost).mockResolvedValue({ id: 93, routeId: 50, name: "Base Operacional" } as never);
-    vi.mocked(db.getVisitChecklistsByRoute).mockResolvedValue([] as never);
-    vi.mocked(db.createVisitChecklist).mockResolvedValue(301);
+    vi.mocked(db.createCoverageVisit).mockResolvedValue({ checklistId: 301 } as never);
   });
 
-  it("registra uma cobertura fora da rota com justificativa e relato posterior", async () => {
+  it("registra cobertura fora da rota dentro do serviço transacional", async () => {
     const result = await appRouter.createCaller(ownerContext).checklists.createCoverage({
       supervisorRouteId: 11,
       postId: 92,
-      coverageReason: "Cobertura emergencial por ausência no posto",
+      coverageReason,
     });
 
     expect(result).toEqual({ checklistId: 301 });
-    expect(db.createVisitChecklist).toHaveBeenCalledWith(11, 92, {
-      isCoverage: true,
-      coverageReason: "Cobertura emergencial por ausência no posto",
-    });
-    expect(db.createChecklistItem).not.toHaveBeenCalled();
+    expect(db.createCoverageVisit).toHaveBeenCalledWith({ supervisorRouteId: 11, supervisorId: 7, postId: 92, coverageReason });
   });
 
-  it("registra uma atividade na Base Operacional com justificativa e posto persistível", async () => {
+  it("passa a Base Operacional ao serviço que prepara o posto e trava a rota antes do checklist", async () => {
     const result = await appRouter.createCaller(ownerContext).checklists.createCoverage({
       supervisorRouteId: 11,
       postId: "operational_base",
@@ -66,51 +56,41 @@ describe("checklists.createCoverage", () => {
     });
 
     expect(result).toEqual({ checklistId: 301 });
-    expect(db.getOrCreateOperationalBasePost).toHaveBeenCalledTimes(1);
-    expect(db.createVisitChecklist).toHaveBeenCalledWith(11, 93, {
-      isCoverage: true,
+    expect(db.createCoverageVisit).toHaveBeenCalledWith({
+      supervisorRouteId: 11,
+      supervisorId: 7,
+      postId: "operational_base",
       coverageReason: "Permanência operacional na base",
     });
-    expect(db.createChecklistItem).not.toHaveBeenCalled();
   });
 
-  it("exige justificativa antes de criar uma cobertura", async () => {
+  it("exige justificativa antes de iniciar a mutation de cobertura", async () => {
     await expect(appRouter.createCaller(ownerContext).checklists.createCoverage({
       supervisorRouteId: 11,
       postId: 92,
       coverageReason: "urgente",
     })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(db.createVisitChecklist).not.toHaveBeenCalled();
+    expect(db.createCoverageVisit).not.toHaveBeenCalled();
   });
 
-  it("exige justificativa também para a Base Operacional", async () => {
-    await expect(appRouter.createCaller(ownerContext).checklists.createCoverage({
-      supervisorRouteId: 11,
-      postId: "operational_base",
-      coverageReason: "urgente",
-    })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(db.getOrCreateOperationalBasePost).not.toHaveBeenCalled();
-    expect(db.createVisitChecklist).not.toHaveBeenCalled();
-  });
-
-  it("bloqueia um posto que já pertence à rota planejada", async () => {
-    vi.mocked(db.getPostById).mockResolvedValue({ id: 3, routeId: 1, name: "Posto planejado" } as never);
-
-    await expect(appRouter.createCaller(ownerContext).checklists.createCoverage({
-      supervisorRouteId: 11,
-      postId: 3,
-      coverageReason: "Cobertura emergencial por ausência no posto",
-    })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("bloqueia cobertura em uma rota pertencente a outro supervisor", async () => {
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 11, supervisorId: 18, routeId: 1, status: "in_progress" } as never);
+  it("propaga falha de propriedade/estado validada dentro do lock da rota", async () => {
+    vi.mocked(db.createCoverageVisit).mockRejectedValue(new RouteClosureError("NOT_FOUND", "Rota não encontrada para este supervisor"));
 
     await expect(appRouter.createCaller(ownerContext).checklists.createCoverage({
       supervisorRouteId: 11,
       postId: 92,
-      coverageReason: "Cobertura emergencial por ausência no posto",
+      coverageReason,
     })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(db.createVisitChecklist).not.toHaveBeenCalled();
+    expect(db.createCoverageVisit).toHaveBeenCalledWith({ supervisorRouteId: 11, supervisorId: 7, postId: 92, coverageReason });
+  });
+
+  it("propaga conflito quando a transação encontra visita ativa ou posto planejado", async () => {
+    vi.mocked(db.createCoverageVisit).mockRejectedValue(new RouteClosureError("CONFLICT", "Finalize a visita ativa antes de registrar uma cobertura"));
+
+    await expect(appRouter.createCaller(ownerContext).checklists.createCoverage({
+      supervisorRouteId: 11,
+      postId: 92,
+      coverageReason,
+    })).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

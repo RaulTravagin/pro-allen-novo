@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
-import { boolean, index, integer, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import type { WorkSchedulePattern } from "../shared/personnel-schedules";
+import { boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 const updatedAt = () => timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull();
 
@@ -55,11 +56,45 @@ export const personnelEmployees = pgTable("personnel_employees", {
 export type PersonnelEmployee = typeof personnelEmployees.$inferSelect;
 export type InsertPersonnelEmployee = typeof personnelEmployees.$inferInsert;
 
+export const personnelWorkSchedules = pgTable("personnel_work_schedules", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 120 }).notNull().unique(),
+  pattern: jsonb("pattern").$type<WorkSchedulePattern>().notNull(),
+  weeklyHours: numeric("weeklyHours", { precision: 6, scale: 2 }).notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  nameIdx: index("idx_personnel_work_schedules_name").on(table.name),
+}));
+
+export type PersonnelWorkSchedule = typeof personnelWorkSchedules.$inferSelect;
+export type InsertPersonnelWorkSchedule = typeof personnelWorkSchedules.$inferInsert;
+
+export const personnelEmployeeScheduleAssignments = pgTable("personnel_employee_schedule_assignments", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull().references(() => personnelEmployees.id, { onDelete: "restrict" }),
+  scheduleId: integer("scheduleId").notNull().references(() => personnelWorkSchedules.id, { onDelete: "restrict" }),
+  startDate: date("startDate", { mode: "string" }).notNull(),
+  endDate: date("endDate", { mode: "string" }),
+  cycleAnchorDate: date("cycleAnchorDate", { mode: "string" }),
+  assignedBy: integer("assignedBy"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  employeeStartUnique: uniqueIndex("uq_personnel_schedule_assignment_employee_start").on(table.employeeId, table.startDate),
+  employeeStartIdx: index("idx_personnel_schedule_assignment_employee_start").on(table.employeeId, table.startDate),
+  scheduleIdx: index("idx_personnel_schedule_assignment_schedule").on(table.scheduleId),
+  validRange: check("chk_personnel_schedule_assignment_date_range", sql`${table.endDate} IS NULL OR ${table.endDate} >= ${table.startDate}`),
+}));
+
+export type PersonnelEmployeeScheduleAssignment = typeof personnelEmployeeScheduleAssignments.$inferSelect;
+export type InsertPersonnelEmployeeScheduleAssignment = typeof personnelEmployeeScheduleAssignments.$inferInsert;
+
 export const personnelFts = pgTable("personnel_fts", {
   id: serial("id").primaryKey(),
   employeeId: integer("employeeId").notNull(),
   supervisorId: integer("supervisorId").notNull(),
   date: timestamp("date", { withTimezone: true }).notNull(),
+  civilDate: date("civilDate", { mode: "string" }),
   paymentDate: timestamp("data_prevista_pagamento", { withTimezone: true }),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   reason: text("reason").notNull(),
@@ -227,6 +262,21 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
 
 export type SupervisorRoute = typeof supervisorRoutes.$inferSelect;
 export type InsertSupervisorRoute = typeof supervisorRoutes.$inferInsert;
+
+/** Exceções são eventos imutáveis; não armazenar justificativas dentro do registro mutável da rota. */
+export const supervisorRouteClosureExceptions = pgTable("supervisor_route_closure_exceptions", {
+  id: serial("id").primaryKey(),
+  supervisorRouteId: integer("supervisor_route_id").notNull(),
+  supervisorId: integer("supervisor_id").notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }).notNull(),
+  justification: text("justification").notNull(),
+  pendingSummary: jsonb("pending_summary").notNull(),
+}, (table) => ({
+  routeClosedAtIdx: index("idx_route_closure_exceptions_route_closed_at").on(table.supervisorRouteId, table.closedAt),
+  supervisorClosedAtIdx: index("idx_route_closure_exceptions_supervisor_closed_at").on(table.supervisorId, table.closedAt),
+}));
+
+export type SupervisorRouteClosureException = typeof supervisorRouteClosureExceptions.$inferSelect;
 
 export const fuelLogs = pgTable("fuel_logs", {
   id: serial("id").primaryKey(),

@@ -5,11 +5,8 @@ vi.mock("./db", () => ({
   getRouteById: vi.fn(),
   getSupervisorRoutesToday: vi.fn(),
   createSupervisorRoute: vi.fn(),
-  getSupervisorRouteById: vi.fn(),
-  getVisitChecklistsByRoute: vi.fn(),
-  getPostsByRouteId: vi.fn(),
-  createVisitChecklist: vi.fn(),
-  createChecklistItem: vi.fn(),
+  createRouteChecklists: vi.fn(),
+  startNewVisitForRoute: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -40,36 +37,38 @@ describe("preparação de rota para supervisor local", () => {
     vi.mocked(db.getRouteById).mockResolvedValue({ id: 1, name: "Rota 1" } as never);
     vi.mocked(db.getSupervisorRoutesToday).mockResolvedValue([] as never);
     vi.mocked(db.createSupervisorRoute).mockResolvedValue(30_001);
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 30_001, supervisorId: 3_270_009, routeId: 1 } as never);
-    vi.mocked(db.getVisitChecklistsByRoute).mockResolvedValue([] as never);
-    vi.mocked(db.getPostsByRouteId).mockResolvedValue([{ id: 11, name: "Kelvion" }] as never);
-    vi.mocked(db.createVisitChecklist).mockResolvedValue(701);
-    vi.mocked(db.createChecklistItem).mockResolvedValue(1);
+    vi.mocked(db.createRouteChecklists).mockResolvedValue([701] as never);
+    vi.mocked(db.startNewVisitForRoute).mockResolvedValue({ checklistId: 702 } as never);
   });
 
-  it("cria uma rota com id válido e prepara seus checklists sem NOT_FOUND", async () => {
+  it("cria uma rota com id válido e prepara seus checklists na transação", async () => {
     const caller = appRouter.createCaller(localSupervisorContext);
 
     const supervisorRouteId = await caller.supervisorRoutes.create({ routeId: 1, date: new Date() });
     await expect(caller.checklists.createForRoute({ supervisorRouteId })).resolves.toEqual([701]);
 
     expect(supervisorRouteId).toBe(30_001);
-    expect(db.getSupervisorRouteById).toHaveBeenCalledWith(30_001);
-    expect(db.createVisitChecklist).toHaveBeenCalledWith(30_001, 11);
+    expect(db.createRouteChecklists).toHaveBeenCalledWith(30_001, 3_270_009);
   });
 
-  it("prepara a Base Operacional sem gerar postos ou checklists fictícios", async () => {
+  it("prepara a Base Operacional sem gerar checklists fictícios", async () => {
     vi.mocked(db.getRouteById).mockResolvedValue({ id: 50_001, name: "Base Operacional", activityType: "operational_base" } as never);
     vi.mocked(db.createSupervisorRoute).mockResolvedValue(50_101);
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 50_101, supervisorId: 3_270_009, routeId: 50_001, routeActivityType: "operational_base" } as never);
-    vi.mocked(db.getPostsByRouteId).mockResolvedValue([] as never);
+    vi.mocked(db.createRouteChecklists).mockResolvedValueOnce([] as never);
 
     const caller = appRouter.createCaller(localSupervisorContext);
     const supervisorRouteId = await caller.supervisorRoutes.create({ routeId: 50_001, date: new Date() });
 
     await expect(caller.checklists.createForRoute({ supervisorRouteId })).resolves.toEqual([]);
     expect(supervisorRouteId).toBe(50_101);
-    expect(db.createVisitChecklist).not.toHaveBeenCalled();
+    expect(db.createRouteChecklists).toHaveBeenCalledWith(50_101, 3_270_009);
+  });
+
+  it("delegates reinício de visita à transação com a identidade autenticada", async () => {
+    const caller = appRouter.createCaller(localSupervisorContext);
+
+    await expect(caller.checklists.startNewVisit({ checklistId: 701 })).resolves.toEqual({ checklistId: 702 });
+    expect(db.startNewVisitForRoute).toHaveBeenCalledWith({ checklistId: 701, supervisorId: 3_270_009 });
   });
 
   it("permite iniciar uma rota de campo após a Base Operacional concluída no mesmo dia", async () => {

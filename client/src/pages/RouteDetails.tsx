@@ -342,15 +342,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     setShowShiftReport(true);
   };
 
-  const handleFinishShift = async (finalKm: number) => {
+  const handleFinishShift = async (finalKm: number, exceptionJustification?: string) => {
     try {
-      const result = await finishShiftMutation.mutateAsync({ supervisorRouteId, kmFinal: finalKm });
+      const result = await finishShiftMutation.mutateAsync({ supervisorRouteId, kmFinal: finalKm, exceptionJustification });
+      if (!result.closed) return result;
       setShiftReport(result.report);
       if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
       await refreshOperationalData();
-      toast.success("Turno encerrado e relatório gerado com sucesso");
+      toast.success(result.exceptionAudit
+        ? "Turno encerrado excepcionalmente. Justificativa e pendências registradas para auditoria."
+        : "Turno encerrado sem pendências e relatório gerado com sucesso");
+      return result;
     } catch (error) {
       notifySupervisorError(error, "Não foi possível encerrar o turno");
+      return null;
     }
   };
 
