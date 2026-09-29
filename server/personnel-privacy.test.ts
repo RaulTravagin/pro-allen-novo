@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   listPersonnelWorkSchedules: vi.fn(),
   createPersonnelWorkSchedule: vi.fn(),
   assignPersonnelWorkSchedule: vi.fn(),
+  editPersonnelWorkScheduleAssignment: vi.fn(),
+  listPersonnelWorkScheduleAssignmentAudits: vi.fn(),
   getPersonnelEmployeeScheduleCalendar: vi.fn(),
   getPersonnelScheduleDay: vi.fn(),
   createPersonnelFt: vi.fn(),
@@ -96,6 +98,7 @@ function userFor(personnelRole: "SUPERVISOR" | "RH" | "FINANCEIRO" | "ADM") {
     id: personnelRole === "SUPERVISOR" ? 17 : 23,
     openId: `fixture:${personnelRole.toLowerCase()}`,
     name: `${personnelRole} fictício`,
+    username: null,
     email: null,
     loginMethod: "local",
     role: personnelRole === "ADM" ? "admin" : "user",
@@ -127,6 +130,8 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     vi.mocked(db.listPersonnelWorkSchedules).mockResolvedValue([scheduleFixture] as never);
     vi.mocked(db.createPersonnelWorkSchedule).mockResolvedValue(scheduleFixture as never);
     vi.mocked(db.assignPersonnelWorkSchedule).mockResolvedValue({ id: 61, endDate: null } as never);
+    vi.mocked(db.editPersonnelWorkScheduleAssignment).mockResolvedValue({ id: 61, employeeId: 81, scheduleId: 51, startDate: "2026-09-01", endDate: null } as never);
+    vi.mocked(db.listPersonnelWorkScheduleAssignmentAudits).mockResolvedValue([] as never);
     vi.mocked(db.getPersonnelEmployeeScheduleCalendar).mockResolvedValue(scheduleCalendarFixture as never);
     vi.mocked(db.getPersonnelScheduleDay).mockResolvedValue({ status: "OFF_DAY", scheduleName: scheduleFixture.name, minutes: 0 } as never);
     vi.mocked(db.createPersonnelFt).mockResolvedValue({ id: 99, employeeId: 81, civilDate: "2026-09-02", date: new Date("2026-09-02T12:00:00Z"), amount: "10.00", status: "PENDING" } as never);
@@ -222,7 +227,10 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
       const caller = appRouter.createCaller(contextFor(userFor(role)));
       await expect(caller.personnel.workSchedules()).resolves.toEqual([scheduleFixture]);
       await expect(caller.personnel.createWorkSchedule({ name: `Grade fictícia ${role}`, pattern })).resolves.toEqual(scheduleFixture);
-      await expect(caller.personnel.assignWorkSchedule({ employeeId: 81, scheduleId: 51, startDate: "2026-09-01", cycleAnchorDate: null })).resolves.toMatchObject({ id: 61 });
+      await expect(caller.personnel.assignWorkSchedule({ employeeId: 81, scheduleId: 51, startDate: "2026-09-01", cycleAnchorDate: null, reason: "Atribuição inicial de jornada" })).resolves.toMatchObject({ id: 61 });
+      await expect(caller.personnel.editWorkScheduleAssignment({ assignmentId: 61, employeeId: 81, scheduleId: 51, startDate: "2026-09-01", endDate: null, cycleAnchorDate: "2026-09-01", reason: "Correção conforme solicitação do RH" })).resolves.toMatchObject({ id: 61 });
+      expect(db.editPersonnelWorkScheduleAssignment).toHaveBeenCalledWith(expect.objectContaining({ actorId: 23, actorName: `${role} fictício`, actorUsername: null, reason: "Correção conforme solicitação do RH" }));
+      await expect(caller.personnel.workScheduleAssignmentAudit({ assignmentId: 61 })).resolves.toEqual([]);
       await expect(caller.personnel.employeeScheduleCalendar({ employeeId: 81, month: "2026-09" })).resolves.toEqual(scheduleCalendarFixture);
     }
 
@@ -230,9 +238,17 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
       const caller = appRouter.createCaller(contextFor(userFor(role)));
       await expect(caller.personnel.workSchedules()).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.personnel.createWorkSchedule({ name: "Grade fictícia", pattern })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(caller.personnel.assignWorkSchedule({ employeeId: 81, scheduleId: 51, startDate: "2026-09-01", cycleAnchorDate: null })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.personnel.assignWorkSchedule({ employeeId: 81, scheduleId: 51, startDate: "2026-09-01", cycleAnchorDate: null, reason: "Atribuição inicial de jornada" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.personnel.editWorkScheduleAssignment({ assignmentId: 61, employeeId: 81, scheduleId: 51, startDate: "2026-09-01", endDate: null, cycleAnchorDate: "2026-09-01", reason: "Correção conforme solicitação do RH" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.personnel.workScheduleAssignmentAudit({ assignmentId: 61 })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.personnel.employeeScheduleCalendar({ employeeId: 81, month: "2026-09" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     }
+  });
+
+  it("exige motivo mínimo para correção antes de chamar a persistência", async () => {
+    const caller = appRouter.createCaller(contextFor(userFor("RH")));
+    await expect(caller.personnel.editWorkScheduleAssignment({ assignmentId: 61, employeeId: 81, scheduleId: 51, startDate: "2026-09-01", endDate: null, cycleAnchorDate: "2026-09-01", reason: "  x " })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.editPersonnelWorkScheduleAssignment).not.toHaveBeenCalled();
   });
 
   it("mostra ao Supervisor só o status da data civil e transmite a data sem converter para Date", async () => {

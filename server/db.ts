@@ -2,8 +2,8 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, sql } from "drizzle-orm"
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule } from "../drizzle/schema";
-import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
+import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
+import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
@@ -2044,18 +2044,24 @@ export async function createPersonnelUser(input: {
 }
 
 function toScheduleAssignment(row: {
+  id?: number;
   startDate: string;
   endDate: string | null;
   cycleAnchorDate: string | null;
+  assignedBy?: number | null;
+  createdAt?: Date;
   scheduleId: number;
   scheduleName: string;
   weeklyHours: string;
   pattern: WorkSchedulePattern;
 }): PersonnelScheduleAssignment {
   return {
+    id: row.id,
     startDate: row.startDate,
     endDate: row.endDate,
     cycleAnchorDate: row.cycleAnchorDate,
+    assignedBy: row.assignedBy,
+    createdAt: row.createdAt,
     schedule: { id: row.scheduleId, name: row.scheduleName, weeklyHours: row.weeklyHours, pattern: row.pattern },
   };
 }
@@ -2091,9 +2097,12 @@ export async function listPersonnelEmployeeScheduleAssignments(employeeId: numbe
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select({
+    id: personnelEmployeeScheduleAssignments.id,
     startDate: personnelEmployeeScheduleAssignments.startDate,
     endDate: personnelEmployeeScheduleAssignments.endDate,
     cycleAnchorDate: personnelEmployeeScheduleAssignments.cycleAnchorDate,
+    assignedBy: personnelEmployeeScheduleAssignments.assignedBy,
+    createdAt: personnelEmployeeScheduleAssignments.createdAt,
     scheduleId: personnelWorkSchedules.id,
     scheduleName: personnelWorkSchedules.name,
     weeklyHours: personnelWorkSchedules.weeklyHours,
@@ -2111,11 +2120,19 @@ export async function assignPersonnelWorkSchedule(input: {
   startDate: string;
   cycleAnchorDate: string | null;
   assignedBy: number;
+  actorName: string;
+  actorUsername: string | null;
+  reason: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   if (!isCivilDate(input.startDate)) throw new Error("Informe uma data inicial válida no formato AAAA-MM-DD");
   if (input.cycleAnchorDate !== null && !isCivilDate(input.cycleAnchorDate)) throw new Error("Informe uma data âncora válida no formato AAAA-MM-DD");
+  if (input.reason.trim().length < 5) throw new Error("Informe um motivo com pelo menos 5 caracteres");
+
+  const reason = input.reason.trim();
+  const actorNameSnapshot = input.actorName.trim() || input.actorUsername || `Usuário #${input.assignedBy}`;
+  const auditIdentity = { actorId: input.assignedBy, actorNameSnapshot, actorUsernameSnapshot: input.actorUsername };
 
   return db.transaction(async (transaction) => {
     const lockedEmployee = await transaction.execute(sql`SELECT id FROM personnel_employees WHERE id = ${input.employeeId} FOR UPDATE`);
@@ -2145,9 +2162,23 @@ export async function assignPersonnelWorkSchedule(input: {
       endDate = previousEnd && (!next || previousEnd < next.startDate)
         ? previousEnd
         : next ? addCivilDays(next.startDate, -1) : null;
+      const previousScheduleRows = await transaction.select().from(personnelWorkSchedules)
+        .where(eq(personnelWorkSchedules.id, covering[0].scheduleId)).limit(1);
+      const previousSchedule = previousScheduleRows[0];
+      if (!previousSchedule) throw new Error("A jornada anterior não foi encontrada");
+      const closedAssignment = { ...covering[0], endDate: addCivilDays(input.startDate, -1) };
       await transaction.update(personnelEmployeeScheduleAssignments)
-        .set({ endDate: addCivilDays(input.startDate, -1) })
+        .set({ endDate: closedAssignment.endDate })
         .where(eq(personnelEmployeeScheduleAssignments.id, covering[0].id));
+      await transaction.insert(personnelEmployeeScheduleAssignmentAudit).values({
+        assignmentId: covering[0].id,
+        employeeId: input.employeeId,
+        action: "CLOSE",
+        ...auditIdentity,
+        reason,
+        previousSnapshot: scheduleAssignmentAuditSnapshot(covering[0], previousSchedule),
+        newSnapshot: scheduleAssignmentAuditSnapshot(closedAssignment, previousSchedule),
+      });
     }
     if (endDate && next && endDate >= next.startDate) throw new Error("A nova vigência conflita com uma atribuição futura existente");
     const inserted = await transaction.insert(personnelEmployeeScheduleAssignments).values({
@@ -2157,9 +2188,138 @@ export async function assignPersonnelWorkSchedule(input: {
       endDate,
       cycleAnchorDate: input.cycleAnchorDate,
       assignedBy: input.assignedBy,
-    }).returning({ id: personnelEmployeeScheduleAssignments.id });
-    return { id: getInsertedId(inserted), endDate };
+    }).returning();
+    const newAssignment = inserted[0];
+    if (!newAssignment) throw new Error("Não foi possível registrar a nova vigência");
+    await transaction.insert(personnelEmployeeScheduleAssignmentAudit).values({
+      assignmentId: newAssignment.id,
+      employeeId: input.employeeId,
+      action: "ASSIGN",
+      ...auditIdentity,
+      reason,
+      previousSnapshot: null,
+      newSnapshot: scheduleAssignmentAuditSnapshot(newAssignment, schedule),
+    });
+    return { id: newAssignment.id, endDate };
   });
+}
+
+function scheduleAssignmentAuditSnapshot(
+  assignment: Pick<typeof personnelEmployeeScheduleAssignments.$inferSelect, "id" | "employeeId" | "scheduleId" | "startDate" | "endDate" | "cycleAnchorDate" | "assignedBy" | "createdAt">,
+  schedule: Pick<typeof personnelWorkSchedules.$inferSelect, "name" | "weeklyHours" | "pattern">,
+): PersonnelWorkScheduleAssignmentAuditSnapshot {
+  return {
+    id: assignment.id,
+    employeeId: assignment.employeeId,
+    scheduleId: assignment.scheduleId,
+    scheduleName: schedule.name,
+    weeklyHours: schedule.weeklyHours,
+    pattern: schedule.pattern,
+    startDate: assignment.startDate,
+    endDate: assignment.endDate,
+    cycleAnchorDate: assignment.cycleAnchorDate,
+    assignedBy: assignment.assignedBy,
+    createdAt: assignment.createdAt.toISOString(),
+  };
+}
+
+export async function editPersonnelWorkScheduleAssignment(input: {
+  assignmentId: number;
+  employeeId: number;
+  scheduleId: number;
+  startDate: string;
+  endDate: string | null;
+  cycleAnchorDate: string | null;
+  actorId: number;
+  actorName: string;
+  actorUsername: string | null;
+  reason: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!isCivilDate(input.startDate)) throw new Error("Informe uma data inicial válida no formato AAAA-MM-DD");
+  if (input.endDate !== null && !isCivilDate(input.endDate)) throw new Error("Informe uma data final válida no formato AAAA-MM-DD");
+  if (input.endDate && input.endDate < input.startDate) throw new Error("O fim da vigência não pode anteceder o início");
+  if (input.cycleAnchorDate !== null && !isCivilDate(input.cycleAnchorDate)) throw new Error("Informe uma data âncora válida no formato AAAA-MM-DD");
+  if (input.reason.trim().length < 5) throw new Error("Informe um motivo com pelo menos 5 caracteres");
+
+  const reason = input.reason.trim();
+  const actorNameSnapshot = input.actorName.trim() || input.actorUsername || `Usuário #${input.actorId}`;
+  const auditIdentity = { actorId: input.actorId, actorNameSnapshot, actorUsernameSnapshot: input.actorUsername };
+
+  return db.transaction(async (transaction) => {
+    const initialRows = await transaction.select({ employeeId: personnelEmployeeScheduleAssignments.employeeId })
+      .from(personnelEmployeeScheduleAssignments).where(eq(personnelEmployeeScheduleAssignments.id, input.assignmentId)).limit(1);
+    const initial = initialRows[0];
+    if (!initial) throw new Error("A atribuição de jornada não foi encontrada");
+
+    const employeeIds = Array.from(new Set([initial.employeeId, input.employeeId])).sort((left, right) => left - right);
+    const lockedEmployees = await transaction.select({ id: personnelEmployees.id }).from(personnelEmployees)
+      .where(inArray(personnelEmployees.id, employeeIds)).orderBy(asc(personnelEmployees.id)).for("update");
+    if (lockedEmployees.length !== employeeIds.length) throw new Error("Funcionário não encontrado");
+
+    const currentRows = await transaction.select().from(personnelEmployeeScheduleAssignments)
+      .where(eq(personnelEmployeeScheduleAssignments.id, input.assignmentId)).for("update").limit(1);
+    const current = currentRows[0];
+    if (!current) throw new Error("A atribuição de jornada não foi encontrada");
+    if (current.employeeId !== initial.employeeId) throw new Error("Este período foi alterado em paralelo; recarregue o histórico e tente novamente");
+
+    const scheduleRows = await transaction.select().from(personnelWorkSchedules)
+      .where(eq(personnelWorkSchedules.id, input.scheduleId)).limit(1);
+    const schedule = scheduleRows[0];
+    if (!schedule) throw new Error("Jornada não encontrada");
+    if (schedule.pattern.kind === "CYCLE") {
+      if (!input.cycleAnchorDate) throw new Error("Informe a data âncora do ciclo; o primeiro dia da regra define trabalho ou folga");
+      if (input.cycleAnchorDate > input.startDate) throw new Error("A data âncora deve ser igual ou anterior ao início da vigência");
+    } else if (input.cycleAnchorDate) {
+      throw new Error("A grade semanal não usa data âncora de ciclo");
+    }
+
+    const targetAssignments = await transaction.select().from(personnelEmployeeScheduleAssignments)
+      .where(eq(personnelEmployeeScheduleAssignments.employeeId, input.employeeId))
+      .orderBy(asc(personnelEmployeeScheduleAssignments.startDate));
+    if (hasOverlappingScheduleAssignment({ startDate: input.startDate, endDate: input.endDate }, targetAssignments, current.id)) {
+      throw new Error("As novas datas conflitam com outra jornada vigente; ajuste os períodos antes de salvar");
+    }
+
+    const previousScheduleRows = await transaction.select().from(personnelWorkSchedules)
+      .where(eq(personnelWorkSchedules.id, current.scheduleId)).limit(1);
+    const previousSchedule = previousScheduleRows[0];
+    if (!previousSchedule) throw new Error("A jornada anterior não foi encontrada");
+    const nextAssignment = {
+      ...current,
+      employeeId: input.employeeId,
+      scheduleId: input.scheduleId,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      cycleAnchorDate: input.cycleAnchorDate,
+    };
+    await transaction.update(personnelEmployeeScheduleAssignments).set({
+      employeeId: input.employeeId,
+      scheduleId: input.scheduleId,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      cycleAnchorDate: input.cycleAnchorDate,
+    }).where(eq(personnelEmployeeScheduleAssignments.id, current.id));
+    await transaction.insert(personnelEmployeeScheduleAssignmentAudit).values({
+      assignmentId: current.id,
+      employeeId: input.employeeId,
+      action: "EDIT",
+      ...auditIdentity,
+      reason,
+      previousSnapshot: scheduleAssignmentAuditSnapshot(current, previousSchedule),
+      newSnapshot: scheduleAssignmentAuditSnapshot(nextAssignment, schedule),
+    });
+    return { id: current.id, employeeId: input.employeeId, scheduleId: input.scheduleId, startDate: input.startDate, endDate: input.endDate };
+  });
+}
+
+export async function listPersonnelWorkScheduleAssignmentAudits(assignmentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(personnelEmployeeScheduleAssignmentAudit)
+    .where(eq(personnelEmployeeScheduleAssignmentAudit.assignmentId, assignmentId))
+    .orderBy(desc(personnelEmployeeScheduleAssignmentAudit.changedAt), desc(personnelEmployeeScheduleAssignmentAudit.id));
 }
 
 export async function getPersonnelScheduleDay(employeeId: number, civilDate: string) {

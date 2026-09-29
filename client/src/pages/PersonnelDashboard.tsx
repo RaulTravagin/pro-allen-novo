@@ -38,7 +38,8 @@ import { downloadStyledWorkbook } from "@/lib/xlsxExport";
 import { personnelEmployeeEmptyState } from "@/lib/personnelEmptyState";
 import { formatDateInputValue } from "@/lib/reportDateRange";
 import { PersonnelWorkSchedules } from "@/components/PersonnelWorkSchedules";
-import { civilDateFromLegacyFt, getFtSettlementPeriod } from "@shared/personnel-schedules";
+import { civilDateFromLegacyFt, getFtSettlementPeriod, isCivilDate } from "@shared/personnel-schedules";
+import { civilDateAsLocalDate, formatCivilDate, localCivilToday } from "@/lib/personnelCivilCalendar";
 
 type EntryType =
   | "FT"
@@ -89,9 +90,7 @@ const entryOptions: Array<{
 ];
 
 function todayInputValue() {
-  const now = new Date();
-  const offset = now.getTimezoneOffset();
-  return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10);
+  return localCivilToday();
 }
 
 function formatCurrency(value: unknown) {
@@ -103,6 +102,7 @@ function formatCurrency(value: unknown) {
 
 function formatDate(value: unknown) {
   if (!value) return "—";
+  if (typeof value === "string" && isCivilDate(value)) return formatCivilDate(value);
   return new Date(value as string).toLocaleDateString("pt-BR");
 }
 
@@ -110,10 +110,16 @@ function ftCivilDate(row: any) {
   return civilDateFromLegacyFt(row.date, row.civilDate);
 }
 
+function ftExcelDate(row: any) {
+  const civilDate = ftCivilDate(row);
+  if (civilDate) return civilDateAsLocalDate(civilDate);
+  return row.date ? new Date(row.date) : null;
+}
+
 function formatFtReferenceDate(row: any) {
   const civilDate = ftCivilDate(row);
   return civilDate
-    ? new Date(`${civilDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })
+    ? formatCivilDate(civilDate)
     : formatDate(row.date);
 }
 
@@ -562,6 +568,7 @@ function EntryForm({
     entryType === "FALTA_JUSTIFICADA" ||
     entryType === "FALTA_INJUSTIFICADA" ||
     entryType === "ATESTADO";
+  const ftSettlementPeriod = isCivilDate(date) ? getFtSettlementPeriod(date) : null;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -698,15 +705,17 @@ function EntryForm({
               <Input
                 id="personnel-date"
                 type="date"
+                lang="pt-BR"
                 value={date}
                 onChange={event => setDate(event.target.value)}
                 required
               />
+              <p className="text-xs text-slate-600">Data selecionada: <strong>{formatCivilDate(date)}</strong></p>
             </div>
           </div>
           {entryType === "FT" && (
-            <div className={`rounded-xl border p-3 text-sm ${ftDayQuery.data?.status === "OFF_DAY" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : ftDayQuery.data?.status === "WORKDAY" ? "border-rose-200 bg-rose-50 text-rose-900" : ftDayQuery.data?.status === "NO_SCHEDULE" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-              {ftDayQuery.isLoading ? "Verificando a jornada para esta data…" : ftDayQuery.error ? ftDayQuery.error.message : ftDayQuery.data?.status === "OFF_DAY" ? `Folga programada — FT pode ser lançada. Período: ${getFtSettlementPeriod(date).label}.` : ftDayQuery.data?.status === "WORKDAY" ? "Dia programado de trabalho — FT não permitida nesta data." : ftDayQuery.data?.status === "NO_SCHEDULE" ? "Sem jornada vigente para esta data. Peça ao RH para atribuir uma jornada ao funcionário." : "Selecione o funcionário e a data para verificar a jornada."}
+            <div aria-live="polite" className={`rounded-xl border p-3 text-sm ${ftDayQuery.data?.status === "OFF_DAY" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : ftDayQuery.data?.status === "WORKDAY" ? "border-rose-200 bg-rose-50 text-rose-900" : ftDayQuery.data?.status === "NO_SCHEDULE" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+              {ftDayQuery.isLoading ? "Verificando a jornada para esta data…" : ftDayQuery.error ? ftDayQuery.error.message : ftDayQuery.data?.status === "OFF_DAY" ? <>Folga programada em <strong>{formatCivilDate(date)}</strong> — FT pode ser lançada. <span className="block mt-1 text-xs">Janela de referência para agrupamento: {ftSettlementPeriod?.label ?? "—"}; não representa fechamento formal.</span></> : ftDayQuery.data?.status === "WORKDAY" ? <>Dia programado de trabalho em <strong>{formatCivilDate(date)}</strong> — FT não permitida nesta data.</> : ftDayQuery.data?.status === "NO_SCHEDULE" ? <>Sem jornada vigente em <strong>{formatCivilDate(date)}</strong>. Peça ao RH para atribuir uma jornada ao funcionário.</> : "Selecione o funcionário e a data para verificar a jornada."}
             </div>
           )}
           {(entryType === "FT" || entryType === "EXTRA") && (
@@ -1033,7 +1042,7 @@ function FinanceQueue({
       rows: allRows.map((row: any) => [
         row.employeeName,
         row.kind,
-        row.kind === "FT" ? (ftCivilDate(row) ? new Date(`${ftCivilDate(row)}T12:00:00Z`) : row.date ? new Date(row.date) : null) : row.date ? new Date(row.date) : null,
+        row.kind === "FT" ? ftExcelDate(row) : row.date ? new Date(row.date) : null,
         row.kind === "FT" ? row.settlementPeriod : "—",
         row.kind === "FT" && row.paymentDate ? new Date(row.paymentDate) : null,
         Number(row.amount),

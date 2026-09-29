@@ -22,9 +22,12 @@ export type ScheduleDefinition = {
 };
 
 export type ScheduleAssignment = {
+  id?: number;
   startDate: string;
   endDate: string | null;
   cycleAnchorDate: string | null;
+  assignedBy?: number | null;
+  createdAt?: Date | string;
   schedule: ScheduleDefinition;
 };
 
@@ -64,6 +67,22 @@ export function addCivilDays(value: string, amount: number): string {
 export function compareCivilDates(left: string, right: string): number {
   if (!isCivilDate(left) || !isCivilDate(right)) throw new Error("Data civil inválida");
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function hasOverlappingScheduleAssignment(
+  candidate: { startDate: string; endDate: string | null },
+  assignments: Array<Pick<ScheduleAssignment, "id" | "startDate" | "endDate">>,
+  excludedAssignmentId?: number,
+): boolean {
+  if (!isCivilDate(candidate.startDate) || (candidate.endDate !== null && !isCivilDate(candidate.endDate))) {
+    throw new Error("Informe datas civis válidas para a vigência");
+  }
+  if (candidate.endDate && compareCivilDates(candidate.endDate, candidate.startDate) < 0) {
+    throw new Error("O fim da vigência não pode anteceder o início");
+  }
+  return assignments.some((assignment) => assignment.id !== excludedAssignmentId &&
+    compareCivilDates(assignment.startDate, candidate.endDate ?? "9999-12-31") <= 0 &&
+    (!assignment.endDate || compareCivilDates(assignment.endDate, candidate.startDate) >= 0));
 }
 
 export function civilDayDifference(left: string, right: string): number {
@@ -164,6 +183,7 @@ export function monthCalendarDays(month: string): string[] {
 
 export function civilDateFromLegacyFt(date: Date | string, civilDate?: string | null): string | null {
   if (civilDate && isCivilDate(civilDate)) return civilDate;
+  if (typeof date === "string" && isCivilDate(date)) return date;
   const parsed = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString().slice(0, 10);

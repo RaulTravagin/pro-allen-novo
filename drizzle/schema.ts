@@ -1,6 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import type { WorkSchedulePattern } from "../shared/personnel-schedules";
-import { boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 const updatedAt = () => timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull();
 
@@ -88,6 +88,42 @@ export const personnelEmployeeScheduleAssignments = pgTable("personnel_employee_
 
 export type PersonnelEmployeeScheduleAssignment = typeof personnelEmployeeScheduleAssignments.$inferSelect;
 export type InsertPersonnelEmployeeScheduleAssignment = typeof personnelEmployeeScheduleAssignments.$inferInsert;
+
+export type PersonnelWorkScheduleAssignmentAuditSnapshot = {
+  id: number;
+  employeeId: number;
+  scheduleId: number;
+  scheduleName: string;
+  weeklyHours: string;
+  pattern: WorkSchedulePattern;
+  startDate: string;
+  endDate: string | null;
+  cycleAnchorDate: string | null;
+  assignedBy: number | null;
+  createdAt: string;
+};
+
+export const personnelEmployeeScheduleAssignmentAudit = pgTable("personnel_employee_schedule_assignment_audit", {
+  id: serial("id").primaryKey(),
+  assignmentId: integer("assignmentId").notNull(),
+  employeeId: integer("employeeId").notNull(),
+  action: varchar("action", { length: 16 }).notNull(),
+  actorId: integer("actorId").notNull(),
+  actorNameSnapshot: text("actorNameSnapshot").notNull(),
+  actorUsernameSnapshot: varchar("actorUsernameSnapshot", { length: 64 }),
+  changedAt: timestamp("changedAt", { withTimezone: true }).defaultNow().notNull(),
+  transactionId: bigint("transactionId", { mode: "number" }).default(sql`txid_current()`).notNull(),
+  reason: text("reason").notNull(),
+  previousSnapshot: jsonb("previousSnapshot").$type<PersonnelWorkScheduleAssignmentAuditSnapshot | null>(),
+  newSnapshot: jsonb("newSnapshot").$type<PersonnelWorkScheduleAssignmentAuditSnapshot>().notNull(),
+}, (table) => ({
+  assignmentAuditIdx: index("idx_personnel_schedule_assignment_audit_assignment_changed").on(table.assignmentId, table.changedAt),
+  employeeAuditIdx: index("idx_personnel_schedule_assignment_audit_employee_changed").on(table.employeeId, table.changedAt),
+  actionCheck: check("chk_personnel_schedule_assignment_audit_action", sql`${table.action} IN ('ASSIGN', 'CLOSE', 'EDIT')`),
+  reasonCheck: check("chk_personnel_schedule_assignment_audit_reason", sql`length(btrim(${table.reason})) >= 5`),
+}));
+
+export type PersonnelEmployeeScheduleAssignmentAudit = typeof personnelEmployeeScheduleAssignmentAudit.$inferSelect;
 
 export const personnelFts = pgTable("personnel_fts", {
   id: serial("id").primaryKey(),

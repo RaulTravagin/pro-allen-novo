@@ -158,15 +158,53 @@ export const appRouter = router({
       }),
 
     assignWorkSchedule: protectedProcedure
-      .input(z.object({ employeeId: z.number().int().positive(), scheduleId: z.number().int().positive(), startDate: civilDateSchema, cycleAnchorDate: civilDateSchema.nullable() }))
+      .input(z.object({ employeeId: z.number().int().positive(), scheduleId: z.number().int().positive(), startDate: civilDateSchema, cycleAnchorDate: civilDateSchema.nullable(), reason: z.string().trim().min(5).max(2_000) }))
       .mutation(async ({ ctx, input }) => {
         const role = db.getPersonnelRole(ctx.user);
         if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode atribuir jornadas" });
         try {
-          return await db.assignPersonnelWorkSchedule({ ...input, assignedBy: ctx.user.id });
+          return await db.assignPersonnelWorkSchedule({
+            ...input,
+            assignedBy: ctx.user.id,
+            actorName: ctx.user.name ?? ctx.user.username ?? "",
+            actorUsername: ctx.user.username,
+          });
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível atribuir a jornada" });
         }
+      }),
+
+    editWorkScheduleAssignment: protectedProcedure
+      .input(z.object({
+        assignmentId: z.number().int().positive(),
+        employeeId: z.number().int().positive(),
+        scheduleId: z.number().int().positive(),
+        startDate: civilDateSchema,
+        endDate: civilDateSchema.nullable(),
+        cycleAnchorDate: civilDateSchema.nullable(),
+        reason: z.string().trim().min(5).max(2_000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode corrigir atribuições de jornada" });
+        try {
+          return await db.editPersonnelWorkScheduleAssignment({
+            ...input,
+            actorId: ctx.user.id,
+            actorName: ctx.user.name ?? ctx.user.username ?? "",
+            actorUsername: ctx.user.username,
+          });
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível corrigir a vigência" });
+        }
+      }),
+
+    workScheduleAssignmentAudit: protectedProcedure
+      .input(z.object({ assignmentId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar a auditoria de jornadas" });
+        return db.listPersonnelWorkScheduleAssignmentAudits(input.assignmentId);
       }),
 
     employeeScheduleCalendar: protectedProcedure

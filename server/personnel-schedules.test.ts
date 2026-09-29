@@ -3,7 +3,9 @@ import {
   addCivilDays,
   assertFtAllowedForScheduleDay,
   classifyScheduleDay,
+  civilDateFromLegacyFt,
   getFtSettlementPeriod,
+  hasOverlappingScheduleAssignment,
   isCivilDate,
   monthCalendarDays,
   validateWorkSchedulePattern,
@@ -25,6 +27,11 @@ function assignment(
 }
 
 describe("regras civis de jornadas e Folgas Trabalhadas", () => {
+  it("preserva datas civis ISO legadas sem convertê-las em instantes", () => {
+    expect(civilDateFromLegacyFt("2026-09-29")).toBe("2026-09-29");
+    expect(civilDateFromLegacyFt("data inválida", "2024-02-29")).toBe("2024-02-29");
+  });
+
   it("ancora o 12x36 em um dia de trabalho e alterna trabalho/folga sem depender de timezone", () => {
     const pattern: WorkSchedulePattern = { kind: "CYCLE", minutesByDay: [720, 0] };
     const shift = assignment(pattern, { startDate: "2026-08-31", cycleAnchorDate: "2026-08-31" });
@@ -76,6 +83,33 @@ describe("regras civis de jornadas e Folgas Trabalhadas", () => {
     expect(classifyScheduleDay([prior, next], "2026-01-31").status).toBe("WORKDAY");
     expect(classifyScheduleDay([prior, next], "2026-02-01").status).toBe("OFF_DAY");
     expect(classifyScheduleDay([prior, next], "2026-02-02").status).toBe("WORKDAY");
+  });
+
+  it("mantém a âncora anterior à vigência ao cruzar fevereiro bissexto e o mês seguinte", () => {
+    const cycle = assignment({ kind: "CYCLE", minutesByDay: [480, 0, 0, 720] }, {
+      startDate: "2024-02-29",
+      endDate: "2024-03-02",
+      cycleAnchorDate: "2024-02-28",
+    });
+
+    expect(classifyScheduleDay([cycle], "2024-02-28").status).toBe("NO_SCHEDULE");
+    expect(classifyScheduleDay([cycle], "2024-02-29")).toMatchObject({ status: "OFF_DAY", minutes: 0 });
+    expect(classifyScheduleDay([cycle], "2024-03-01")).toMatchObject({ status: "OFF_DAY", minutes: 0 });
+    expect(classifyScheduleDay([cycle], "2024-03-02")).toMatchObject({ status: "WORKDAY", minutes: 720 });
+    expect(classifyScheduleDay([cycle], "2024-03-03").status).toBe("NO_SCHEDULE");
+  });
+
+  it("bloqueia conflito de datas inclusivas ao editar e exclui a própria atribuição", () => {
+    const saved = assignment({ kind: "WEEKLY", minutesByDay: [480, 480, 480, 480, 480, 0, 0] }, {
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+    });
+    const savedWithId = { ...saved, id: 42 };
+
+    expect(hasOverlappingScheduleAssignment({ startDate: "2026-09-30", endDate: null }, [savedWithId])).toBe(true);
+    expect(hasOverlappingScheduleAssignment({ startDate: "2026-10-01", endDate: null }, [savedWithId])).toBe(false);
+    expect(hasOverlappingScheduleAssignment({ startDate: "2026-09-01", endDate: "2026-09-30" }, [savedWithId], 42)).toBe(false);
+    expect(() => hasOverlappingScheduleAssignment({ startDate: "2026-09-10", endDate: "2026-09-09" }, [savedWithId])).toThrow(/não pode anteceder/);
   });
 
   it("aceita FT em folga e rejeita trabalho programado ou ausência de escala com mensagem útil", () => {
