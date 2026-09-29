@@ -37,4 +37,20 @@ describe("relatório operacional CSV", () => {
     expect(csv).toContain("'=HYPERLINK");
     expect(csv).toContain("'@cmd");
   });
+
+  it("neutraliza fórmulas mesmo após whitespace, tabulação ou quebra de linha", () => {
+    const formulaValues = [" =1+1", "\t=1+1", "\n=1+1", "\r\n=1+1", " +1+1", "\t+1+1", "\n+1+1", "\r\n+1+1", " -1+1", "\t-1+1", "\n-1+1", "\r\n-1+1", " @cmd", "\t@cmd", "\n@cmd", "\r\n@cmd"];
+    const csv = buildOperationalReportCsv({
+      filters: { startDate: new Date("2026-08-01T12:00:00"), endDate: new Date("2026-08-01T12:00:00"), shiftType: null, supervisorId: null, vehicleId: null },
+      filterOptions: { supervisors: [], vehicles: [] },
+      summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null, inspections: formulaValues.length, plannedPosts: formulaValues.length, reportedVisits: 0, pendingReports: 0 },
+      routes: [],
+      fuelLogs: [],
+      visits: formulaValues.map((postName, index) => ({ supervisorRouteId: index + 1, postName, status: "visited" })),
+    });
+
+    for (const value of formulaValues) {
+      expect(csv).toContain(`"'${value}"`);
+    }
+  });
 });

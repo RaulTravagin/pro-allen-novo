@@ -9,11 +9,12 @@ import { toast } from "sonner";
 import { AdminHeader } from "@/components/AdminHeader";
 import { createRelativeDateRange, formatDateInputValue, parseDateInputValue } from "@/lib/reportDateRange";
 import { downloadStyledWorkbook } from "@/lib/xlsxExport";
+import { buildReportExportWorksheets, countReportOccurrences, type ReportType } from "@/lib/reportExport";
 
 export default function ReportExport() {
   const { user, logout } = useAuth();
   const [dateRange, setDateRange] = useState(() => createRelativeDateRange(7));
-  const [reportType, setReportType] = useState<string>("visits");
+  const [reportType, setReportType] = useState<ReportType>("visits");
   const [isExporting, setIsExporting] = useState(false);
 
   // Queries
@@ -22,39 +23,25 @@ export default function ReportExport() {
     endDate: dateRange.end,
   });
 
+  const occurrenceCount = countReportOccurrences(reports ?? []);
+  const exportCount = reportType === "compliance" ? occurrenceCount : reports?.length ?? 0;
+  const exportCountLabel = reportType === "compliance"
+    ? "ocorrências"
+    : reportType === "summary"
+      ? "visitas resumidas"
+      : "visitas";
+
   const generateExcel = async () => {
-    if (!reports || reports.length === 0) {
+    if (!reports || reports.length === 0 || (reportType === "compliance" && occurrenceCount === 0)) {
       toast.error("Nenhum dado disponível para exportar");
       return;
     }
 
     setIsExporting(true);
     try {
-      const headers = ["Posto", "Rota", "Supervisor", "Chegada", "Saída", "Duração", "Data", "Ocorrência / relatório"];
-      const rows = reports.map((r: any) => {
-        const duration = r.arrivalTime && r.departureTime
-          ? Math.floor((new Date(r.departureTime).getTime() - new Date(r.arrivalTime).getTime()) / 60000)
-          : null;
-        return [
-          r.postName || `Posto #${r.postId}`,
-          r.routeName || `Rota #${r.routeId}`,
-          r.supervisorName || 'Supervisor não informado',
-          r.arrivalTime ? new Date(r.arrivalTime) : null,
-          r.departureTime ? new Date(r.departureTime) : null,
-          duration,
-          r.visitedAt ? new Date(r.visitedAt) : null,
-          r.occurrenceReport || '-'
-        ];
-      });
-      await downloadStyledWorkbook(`relatorio-visitas-${formatDateInputValue(dateRange.start)}-${formatDateInputValue(dateRange.end)}.xlsx`, [{
-        name: "Visitas",
-        title: "Pro Allen — Relatório de Visitas",
-        subtitle: `Período: ${dateRange.start.toLocaleDateString('pt-BR')} a ${dateRange.end.toLocaleDateString('pt-BR')} · Total de visitas: ${reports.length}`,
-        headers,
-        rows,
-        widths: [28, 22, 28, 18, 18, 12, 14, 48],
-        formats: { 3: "dd/mm/yyyy hh:mm", 4: "dd/mm/yyyy hh:mm", 5: '0" min"', 6: "dd/mm/yyyy" },
-      }]);
+      const periodLabel = `${dateRange.start.toLocaleDateString("pt-BR")} a ${dateRange.end.toLocaleDateString("pt-BR")}`;
+      const worksheets = buildReportExportWorksheets(reports, reportType, periodLabel);
+      await downloadStyledWorkbook(`relatorio-${reportType}-${formatDateInputValue(dateRange.start)}-${formatDateInputValue(dateRange.end)}.xlsx`, worksheets);
       toast.success("Relatório exportado com sucesso!");
     } catch (error) {
       toast.error("Erro ao exportar relatório");
@@ -114,7 +101,7 @@ export default function ReportExport() {
             {/* Report Type */}
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-3">Tipo de Relatório</label>
-              <Select value={reportType} onValueChange={setReportType}>
+              <Select value={reportType} onValueChange={(value) => setReportType(value as ReportType)}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Selecione um tipo..." />
                 </SelectTrigger>
@@ -135,14 +122,14 @@ export default function ReportExport() {
                 <strong>Tipo:</strong> {reportType === 'visits' ? 'Visitas com Horários' : reportType === 'summary' ? 'Resumo Executivo' : 'Registros de ocorrência'}
               </p>
               <p className="text-sm text-gray-600">
-                <strong>Registros:</strong> {reports?.length || 0} visitas
+                <strong>Registros:</strong> {exportCount} {exportCountLabel}
               </p>
             </div>
 
             {/* Export Button */}
             <Button
               onClick={generateExcel}
-              disabled={isExporting || !reports || reports.length === 0}
+              disabled={isExporting || !reports || exportCount === 0}
               className="w-full bg-blue-600 hover:bg-blue-700"
               size="lg"
             >

@@ -95,7 +95,7 @@ function asNumber(value: unknown) {
 
 function csvCell(value: unknown) {
   const text = String(value ?? "");
-  const safeText = typeof value === "string" && /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const safeText = typeof value === "string" && /^[\s\uFEFF]*[=+\-@]/.test(text) ? `'${text}` : text;
   return `"${safeText.replaceAll('"', '""')}"`;
 }
 
