@@ -1,29 +1,39 @@
 import type { Express, Request } from "express";
 import { ENV } from "./env";
-import { getLocalSupervisorSessionUserId } from "../local-supervisor-auth";
-import { hasGestorSession } from "../gestor-access";
-import { getPersonnelRole, getUserById } from "../db";
+import { getAuthenticatedUser } from "./context";
+import { getPersonnelRole, isAuthorizedPersonnelOccurrenceDocument } from "../db";
+
+const PERSONNEL_DOCUMENT_KEY = /^personnel\/occurrences\/([1-9]\d*)\/[A-Za-z0-9._-]+$/;
+const PUBLIC_GENERATED_IMAGE_KEY = /^generated\/[1-9]\d*\.png$/;
 
 export function personnelOccurrenceOwnerId(key: string) {
-  const match = /^personnel\/occurrences\/(\d+)\//.exec(key);
-  return match ? Number(match[1]) : null;
+  const match = PERSONNEL_DOCUMENT_KEY.exec(key);
+  if (!match) return null;
+  const ownerId = Number(match[1]);
+  return Number.isSafeInteger(ownerId) ? ownerId : null;
 }
 
 export function isSafeStorageKey(key: string) {
-  return Boolean(key) && !key.includes("..") && !key.includes("\\") && !key.startsWith("/");
+  if (!key || key.length > 512 || key.includes("..") || key.includes("\\") || key.startsWith("/")) {
+    return false;
+  }
+  return PERSONNEL_DOCUMENT_KEY.test(key) || PUBLIC_GENERATED_IMAGE_KEY.test(key);
 }
 
-async function canReadStorageKey(req: Pick<Request, "headers">, key: string) {
-  if (!key.startsWith("personnel/occurrences/")) return true;
-  if (await hasGestorSession(req)) return true;
+export async function canReadStorageKey(req: Pick<Request, "headers">, key: string) {
+  if (!isSafeStorageKey(key)) return false;
 
-  const localUserId = await getLocalSupervisorSessionUserId(req);
-  if (!localUserId) return false;
-  const user = await getUserById(localUserId);
+  // Generated images are the only non-personnel namespace currently used by the app.
+  if (PUBLIC_GENERATED_IMAGE_KEY.test(key)) return true;
+
+  const user = await getAuthenticatedUser(req as Request);
   if (!user) return false;
   const role = getPersonnelRole(user);
+  if (role !== "RH" && role !== "ADM") return false;
+
   const ownerId = personnelOccurrenceOwnerId(key);
-  return role === "RH" || role === "ADM" || ownerId === localUserId;
+  if (!ownerId) return false;
+  return isAuthorizedPersonnelOccurrenceDocument(key);
 }
 
 export function registerStorageProxy(app: Express) {

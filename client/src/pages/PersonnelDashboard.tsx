@@ -288,12 +288,12 @@ export default function PersonnelDashboard({
               label="Central de lançamentos"
               onClick={() => setActiveSection("workspace")}
             />
-            <NavButton
+            {role !== "FINANCEIRO" && <NavButton
               active={activeSection === "employees"}
               icon={UsersRound}
               label="Funcionários"
               onClick={() => setActiveSection("employees")}
-            />
+            />}
             {isReviewer && (
               <NavButton
                 active={activeSection === "users"}
@@ -365,7 +365,7 @@ export default function PersonnelDashboard({
               isFinance={isFinance}
             />
           )}
-          {activeSection === "employees" && (
+          {activeSection === "employees" && role !== "FINANCEIRO" && (
             <EmployeesSection
               data={data}
               role={role}
@@ -1205,6 +1205,8 @@ function EmployeesSection({
   const createEmployee = trpc.personnel.createEmployee.useMutation();
   const updateEmployee = trpc.personnel.updateEmployee.useMutation();
   const canEdit = role === "RH" || role === "ADM";
+  const canManageSensitiveFields = role === "RH" || role === "ADM";
+  const canCreate = role === "RH" || role === "ADM";
   const reset = () => {
     setEditing(null);
     setName("");
@@ -1216,19 +1218,19 @@ function EmployeesSection({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!canEdit) return;
+    if (!canEdit || (!editing && !canCreate)) return;
     try {
       if (editing)
         await updateEmployee.mutateAsync({
           id: editing.id,
           name,
-          cpf,
+          ...(canManageSensitiveFields ? { cpf } : {}),
           position,
           postId: postId ? Number(postId) : null,
-          pixKey: pixKey || null,
+          ...(canManageSensitiveFields ? { pixKey: pixKey || null } : {}),
           isActive,
         });
-      else
+      else if (canCreate)
         await createEmployee.mutateAsync({
           name,
           cpf,
@@ -1270,7 +1272,7 @@ function EmployeesSection({
         )}
       </div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-        {canEdit && (
+        {canEdit && (canCreate || editing) && (
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -1282,7 +1284,7 @@ function EmployeesSection({
                 {editing ? "Editar funcionário" : "Novo funcionário"}
               </CardTitle>
               <CardDescription>
-                Cargo, posto principal e chave PIX ficam disponíveis para o fluxo financeiro.
+                CPF e PIX permanecem restritos aos perfis RH/ADM autorizados.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1297,7 +1299,7 @@ function EmployeesSection({
                     required
                   />
                 </div>
-                <div className="space-y-1.5">
+                {canManageSensitiveFields && <div className="space-y-1.5">
                   <Label htmlFor="employee-cpf">CPF / matrícula</Label>
                   <Input
                     id="employee-cpf"
@@ -1306,7 +1308,7 @@ function EmployeesSection({
                     placeholder="CPF ou matrícula"
                     required
                   />
-                </div>
+                </div>}
                 <div className="space-y-1.5">
                   <Label htmlFor="employee-position">Cargo / função</Label>
                   <Input
@@ -1333,7 +1335,7 @@ function EmployeesSection({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1.5">
+                {canManageSensitiveFields && <div className="space-y-1.5">
                   <Label htmlFor="employee-pix">Chave PIX (opcional)</Label>
                   <Input
                     id="employee-pix"
@@ -1341,7 +1343,7 @@ function EmployeesSection({
                     onChange={event => setPixKey(event.target.value)}
                     placeholder="CPF, e-mail, telefone ou chave aleatória"
                   />
-                </div>
+                </div>}
                 <div className="space-y-1.5">
                   <Label htmlFor="employee-status">Status</Label>
                   <select
@@ -1387,10 +1389,10 @@ function EmployeesSection({
                 <thead>
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-3">Nome</th>
-                    <th className="px-3 py-3">CPF</th>
+                    {canManageSensitiveFields && <th className="px-3 py-3">CPF</th>}
                     <th className="px-3 py-3">Cargo / posto</th>
                     <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">PIX</th>
+                    {canManageSensitiveFields && <th className="px-3 py-3">PIX</th>}
                     {canEdit && <th className="px-3 py-3 text-right">Ação</th>}
                   </tr>
                 </thead>
@@ -1400,9 +1402,9 @@ function EmployeesSection({
                       <td className="px-3 py-3 font-semibold">
                         {employee.name}
                       </td>
-                      <td className="px-3 py-3 text-slate-600">
+                      {canManageSensitiveFields && <td className="px-3 py-3 text-slate-600">
                         {employee.cpf}
-                      </td>
+                      </td>}
                       <td className="px-3 py-3 text-slate-600">
                         <span className="font-semibold">{employee.position || "—"}</span>
                         <span className="block text-xs text-slate-500">{employee.post}</span>
@@ -1412,9 +1414,9 @@ function EmployeesSection({
                           {employee.isActive ? "Ativo" : "Inativo"}
                         </span>
                       </td>
-                      <td className="px-3 py-3 font-mono text-xs text-slate-500">
+                      {canManageSensitiveFields && <td className="px-3 py-3 font-mono text-xs text-slate-500">
                         {employee.pixKey || "—"}
-                      </td>
+                      </td>}
                       {canEdit && (
                         <td className="px-3 py-3 text-right">
                           <Button

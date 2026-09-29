@@ -20,6 +20,12 @@ import {
   verifySupervisorPassword,
 } from "./local-supervisor-auth";
 import { buildDailyOperationalReport } from "./daily-operational-report";
+import {
+  projectGestorPersonnelOverview,
+  projectPersonnelDashboard,
+  projectPersonnelEmployee,
+  projectPersonnelOccurrence,
+} from "./personnel-security";
 import type { User } from "../drizzle/schema";
 
 type PublicUser = Pick<User, "id" | "name" | "username" | "role" | "isOperational" | "defaultShift"> & {
@@ -106,13 +112,15 @@ export const appRouter = router({
   personnel: router({
     dashboard: protectedProcedure.query(async ({ ctx }) => {
       const role = db.getPersonnelRole(ctx.user);
-      return { role, ...(await db.getPersonnelDashboardData(ctx.user.id, role)) };
+      const data = await db.getPersonnelDashboardData(ctx.user.id, role);
+      return { role, ...projectPersonnelDashboard(data, role) };
     }),
 
     employees: protectedProcedure.query(async ({ ctx }) => {
       const role = db.getPersonnelRole(ctx.user);
-      if (role === "SUPERVISOR") return db.listPersonnelEmployees();
-      return db.listPersonnelEmployees(true);
+      if (role === "FINANCEIRO") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não precisa consultar a base de funcionários" });
+      const employees = await db.listPersonnelEmployees(role !== "SUPERVISOR", role === "RH" || role === "ADM");
+      return employees.map((employee) => projectPersonnelEmployee(employee, role));
     }),
 
     posts: protectedProcedure.query(async ({ ctx }) => {
@@ -135,7 +143,8 @@ export const appRouter = router({
         try {
           const post = input.postId ? await db.getPostById(input.postId) : null;
           if (input.postId && (!post || post.isActive === false)) throw new Error("Posto principal inválido ou inativo");
-          return await db.createPersonnelEmployee({ ...input, cpf: normalizePersonnelIdentifier(input.cpf), post: post?.name ?? "Posto não informado", pixKey: input.pixKey || null });
+          const employee = await db.createPersonnelEmployee({ ...input, cpf: normalizePersonnelIdentifier(input.cpf), post: post?.name ?? "Posto não informado", pixKey: input.pixKey || null });
+          return employee ? projectPersonnelEmployee(employee, role) : employee;
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível cadastrar o funcionário" });
         }
@@ -145,7 +154,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int().positive(),
         name: z.string().trim().min(2).max(255),
-        cpf: z.string().trim().min(3).max(14),
+        cpf: z.string().trim().min(3).max(14).optional(),
         position: z.string().trim().min(2).max(255),
         postId: z.number().int().positive().nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
@@ -154,11 +163,16 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const role = db.getPersonnelRole(ctx.user);
         if (role !== "RH" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode editar funcionários" });
+        if (input.cpf === undefined) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o CPF ou a matrícula" });
         const { id, ...data } = input;
         const post = data.postId ? await db.getPostById(data.postId) : null;
         if (data.postId && (!post || post.isActive === false)) throw new TRPCError({ code: "BAD_REQUEST", message: "Posto principal inválido ou inativo" });
         const existing = await db.getPersonnelEmployeeById(id);
-        return db.updatePersonnelEmployee(id, { ...data, cpf: normalizePersonnelIdentifier(data.cpf), post: post?.name ?? existing?.post ?? "Posto não informado", pixKey: data.pixKey || null });
+        const sensitiveFields = role === "RH" || role === "ADM"
+          ? { cpf: normalizePersonnelIdentifier(data.cpf!), pixKey: data.pixKey || null }
+          : {};
+        const employee = await db.updatePersonnelEmployee(id, { ...data, ...sensitiveFields, post: post?.name ?? existing?.post ?? "Posto não informado" });
+        return employee ? projectPersonnelEmployee(employee, role) : employee;
       }),
 
     ensureLegacyEmployee: protectedProcedure
@@ -233,7 +247,8 @@ export const appRouter = router({
         if (input.type === "ATESTADO" && !input.document) throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe o atestado médico em PDF ou imagem" });
         try {
           const document = input.document ? await db.uploadPersonnelDocument(ctx.user.id, input.document) : null;
-          return await db.createPersonnelOccurrence({ employeeId: input.employeeId, supervisorId: ctx.user.id, type: input.type, date: input.date, observation: input.observation || null, documentKey: document?.key ?? null, documentUrl: document?.url ?? null, documentName: document?.name ?? null, status: "PENDING" });
+          const occurrence = await db.createPersonnelOccurrence({ employeeId: input.employeeId, supervisorId: ctx.user.id, type: input.type, date: input.date, observation: input.observation || null, documentKey: document?.key ?? null, documentUrl: document?.url ?? null, documentName: document?.name ?? null, status: "PENDING" });
+          return occurrence ? projectPersonnelOccurrence(occurrence, role) : occurrence;
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível registrar a ocorrência" });
         }
@@ -270,7 +285,7 @@ export const appRouter = router({
         if (input.status === "REJECTED" && (!input.rejectionReason || input.rejectionReason.length < 5)) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da rejeição" });
         const result = await db.reviewPersonnelOccurrence({ ...input, reviewedBy: ctx.user.id });
         if (!result || result.status === "PENDING") throw new TRPCError({ code: "CONFLICT", message: "Esta ocorrência já foi revisada" });
-        return result;
+        return projectPersonnelOccurrence(result, role);
       }),
 
     reviewExtra: protectedProcedure
@@ -365,7 +380,7 @@ export const appRouter = router({
     dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional(), shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true, shiftType: input?.shiftType ?? null }));
     }),
-    personnelOverview: gestorProcedure.query(async () => db.getGestorPersonnelOverview()),
+    personnelOverview: gestorProcedure.query(async () => projectGestorPersonnelOverview(await db.getGestorPersonnelOverview())),
     operationalReport: gestorOrAdminProcedure.input(z.object({
       startDate: z.date(),
       endDate: z.date(),

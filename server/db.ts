@@ -1669,12 +1669,22 @@ function extraScope(supervisorId: number, role: PersonnelRole) {
   return role === "SUPERVISOR" ? eq(personnelExtras.supervisorId, supervisorId) : undefined;
 }
 
-export async function listPersonnelEmployees(includeInactive = false) {
+export async function listPersonnelEmployees(includeInactive = false, includeSensitive = false) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(personnelEmployees)
-    .where(includeInactive ? undefined : eq(personnelEmployees.isActive, true))
-    .orderBy(personnelEmployees.name);
+  const where = includeInactive ? undefined : eq(personnelEmployees.isActive, true);
+  const publicFields = {
+    id: personnelEmployees.id,
+    name: personnelEmployees.name,
+    position: personnelEmployees.position,
+    postId: personnelEmployees.postId,
+    post: personnelEmployees.post,
+    isActive: personnelEmployees.isActive,
+  };
+  return includeSensitive
+    ? db.select({ ...publicFields, cpf: personnelEmployees.cpf, pixKey: personnelEmployees.pixKey })
+      .from(personnelEmployees).where(where).orderBy(personnelEmployees.name)
+    : db.select(publicFields).from(personnelEmployees).where(where).orderBy(personnelEmployees.name);
 }
 
 export async function listPersonnelPosts() {
@@ -1755,7 +1765,6 @@ export async function listPersonnelFts(supervisorId: number, role: PersonnelRole
     id: personnelFts.id,
     employeeId: personnelFts.employeeId,
     employeeName: personnelEmployees.name,
-    employeePixKey: personnelEmployees.pixKey,
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
@@ -1780,16 +1789,11 @@ export async function getGestorPersonnelOverview() {
     listPersonnelEmployees(true),
     listPersonnelUsers(true),
     listPersonnelFts(0, "RH"),
-    listPersonnelOccurrences(0, "RH"),
+    listPersonnelOccurrences(0, "FINANCEIRO"),
     listPersonnelExtras(0, "RH"),
   ]);
   const entries = [...fts, ...occurrences, ...extras];
   return {
-    employees,
-    users: usersList,
-    fts,
-    occurrences,
-    extras,
     summary: {
       employees: employees.length,
       activeEmployees: employees.filter((employee) => employee.isActive).length,
@@ -1820,7 +1824,6 @@ export async function getPersonnelFtById(id: number) {
     id: personnelFts.id,
     employeeId: personnelFts.employeeId,
     employeeName: personnelEmployees.name,
-    employeePixKey: personnelEmployees.pixKey,
     supervisorId: personnelFts.supervisorId,
     supervisorName: users.name,
     date: personnelFts.date,
@@ -1860,7 +1863,7 @@ export async function listPersonnelOccurrences(supervisorId: number, role: Perso
   const db = await getDb();
   if (!db) return [];
   const scope = occurrenceScope(supervisorId, role);
-  return db.select({
+  const fields = {
     id: personnelOccurrences.id,
     employeeId: personnelOccurrences.employeeId,
     employeeName: personnelEmployees.name,
@@ -1868,14 +1871,16 @@ export async function listPersonnelOccurrences(supervisorId: number, role: Perso
     supervisorName: users.name,
     type: personnelOccurrences.type,
     date: personnelOccurrences.date,
-    documentUrl: personnelOccurrences.documentUrl,
-    documentName: personnelOccurrences.documentName,
     observation: personnelOccurrences.observation,
     status: personnelOccurrences.status,
     rejectionReason: personnelOccurrences.rejectionReason,
     reviewedAt: personnelOccurrences.reviewedAt,
     createdAt: personnelOccurrences.createdAt,
-  }).from(personnelOccurrences)
+  };
+  const query = role === "RH" || role === "ADM"
+    ? db.select({ ...fields, documentUrl: personnelOccurrences.documentUrl, documentName: personnelOccurrences.documentName })
+    : db.select(fields);
+  return query.from(personnelOccurrences)
     .innerJoin(personnelEmployees, eq(personnelEmployees.id, personnelOccurrences.employeeId))
     .leftJoin(users, eq(users.id, personnelOccurrences.supervisorId))
     .where(scope)
@@ -1898,6 +1903,26 @@ export async function getPersonnelOccurrenceById(id: number) {
   return result[0];
 }
 
+/** Confirma que o documento pertence a um registro de ocorrência e que sua chave mantém o proprietário. */
+export async function isAuthorizedPersonnelOccurrenceDocument(key: string) {
+  const keyMatch = /^personnel\/occurrences\/([1-9]\d*)\/[A-Za-z0-9._-]+$/.exec(key);
+  if (!keyMatch || !Number.isSafeInteger(Number(keyMatch[1]))) return false;
+  const database = await getDb();
+  if (!database) return false;
+  const result = await database.select({
+    supervisorId: personnelOccurrences.supervisorId,
+    documentUrl: personnelOccurrences.documentUrl,
+  }).from(personnelOccurrences)
+    .where(eq(personnelOccurrences.documentKey, key))
+    .limit(1);
+  const occurrence = result[0];
+  return Boolean(
+    occurrence &&
+    occurrence.supervisorId === Number(keyMatch[1]) &&
+    occurrence.documentUrl === `/manus-storage/${key}`
+  );
+}
+
 export async function reviewPersonnelOccurrence(input: { id: number; status: "APPROVED" | "REJECTED"; reviewedBy: number; rejectionReason?: string | null }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1916,7 +1941,6 @@ export async function listPersonnelExtras(supervisorId: number, role: PersonnelR
     id: personnelExtras.id,
     employeeId: personnelExtras.employeeId,
     employeeName: personnelEmployees.name,
-    employeePixKey: personnelEmployees.pixKey,
     supervisorId: personnelExtras.supervisorId,
     supervisorName: users.name,
     date: personnelExtras.date,
@@ -1980,10 +2004,10 @@ export async function uploadPersonnelDocument(userId: number, file: { name: stri
 
 export async function getPersonnelDashboardData(supervisorId: number, role: PersonnelRole) {
   const [employees, posts, fts, occurrences, extras] = await Promise.all([
-    listPersonnelEmployees(role !== "SUPERVISOR"),
+    listPersonnelEmployees(role !== "SUPERVISOR", role === "RH" || role === "ADM"),
     listPersonnelPosts(),
     listPersonnelFts(supervisorId, role),
-    listPersonnelOccurrences(supervisorId, role),
+    role === "FINANCEIRO" ? Promise.resolve([]) : listPersonnelOccurrences(supervisorId, role),
     listPersonnelExtras(supervisorId, role),
   ]);
   const payable = [...fts, ...extras].filter((item) => item.status === "APPROVED");
