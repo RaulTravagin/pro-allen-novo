@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, AlertCircle, Loader2, Calendar, Clock } from "lucide-react";
+import { TrendingUp, AlertCircle, Loader2, Calendar, Clock, FileText } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { PostPriorityCard } from "@/components/PostPriorityCard";
 import { AdminHeader } from "@/components/AdminHeader";
 import { createRelativeDateRange, formatDateInputValue, parseDateInputValue } from "@/lib/reportDateRange";
 import { countReportedOccurrences } from "@/lib/reportMetrics";
+import AdminPostPopsPanel from "@/components/AdminPostPopsPanel";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -95,7 +96,7 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="priority" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="priority" className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
               Prioridades
@@ -103,6 +104,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="reports" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               Relatórios
+            </TabsTrigger>
+            <TabsTrigger value="pops" className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              POPs por posto
             </TabsTrigger>
           </TabsList>
 
@@ -319,6 +324,9 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+          <TabsContent value="pops" className="mt-6">
+            <AdminPostPopsPanel />
           </TabsContent>
         </Tabs>
       </div>

@@ -2,7 +2,7 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, sql } from "driz
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
 import { ENV } from './_core/env';
@@ -325,6 +325,68 @@ export async function getPostById(id: number) {
   if (!db) return null;
   const result = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
   return result.length > 0 ? result[0] : null;
+}
+
+export async function listPostPopDocuments(postId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(postPopDocuments).where(eq(postPopDocuments.postId, postId)).orderBy(desc(postPopDocuments.createdAt), desc(postPopDocuments.id));
+}
+
+export async function getPostPopDocumentById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [document] = await db.select().from(postPopDocuments).where(eq(postPopDocuments.id, id)).limit(1);
+  return document ?? null;
+}
+
+export async function getPostPopDocumentByStorageKey(storageKey: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const [document] = await db.select().from(postPopDocuments).where(eq(postPopDocuments.storageKey, storageKey)).limit(1);
+  return document ?? null;
+}
+
+export async function createPostPopDocument(input: { postId: number; originalName: string; mimeType: string; storageKey: string; uploadedBy: number | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [created] = await db.insert(postPopDocuments).values(input).returning({ id: postPopDocuments.id });
+  return getPostPopDocumentById(getInsertedId(created));
+}
+
+export async function deletePostPopDocument(postId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [removed] = await db.delete(postPopDocuments)
+    .where(and(eq(postPopDocuments.postId, postId), eq(postPopDocuments.id, id)))
+    .returning({ id: postPopDocuments.id });
+  return removed ? { id: removed.id, deleted: true as const } : null;
+}
+
+export async function supervisorRouteCanAccessPost(supervisorRouteId: number, postId: number, supervisorId: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const [match] = await db.select({ postId: posts.id })
+    .from(posts)
+    .innerJoin(supervisorRoutes, eq(supervisorRoutes.routeId, posts.routeId))
+    .where(and(
+      eq(posts.id, postId),
+      eq(supervisorRoutes.id, supervisorRouteId),
+      eq(supervisorRoutes.supervisorId, supervisorId),
+    ))
+    .limit(1);
+  return Boolean(match);
+}
+
+export async function supervisorHasRouteForPost(supervisorId: number, postId: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const [match] = await db.select({ postId: posts.id })
+    .from(posts)
+    .innerJoin(supervisorRoutes, eq(supervisorRoutes.routeId, posts.routeId))
+    .where(and(eq(posts.id, postId), eq(supervisorRoutes.supervisorId, supervisorId)))
+    .limit(1);
+  return Boolean(match);
 }
 
 export async function getGestorPostsManagement() {

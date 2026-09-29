@@ -141,11 +141,17 @@ vi.mock("@/lib/trpc", () => ({
       },
       updateSchedule: { useMutation: () => ({ mutate: scheduleUpdate, isPending: false, error: null }) },
       postsManagement: { useQuery: () => ({ isLoading: false, data: postsManagementFixture }) },
+      postPops: {
+        list: { useQuery: () => ({ data: [], isLoading: false, error: null }) },
+        upload: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
+        delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      },
       createPost: { useMutation: () => ({ mutate: postCreate, isPending: false, error: null }) },
       updatePost: { useMutation: () => ({ mutate: postUpdate, isPending: false, error: null }) },
       deletePost: { useMutation: () => ({ mutate: postDelete, isPending: false, error: null }) },
     },
-    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() }, dashboard: { invalidate: vi.fn() } } }),
+    postPops: { downloadUrl: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) } },
+    useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() }, postPops: { list: { invalidate: vi.fn() } }, dashboard: { invalidate: vi.fn() } } }),
   },
 }));
 

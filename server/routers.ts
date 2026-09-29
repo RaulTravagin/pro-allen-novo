@@ -32,6 +32,9 @@ import {
 import type { MovementPeriod } from "../shared/personnel-movement-report";
 import type { User } from "../drizzle/schema";
 import { RouteClosureError } from "./route-closure";
+import { randomUUID } from "node:crypto";
+import { storageGetSignedUrl, storagePut } from "./storage";
+import { canManagePostPops, isAllowedPostPopFile } from "./post-pops-access";
 
 type PublicUser = Pick<User, "id" | "name" | "username" | "role" | "isOperational" | "defaultShift"> & {
   personnelRole: User["personnelRole"] | "SUPERVISOR" | "ADM";
@@ -73,6 +76,14 @@ const gestorProcedure = publicProcedure.use(async ({ ctx, next }) => {
 const gestorOrAdminProcedure = publicProcedure.use(async ({ ctx, next }) => {
   if (ctx.user?.role === "admin" || await hasGestorSession(ctx.req)) return next();
   throw new TRPCError({ code: "FORBIDDEN", message: "Acesso do Gestor ou Administrador necessário" });
+});
+
+const postPopManagerProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const role = ctx.user ? db.getPersonnelRole(ctx.user) : null;
+  if (!canManagePostPops(role, await hasGestorSession(ctx.req))) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Somente ADM ou Gestor pode administrar POPs" });
+  }
+  return next();
 });
 
 const gestorPostInput = z.object({
@@ -593,6 +604,78 @@ export const appRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível excluir o posto" });
       }
     }),
+    postPops: router({
+      list: postPopManagerProcedure.input(z.object({ postId: z.number().int().positive() })).query(async ({ input }) => {
+        const post = await db.getPostById(input.postId);
+        if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Posto não encontrado" });
+        const documents = await db.listPostPopDocuments(input.postId);
+        return documents.map(({ id, postId, originalName, mimeType, createdAt }) => ({ id, postId, originalName, mimeType, createdAt }));
+      }),
+      upload: postPopManagerProcedure.input(z.object({
+        postId: z.number().int().positive(),
+        name: z.string().trim().min(1).max(255),
+        mimeType: z.enum([
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ]),
+        base64: z.string().min(1).max(14 * 1024 * 1024).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+      })).mutation(async ({ ctx, input }) => {
+        const post = await db.getPostById(input.postId);
+        if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Posto não encontrado" });
+        if (!isAllowedPostPopFile(input.mimeType, input.name)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Anexe um POP em PDF, DOC ou DOCX" });
+        }
+        const bytes = Buffer.from(input.base64, "base64");
+        if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter até 10 MB" });
+        }
+        const safeName = input.name.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "").slice(-200) || "procedimento";
+        const key = `posts/pops/${input.postId}/${randomUUID()}-${safeName}`;
+        try {
+          const stored = await storagePut(key, bytes, input.mimeType);
+          const document = await db.createPostPopDocument({
+            postId: input.postId,
+            originalName: input.name,
+            mimeType: input.mimeType,
+            storageKey: stored.key,
+            uploadedBy: ctx.user?.id ?? null,
+          });
+          if (!document) throw new Error("Não foi possível registrar o POP");
+          return { id: document.id, postId: document.postId, originalName: document.originalName, mimeType: document.mimeType, createdAt: document.createdAt };
+        } catch (error) {
+          console.error("[Post POP] Falha ao armazenar ou registrar documento:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível anexar o POP" });
+        }
+      }),
+      delete: postPopManagerProcedure.input(z.object({ postId: z.number().int().positive(), documentId: z.number().int().positive() })).mutation(async ({ input }) => {
+        const removed = await db.deletePostPopDocument(input.postId, input.documentId);
+        if (!removed) throw new TRPCError({ code: "NOT_FOUND", message: "POP não encontrado neste posto" });
+        return removed;
+      }),
+    }),
+  }),
+
+  postPops: router({
+    downloadUrl: publicProcedure.input(z.object({
+      postId: z.number().int().positive(),
+      documentId: z.number().int().positive(),
+      supervisorRouteId: z.number().int().positive().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const role = ctx.user ? db.getPersonnelRole(ctx.user) : null;
+      const isManager = canManagePostPops(role, await hasGestorSession(ctx.req));
+      if (!isManager) {
+        if (role !== "SUPERVISOR" || !ctx.user || !input.supervisorRouteId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso ao POP não autorizado" });
+        }
+        if (!await db.supervisorRouteCanAccessPost(input.supervisorRouteId, input.postId, ctx.user.id)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Este posto não pertence à rota vinculada ao supervisor" });
+        }
+      }
+      const document = await db.getPostPopDocumentById(input.documentId);
+      if (!document || document.postId !== input.postId) throw new TRPCError({ code: "NOT_FOUND", message: "POP não encontrado neste posto" });
+      return { url: await storageGetSignedUrl(document.storageKey) };
+    }),
   }),
 
   // Routes and Posts
@@ -699,6 +782,14 @@ export const appRouter = router({
 
   // Supervisor Routes
   supervisorRoutes: router({
+    getPostPops: protectedProcedure.input(z.object({ supervisorRouteId: z.number().int().positive(), postId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      if (!ctx.user || db.getPersonnelRole(ctx.user) !== "SUPERVISOR") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o supervisor vinculado pode consultar os POPs" });
+      if (!await db.supervisorRouteCanAccessPost(input.supervisorRouteId, input.postId, ctx.user.id)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Este posto não pertence à rota vinculada ao supervisor" });
+      }
+      const documents = await db.listPostPopDocuments(input.postId);
+      return documents.map(({ id, postId, originalName, mimeType, createdAt }) => ({ id, postId, originalName, mimeType, createdAt }));
+    }),
     create: protectedProcedure
       .input(z.object({ routeId: z.number(), date: z.date() }))
       .mutation(async ({ ctx, input }) => {

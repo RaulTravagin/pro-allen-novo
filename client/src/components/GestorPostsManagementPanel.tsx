@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
+import PostPopManagement from "@/components/PostPopManagement";
 import {
   Building2,
   CheckCircle2,
@@ -322,6 +323,7 @@ export default function GestorPostsManagementPanel({
                               Ordem operacional: {post.order} ·{" "}
                               {post.addressCity || post.region || route.region}
                             </p>
+                            <PostPopManagement postId={post.id} />
                           </div>
                           {post.name !== "Base Operacional" && (
                             <div className="flex shrink-0 gap-2">

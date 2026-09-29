@@ -5,6 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import PostCard from "./PostCard";
 
+vi.mock("@/lib/trpc", () => ({
+  trpc: {
+    supervisorRoutes: { getPostPops: { useQuery: () => ({ isSuccess: false }) } },
+    postPops: { downloadUrl: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) } },
+  },
+}));
+
 function PostCardFlowHarness() {
   const [status, setStatus] = useState<"pending" | "in_progress" | "visited">("pending");
   const [arrivalTime, setArrivalTime] = useState<Date | null>(null);
@@ -14,6 +21,7 @@ function PostCardFlowHarness() {
     <PostCard
       id={22}
       postId={3}
+      supervisorRouteId={8}
       postName="Posto de teste"
       occurrenceReport="Visita realizada e posto em funcionamento."
       status={status}
@@ -57,6 +65,7 @@ describe("PostCard", () => {
       <PostCard
         id={23}
         postId={4}
+        supervisorRouteId={9}
         postName="Posto com GPS"
         occurrenceReport="Visita realizada e posto em funcionamento."
         status="visited"

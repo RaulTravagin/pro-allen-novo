@@ -1,12 +1,15 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap, FileText } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { MapPin, CheckCircle2, Clock, LogIn, LogOut, Loader2, Navigation, Zap, FileText, Download } from "lucide-react";
 import React from "react";
 import { useState, useMemo, memo, useCallback } from "react";
+import { toast } from "sonner";
 
 interface PostCardProps {
   id: number;
   postId: number;
+  supervisorRouteId: number;
   postName: string;
   postAddress?: string;
   status: 'pending' | 'in_progress' | 'visited';
@@ -32,6 +35,7 @@ interface PostCardProps {
 const PostCard = memo(function PostCard({
   id,
   postId,
+  supervisorRouteId,
   postName,
   postAddress,
   status,
@@ -55,6 +59,12 @@ const PostCard = memo(function PostCard({
 }: PostCardProps) {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const showPostPops = !isCoverage && !isOperationalBaseCoverage;
+  const postPops = trpc.supervisorRoutes.getPostPops.useQuery(
+    { supervisorRouteId, postId },
+    { enabled: showPostPops && supervisorRouteId > 0 && postId > 0, retry: false },
+  );
+  const downloadPostPop = trpc.postPops.downloadUrl.useMutation();
 
   const handleCheckIn = async () => {
     setIsCheckingIn(true);
@@ -127,6 +137,15 @@ const PostCard = memo(function PostCard({
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
   const memoizedOpenOccurrence = useCallback(() => onOpenOccurrence(id), [id, onOpenOccurrence]);
+
+  const openPostPop = async (documentId: number) => {
+    try {
+      const result = await downloadPostPop.mutateAsync({ postId, documentId, supervisorRouteId });
+      window.location.assign(result.url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível abrir o POP");
+    }
+  };
 
   return (
     <Card className={`transition-all ${cardStyles}`}>
@@ -358,6 +377,27 @@ const PostCard = memo(function PostCard({
           <p className="rounded border border-violet-100 bg-violet-50 p-2 text-sm text-violet-950">
             <strong>Ocorrência/relatório:</strong> {occurrenceReport}
           </p>
+        </CardContent>
+      )}
+
+      {showPostPops && postPops.isSuccess && (
+        <CardContent className="pt-0">
+          <section className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3" aria-label={`POPs de ${postName}`}>
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-950"><FileText className="h-4 w-4" /> Procedimentos Operacionais Padrão</h3>
+            {postPops.data.length ? (
+              <ul className="mt-2 space-y-1.5">
+                {postPops.data.map((document) => (
+                  <li key={document.id}>
+                    <Button type="button" variant="ghost" size="sm" className="h-auto max-w-full justify-start gap-2 whitespace-normal px-2 py-1 text-left text-emerald-900" disabled={downloadPostPop.isPending} onClick={() => void openPostPop(document.id)}>
+                      <Download className="h-4 w-4 shrink-0" /> <span className="break-all">{document.originalName}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs text-emerald-900/70">Nenhum POP anexado a este posto.</p>
+            )}
+          </section>
         </CardContent>
       )}
     </Card>

@@ -14,15 +14,15 @@ Na raiz do repositório devem estar `index.html`, `render.yaml`, `package.json`,
 
 No [Render Dashboard](https://dashboard.render.com/), escolha **New → Blueprint**, conecte o repositório e confirme o arquivo `render.yaml`. Preencha os segredos abaixo quando o Render solicitar:
 
-| Variável | Finalidade |
-|---|---|
-| `DATABASE_URL` | URI PostgreSQL copiada do Neon |
-| `DATABASE_SSL` | Use `true` para o Neon |
-| `GESTOR_ACCESS_PASSWORD` | Senha exclusiva do Gestor |
-| `INITIAL_SUPERVISOR_PASSWORD` | Senha inicial de Paulo, Rodrigo e Aparecido |
-| `RAULTRAVAGIN_INITIAL_PASSWORD` | Senha inicial de `raultravagin` |
+| Variável                        | Finalidade                                  |
+| ------------------------------- | ------------------------------------------- |
+| `DATABASE_URL`                  | URI PostgreSQL copiada do Neon              |
+| `DATABASE_SSL`                  | Use `true` para o Neon                      |
+| `GESTOR_ACCESS_PASSWORD`        | Senha exclusiva do Gestor                   |
+| `INITIAL_SUPERVISOR_PASSWORD`   | Senha inicial de Paulo, Rodrigo e Aparecido |
+| `RAULTRAVAGIN_INITIAL_PASSWORD` | Senha inicial de `raultravagin`             |
 
-O Render gera `JWT_SECRET` automaticamente. Na primeira inicialização, o comando `start:render` executa a migração PostgreSQL em `drizzle-pg/`, verifica as quatro rotas, a Base Operacional, os postos e as contas iniciais. Esse seed é idempotente e não duplica os dados em reinicializações.
+O Render gera `JWT_SECRET` automaticamente. A cada inicialização, o comando `start:render` aplica as migrations PostgreSQL de `drizzle-pg/` pelo runner oficial do Drizzle e inicia a aplicação; ele não executa seed. O seed externo permanece disponível como operação manual separada pelo comando `pnpm db:seed:external` e não é executado durante o deploy.
 
 ## 4. Operação online
 

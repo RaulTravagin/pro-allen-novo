@@ -659,6 +659,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 key={checklist.id}
                 id={checklist.id}
                 postId={checklist.postId}
+                supervisorRouteId={supervisorRouteId}
                 postName={post?.name || `Posto #${checklist.postId}`}
                 postAddress={post?.address}
                 status={checklist.status as 'pending' | 'in_progress' | 'visited'}

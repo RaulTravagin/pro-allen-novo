@@ -257,6 +257,21 @@ export const posts = pgTable("posts", {
 export type Post = typeof posts.$inferSelect;
 export type InsertPost = typeof posts.$inferInsert;
 
+export const postPopDocuments = pgTable("post_pop_documents", {
+  id: serial("id").primaryKey(),
+  postId: integer("post_id").notNull(),
+  originalName: varchar("original_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 120 }).notNull(),
+  storageKey: varchar("storage_key", { length: 512 }).notNull().unique(),
+  uploadedBy: integer("uploaded_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  postIdIdx: index("idx_post_pop_documents_post_id").on(table.postId),
+}));
+
+export type PostPopDocument = typeof postPopDocuments.$inferSelect;
+export type InsertPostPopDocument = typeof postPopDocuments.$inferInsert;
+
 export const vehicles = pgTable("vehicles", {
   id: serial("id").primaryKey(),
   plate: varchar("plate", { length: 10 }).notNull(),
@@ -402,7 +417,7 @@ export type InsertPostVisitHistory = typeof postVisitHistory.$inferInsert;
 export const usersRelations = relations(users, ({ many }) => ({ supervisorRoutes: many(supervisorRoutes), supervisorLocations: many(supervisorLocations), postVisitHistory: many(postVisitHistory), schedules: many(supervisorSchedules) }));
 export const supervisorSchedulesRelations = relations(supervisorSchedules, ({ one }) => ({ supervisor: one(users, { fields: [supervisorSchedules.supervisorId], references: [users.id] }) }));
 export const routesRelations = relations(routes, ({ many }) => ({ posts: many(posts), supervisorRoutes: many(supervisorRoutes) }));
-export const postsRelations = relations(posts, ({ one, many }) => ({ route: one(routes, { fields: [posts.routeId], references: [routes.id] }), visitChecklists: many(visitChecklists), postVisitHistory: many(postVisitHistory) }));
+export const postsRelations = relations(posts, ({ one, many }) => ({ route: one(routes, { fields: [posts.routeId], references: [routes.id] }), visitChecklists: many(visitChecklists), postVisitHistory: many(postVisitHistory), popDocuments: many(postPopDocuments) }));
 export const vehiclesRelations = relations(vehicles, ({ many }) => ({ supervisorRoutes: many(supervisorRoutes), fuelLogs: many(fuelLogs) }));
 export const supervisorRoutesRelations = relations(supervisorRoutes, ({ one, many }) => ({ supervisor: one(users, { fields: [supervisorRoutes.supervisorId], references: [users.id] }), route: one(routes, { fields: [supervisorRoutes.routeId], references: [routes.id] }), vehicle: one(vehicles, { fields: [supervisorRoutes.vehicleId], references: [vehicles.id] }), visitChecklists: many(visitChecklists), supervisorLocations: many(supervisorLocations), fuelLogs: many(fuelLogs) }));
 export const fuelLogsRelations = relations(fuelLogs, ({ one }) => ({ vehicle: one(vehicles, { fields: [fuelLogs.vehicleId], references: [vehicles.id] }), supervisorRoute: one(supervisorRoutes, { fields: [fuelLogs.supervisorRouteId], references: [supervisorRoutes.id] }), supervisor: one(users, { fields: [fuelLogs.supervisorId], references: [users.id] }) }));

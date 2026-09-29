@@ -1,10 +1,12 @@
 import type { Express, Request } from "express";
 import { ENV } from "./env";
 import { getAuthenticatedUser } from "./context";
-import { getPersonnelRole, isAuthorizedPersonnelOccurrenceDocument } from "../db";
+import { getPersonnelRole, getPostPopDocumentByStorageKey, isAuthorizedPersonnelOccurrenceDocument, supervisorHasRouteForPost } from "../db";
+import { hasGestorSession } from "../gestor-access";
 
 const PERSONNEL_DOCUMENT_KEY = /^personnel\/occurrences\/([1-9]\d*)\/[A-Za-z0-9._-]+$/;
 const PUBLIC_GENERATED_IMAGE_KEY = /^generated\/[1-9]\d*\.png$/;
+const POST_POP_DOCUMENT_KEY = /^posts\/pops\/([1-9]\d*)\/[A-Za-z0-9._-]+$/;
 
 export function personnelOccurrenceOwnerId(key: string) {
   const match = PERSONNEL_DOCUMENT_KEY.exec(key);
@@ -17,14 +19,26 @@ export function isSafeStorageKey(key: string) {
   if (!key || key.length > 512 || key.includes("..") || key.includes("\\") || key.startsWith("/")) {
     return false;
   }
-  return PERSONNEL_DOCUMENT_KEY.test(key) || PUBLIC_GENERATED_IMAGE_KEY.test(key);
+  return PERSONNEL_DOCUMENT_KEY.test(key) || PUBLIC_GENERATED_IMAGE_KEY.test(key) || POST_POP_DOCUMENT_KEY.test(key);
 }
 
 export async function canReadStorageKey(req: Pick<Request, "headers">, key: string) {
   if (!isSafeStorageKey(key)) return false;
 
-  // Generated images are the only non-personnel namespace currently used by the app.
+  // Generated images are the only storage namespace intentionally kept public.
   if (PUBLIC_GENERATED_IMAGE_KEY.test(key)) return true;
+
+  if (POST_POP_DOCUMENT_KEY.test(key)) {
+    const document = await getPostPopDocumentByStorageKey(key);
+    if (!document) return false;
+    if (await hasGestorSession(req as Request)) return true;
+    const user = await getAuthenticatedUser(req as Request);
+    if (!user) return false;
+    const role = getPersonnelRole(user);
+    if (role === "ADM") return true;
+    if (role !== "SUPERVISOR") return false;
+    return supervisorHasRouteForPost(user.id, document.postId);
+  }
 
   const user = await getAuthenticatedUser(req as Request);
   if (!user) return false;

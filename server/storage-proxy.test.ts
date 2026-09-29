@@ -4,18 +4,28 @@ import type { Express } from "express";
 const proxyMocks = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   isAuthorizedPersonnelOccurrenceDocument: vi.fn(),
+  getPostPopDocumentByStorageKey: vi.fn(),
+  supervisorHasRouteForPost: vi.fn(),
+  hasGestorSession: vi.fn(),
 }));
 
 vi.mock("./_core/context", () => ({ getAuthenticatedUser: proxyMocks.getAuthenticatedUser }));
 vi.mock("./_core/env", () => ({ ENV: { forgeApiUrl: "https://storage-fixture.invalid", forgeApiKey: "fixture-only-key" } }));
+vi.mock("./gestor-access", () => ({ hasGestorSession: proxyMocks.hasGestorSession }));
 vi.mock("./db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./db")>();
-  return { ...actual, isAuthorizedPersonnelOccurrenceDocument: proxyMocks.isAuthorizedPersonnelOccurrenceDocument };
+  return {
+    ...actual,
+    isAuthorizedPersonnelOccurrenceDocument: proxyMocks.isAuthorizedPersonnelOccurrenceDocument,
+    getPostPopDocumentByStorageKey: proxyMocks.getPostPopDocumentByStorageKey,
+    supervisorHasRouteForPost: proxyMocks.supervisorHasRouteForPost,
+  };
 });
 
 import { canReadStorageKey, isSafeStorageKey, personnelOccurrenceOwnerId, registerStorageProxy } from "./_core/storageProxy";
 
 const authorizedKey = "personnel/occurrences/17/fake-medical-file.pdf";
+const postPopKey = "posts/pops/31/4d4f6953-6c93-4aaf-9218-29c7b087c109-Procedimento.pdf";
 const fixtures: Record<string, Record<string, unknown> | null> = {
   rh: { id: 41, role: "user", personnelRole: "RH" },
   supervisor: { id: 17, role: "user", personnelRole: "SUPERVISOR" },
@@ -63,6 +73,9 @@ describe("proxy de arquivos pessoais", () => {
       return fixtures[identity] ?? null;
     });
     proxyMocks.isAuthorizedPersonnelOccurrenceDocument.mockImplementation(async (key: string) => key === authorizedKey);
+    proxyMocks.getPostPopDocumentByStorageKey.mockImplementation(async (key: string) => key === postPopKey ? { id: 77, postId: 31, storageKey: key } : null);
+    proxyMocks.supervisorHasRouteForPost.mockImplementation(async (supervisorId: number, postId: number) => supervisorId === 17 && postId === 31);
+    proxyMocks.hasGestorSession.mockImplementation(async (req: { headers: { cookie?: string } }) => req.headers.cookie?.includes("fixture=gestor") ?? false);
     upstreamFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: "https://signed-fixture.invalid/file" }) });
     vi.stubGlobal("fetch", upstreamFetch);
 
@@ -79,11 +92,13 @@ describe("proxy de arquivos pessoais", () => {
 
   it("aceita apenas namespaces conhecidos e chaves sem traversal", () => {
     expect(isSafeStorageKey(authorizedKey)).toBe(true);
+    expect(isSafeStorageKey(postPopKey)).toBe(true);
     expect(isSafeStorageKey("generated/1730000000000.png")).toBe(true);
     expect(isSafeStorageKey("/personnel/occurrences/17/file.pdf")).toBe(false);
     expect(isSafeStorageKey("personnel/occurrences/17/../file.pdf")).toBe(false);
     expect(isSafeStorageKey("personnel\\occurrences\\17\\file.pdf")).toBe(false);
     expect(isSafeStorageKey("private/unknown/file.pdf")).toBe(false);
+    expect(isSafeStorageKey("posts/pops/31/../other.pdf")).toBe(false);
     expect(personnelOccurrenceOwnerId(authorizedKey)).toBe(17);
     expect(personnelOccurrenceOwnerId("generated/1730000000000.png")).toBeNull();
   });
@@ -131,5 +146,29 @@ describe("proxy de arquivos pessoais", () => {
   it("expõe o predicado de política do proxy sem acesso ao banco real", async () => {
     expect(await canReadStorageKey(fixtureRequest("rh") as never, authorizedKey)).toBe(true);
     expect(await canReadStorageKey(fixtureRequest("finance") as never, authorizedKey)).toBe(false);
+  });
+
+  it("nega POP não registrado e não emite URL para acesso público", async () => {
+    proxyMocks.getPostPopDocumentByStorageKey.mockResolvedValueOnce(null);
+    const response = await invokeProxy("unauthenticated", postPopKey);
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("permite o proxy de POP ao supervisor somente se houver rota para aquele posto", async () => {
+    const allowed = await invokeProxy("supervisor", postPopKey);
+    expect(proxyMocks.supervisorHasRouteForPost).toHaveBeenCalledWith(17, 31);
+    expect(allowed.redirect).toHaveBeenCalledWith(307, "https://signed-fixture.invalid/file");
+    proxyMocks.supervisorHasRouteForPost.mockResolvedValueOnce(false);
+    const denied = await invokeProxy("supervisor", postPopKey);
+    expect(denied.status).toHaveBeenCalledWith(403);
+    expect(upstreamFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("libera POP registrado ao ADM ou Gestor e bloqueia RH/Financeiro", async () => {
+    await expect(canReadStorageKey(fixtureRequest("admin") as never, postPopKey)).resolves.toBe(true);
+    await expect(canReadStorageKey(fixtureRequest("gestor") as never, postPopKey)).resolves.toBe(true);
+    await expect(canReadStorageKey(fixtureRequest("rh") as never, postPopKey)).resolves.toBe(false);
+    await expect(canReadStorageKey(fixtureRequest("finance") as never, postPopKey)).resolves.toBe(false);
   });
 });
