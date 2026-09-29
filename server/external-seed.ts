@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { postVisitHistory, posts, routes, users, visitChecklists } from "../drizzle/schema";
+import { posts, routes, users } from "../drizzle/schema";
 import { getDb, getInsertedId } from "./db";
 import { hashSupervisorPassword } from "./local-supervisor-auth";
 
@@ -38,29 +38,6 @@ async function seed() {
     routeRecords.set(route.name, routeRecord);
   }
 
-  const route2 = routeRecords.get("Rota 2");
-  const route1 = routeRecords.get("Rota 1");
-  if (route1 && route2) {
-    const [route1Galpao] = await db.select().from(posts).where(and(eq(posts.routeId, route1.id), eq(posts.name, "Galpão"))).limit(1);
-    const [route1CocoLeve] = await db.select().from(posts).where(and(eq(posts.routeId, route1.id), eq(posts.name, "Coco Leve"))).limit(1);
-    if (route1Galpao && route1CocoLeve) {
-      await db.update(visitChecklists).set({ postId: route1Galpao.id }).where(eq(visitChecklists.postId, route1CocoLeve.id));
-      await db.update(postVisitHistory).set({ postId: route1Galpao.id }).where(eq(postVisitHistory.postId, route1CocoLeve.id));
-      await db.delete(posts).where(eq(posts.id, route1CocoLeve.id));
-    }
-    const sourcePost = route1Galpao ?? route1CocoLeve;
-    if (sourcePost) {
-      const [route2Galpao] = await db.select().from(posts).where(and(eq(posts.routeId, route2.id), eq(posts.name, "Galpão"))).limit(1);
-      if (route2Galpao && route2Galpao.id !== sourcePost.id) {
-        await db.update(visitChecklists).set({ postId: route2Galpao.id }).where(eq(visitChecklists.postId, sourcePost.id));
-        await db.update(postVisitHistory).set({ postId: route2Galpao.id }).where(eq(postVisitHistory.postId, sourcePost.id));
-        await db.delete(posts).where(eq(posts.id, sourcePost.id));
-      } else if (!route2Galpao) {
-        await db.update(posts).set({ routeId: route2.id, region: "Jundiaí", address: "Av. das Indústrias, 655", order: 10, name: "Galpão" }).where(eq(posts.id, sourcePost.id));
-      }
-    }
-  }
-
   for (const route of routeCatalog) {
     const routeRecord = routeRecords.get(route.name);
     if (!routeRecord) throw new Error(`Rota ${route.name} não encontrada após provisionamento.`);
@@ -69,8 +46,6 @@ async function seed() {
       const [existingPost] = await db.select().from(posts).where(and(eq(posts.routeId, routeRecord.id), eq(posts.name, postName))).limit(1);
       if (!existingPost) {
         await db.insert(posts).values({ routeId: routeRecord.id, name: postName, region, address: address ?? "Endereço pendente de cadastro", order: index + 1 });
-      } else if (postName === "Galpão" && route.name === "Rota 2") {
-        await db.update(posts).set({ region: "Jundiaí", address: "Av. das Indústrias, 655", order: index + 1 }).where(eq(posts.id, existingPost.id));
       }
     }
   }
@@ -112,9 +87,9 @@ async function seed() {
       console.warn(`[External seed] ${account.passwordEnv} não configurada; ${account.username} não será criado neste deploy.`);
       continue;
     }
-    const passwordHash = await hashSupervisorPassword(password);
     const [existingUser] = await db.select().from(users).where(eq(users.username, account.username)).limit(1);
     if (!existingUser) {
+      const passwordHash = await hashSupervisorPassword(password);
       await db.insert(users).values({
         openId: `local:${account.username}`,
         username: account.username,
@@ -127,14 +102,7 @@ async function seed() {
         role: account.personnelRole === "ADM" ? "admin" : "user",
       });
     } else {
-      await db.update(users).set({
-        name: account.name,
-        ...(existingUser.mustChangePassword ? { passwordHash } : {}),
-        personnelRole: account.personnelRole,
-        role: account.personnelRole === "ADM" ? "admin" : "user",
-        isOperational: true,
-        updatedAt: new Date(),
-      }).where(eq(users.id, existingUser.id));
+      console.log(`[External seed] ${account.username} já existe; dados e credenciais preservados.`);
     }
   }
   console.log("[External seed] Rotas, postos, supervisores e portais administrativos verificados.");

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   dashboardQuery: vi.fn(),
   dailyReportQuery: vi.fn(),
+  personnelOverviewQuery: vi.fn(),
   scheduleQuery: vi.fn(),
   postsManagementQuery: vi.fn(),
   sessionQuery: { data: { authenticated: false }, isLoading: false, isFetchedAfterMount: false, isSuccess: false },
@@ -19,7 +20,7 @@ vi.mock("@/lib/trpc", () => ({
       },
       logout: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, schedule: { useQuery: mocks.scheduleQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, updatePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, deletePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
+    gestor: { dashboard: { useQuery: mocks.dashboardQuery }, dailyReport: { useQuery: mocks.dailyReportQuery }, personnelOverview: { useQuery: mocks.personnelOverviewQuery }, schedule: { useQuery: mocks.scheduleQuery }, updateSchedule: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, postsManagement: { useQuery: mocks.postsManagementQuery }, createPost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, updatePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) }, deletePost: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) } },
     useUtils: () => ({ gestor: { schedule: { invalidate: vi.fn() }, postsManagement: { invalidate: vi.fn() }, dashboard: { invalidate: vi.fn() } } }),
   },
 }));
@@ -36,6 +37,8 @@ describe("GestorDashboard com sessão em validação", () => {
     mocks.dashboardQuery.mockReturnValue({ data: undefined, isLoading: false });
     mocks.dailyReportQuery.mockReset();
     mocks.dailyReportQuery.mockReturnValue({ data: undefined, isLoading: false, isFetching: false, refetch: vi.fn() });
+    mocks.personnelOverviewQuery.mockReset();
+    mocks.personnelOverviewQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mocks.scheduleQuery.mockReset();
     mocks.scheduleQuery.mockReturnValue({ data: undefined, isLoading: false });
     mocks.postsManagementQuery.mockReset();

@@ -53,4 +53,14 @@ describe("consulta agregada dos indicadores do Gestor", () => {
     expect(query).toContain('"visitChecklists"."occurrenceReport"');
     expect(query).not.toContain("checklistItems");
   });
+
+  it("mantém o KPI de visitas restrito ao status concluído", () => {
+    const query = db.select({ total: sql`count(*)` })
+      .from(visitChecklists)
+      .innerJoin(supervisorRoutes, eq(supervisorRoutes.id, visitChecklists.supervisorRouteId))
+      .where(and(routeFilter, eq(visitChecklists.status, "visited")))
+      .toSQL().sql;
+    expect(query).toContain('"visitChecklists"."status" =');
+    expect(query).toContain('"supervisorRoutes"."shiftStartedAt"');
+  });
 });

@@ -130,13 +130,13 @@ export default function Login() {
               <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs leading-5 text-yellow-900">
                 Portal escolhido: <strong>{roleLabel(portal)}</strong>. Se o perfil do usuário for diferente, o sistema fará o redirecionamento correto automaticamente.
               </div>
-              <div className="space-y-1.5"><Label htmlFor="initial-username" className="text-zinc-800">Usuário</Label><Input id="initial-username" value={username} onChange={event => setUsername(event.target.value)} placeholder="ex.: rh.proallen" autoComplete="username" disabled={localLogin.isPending} required className="border-zinc-300 bg-white focus-visible:ring-yellow-400" /></div>
+              <div className="space-y-1.5"><Label htmlFor="initial-username" className="text-zinc-800">Usuário</Label><Input id="initial-username" value={username} onChange={event => setUsername(event.target.value)} placeholder="ex.: seu.usuario" autoComplete="username" disabled={localLogin.isPending} required className="border-zinc-300 bg-white focus-visible:ring-yellow-400" /></div>
               <div className="space-y-1.5"><Label htmlFor="initial-password" className="text-zinc-800">Senha</Label><Input id="initial-password" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" disabled={localLogin.isPending} required className="border-zinc-300 bg-white focus-visible:ring-yellow-400" /></div>
               <Button type="submit" className="h-11 w-full bg-[#f6c915] font-bold text-black hover:bg-[#e5b900]" disabled={localLogin.isPending || !username || !password}>{localLogin.isPending ? "Verificando acesso..." : `Entrar no ${portal === "SUPERVISOR" ? "portal do Supervisor" : portal === "RH" ? "portal do RH" : portal === "FINANCEIRO" ? "portal do Financeiro" : "portal do Admin"}`}</Button>
             </form>
 
             <div className="rounded-xl border border-zinc-200 bg-white p-3 text-xs leading-5 text-zinc-600">
-              <strong className="text-zinc-900">Acessos iniciais:</strong> os usuários <code>rh.proallen</code>, <code>financeiro.proallen</code> e <code>admin.proallen</code> são provisionados pelo banco quando as respectivas senhas iniciais estão configuradas no Render. Por segurança, as senhas não ficam expostas nesta tela.
+              <strong className="text-zinc-900">Acesso controlado:</strong> os usuários são provisionados pela administração do sistema. Por segurança, logins privilegiados, senhas e outros dados de acesso não ficam expostos nesta tela.
             </div>
           </CardContent>
         </Card>

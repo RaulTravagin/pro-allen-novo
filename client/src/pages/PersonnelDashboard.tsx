@@ -34,6 +34,9 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { downloadStyledWorkbook } from "@/lib/xlsxExport";
+import { personnelEmployeeEmptyState } from "@/lib/personnelEmptyState";
+import { formatDateInputValue } from "@/lib/reportDateRange";
 
 type EntryType =
   | "FT"
@@ -464,20 +467,45 @@ function Workspace({
   isReviewer: boolean;
   isFinance: boolean;
 }) {
+  const employees = (data?.employees ?? []).filter((employee: any) => employee.isActive);
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       {(isSupervisor || role === "ADM") && (
-        <EntryForm
-          employees={(data?.employees ?? []).filter((employee: any) => employee.isActive)}
-          entryType={entryType}
-          setEntryType={setEntryType}
-          onRefresh={onRefresh}
-        />
+        employees.length > 0 ? (
+          <EntryForm
+            employees={employees}
+            entryType={entryType}
+            setEntryType={setEntryType}
+            onRefresh={onRefresh}
+          />
+        ) : (
+          <PersonnelEmployeesEmptyPanel />
+        )
       )}
       {isReviewer && <ReviewQueue data={data} onRefresh={onRefresh} />}
       {isFinance && <FinanceQueue data={data} onRefresh={onRefresh} />}
       {isSupervisor && <RecentEntries data={data} />}
     </div>
+  );
+}
+
+function PersonnelEmployeesEmptyPanel() {
+  const emptyState = personnelEmployeeEmptyState(0);
+  return (
+    <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg text-amber-950">
+          <UsersRound className="h-5 w-5 text-amber-700" />
+          Lançamentos aguardando cadastro
+        </CardTitle>
+        <CardDescription className="text-amber-900/80">
+          O sistema está em testes e não cria funcionários automaticamente.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {emptyState && <EmptyState title={emptyState.title} description={emptyState.description} />}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -493,7 +521,6 @@ function EntryForm({
   onRefresh: () => Promise<void>;
 }) {
   const [employeeId, setEmployeeId] = useState("");
-  const [legacyEmployeeName, setLegacyEmployeeName] = useState("");
   const [date, setDate] = useState(todayInputValue);
   const [amount, setAmount] = useState("");
   const [hours, setHours] = useState("");
@@ -503,7 +530,6 @@ function EntryForm({
   const createFt = trpc.personnel.createFt.useMutation();
   const createOccurrence = trpc.personnel.createOccurrence.useMutation();
   const createExtra = trpc.personnel.createExtra.useMutation();
-  const ensureLegacyEmployee = trpc.personnel.ensureLegacyEmployee.useMutation();
   const isOccurrence =
     entryType === "FALTA_JUSTIFICADA" ||
     entryType === "FALTA_INJUSTIFICADA" ||
@@ -512,9 +538,7 @@ function EntryForm({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!employeeId && employees.length > 0) return toast.error("Selecione um funcionário");
-    if (!employeeId && employees.length === 0 && !legacyEmployeeName.trim()) {
-      return toast.error("Informe o nome do colaborador para o cadastro temporário");
-    }
+    if (employees.length === 0) return toast.error("Nenhum funcionário cadastrado. O RH precisa cadastrar a base antes de lançar registros.");
     if (!date) return toast.error("Informe a data da ocorrência");
     if (entryType === "ATESTADO" && !file)
       return toast.error("Anexe o atestado médico");
@@ -530,11 +554,7 @@ function EntryForm({
     setSubmitting(true);
     try {
       let selectedEmployeeId = employeeId;
-      if (!selectedEmployeeId) {
-        const legacyEmployee = await ensureLegacyEmployee.mutateAsync({ name: legacyEmployeeName.trim() });
-        if (!legacyEmployee?.id) throw new Error("Não foi possível criar o cadastro temporário");
-        selectedEmployeeId = String(legacyEmployee.id);
-      }
+      if (!selectedEmployeeId) throw new Error("Selecione um funcionário cadastrado");
       const base = {
         employeeId: Number(selectedEmployeeId),
         date: new Date(`${date}T12:00:00`),
@@ -564,7 +584,6 @@ function EntryForm({
       setAmount("");
       setHours("");
       setReason("");
-      setLegacyEmployeeName("");
       setFile(null);
       await onRefresh();
     } catch (error) {
@@ -640,18 +659,10 @@ function EntryForm({
                     </option>
                   ))}
                 </select>
-              ) : (
-                <>
-                  <Input
-                    id="personnel-employee"
-                    value={legacyEmployeeName}
-                    onChange={event => setLegacyEmployeeName(event.target.value)}
-                    placeholder="Digite o nome enquanto o RH cadastra a base"
-                    required
-                  />
-                  <p className="mt-1 text-xs text-amber-700">A lista nova ainda está vazia. Este nome ficará marcado como cadastro manual temporário.</p>
-                </>
-              )}
+              ) : (() => {
+                const emptyState = personnelEmployeeEmptyState(employees.length);
+                return emptyState ? <div className="space-y-2"><EmptyState title={emptyState.title} description={emptyState.description} /><p className="text-xs text-amber-700">Nenhum dado foi criado automaticamente durante os testes.</p></div> : null;
+              })()}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="personnel-date">Data de referência</Label>
@@ -761,7 +772,7 @@ function EntryForm({
             </p>
             <Button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || employees.length === 0}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting ? (
@@ -974,35 +985,38 @@ function FinanceQueue({
       );
     }
   };
-  const exportCsv = () => {
+  const exportExcel = async () => {
     const allRows = [
       ...(data?.fts ?? []).map((row: any) => ({ ...row, kind: "FT" })),
       ...(data?.extras ?? []).map((row: any) => ({ ...row, kind: "EXTRA" })),
     ];
-    const csv = [
-      ["Funcionário", "Tipo", "Data de referência", "Pagamento previsto", "Valor", "Chave PIX", "Status"],
-      ...allRows.map((row: any) => [
+    await downloadStyledWorkbook(`relatorio-financeiro-${formatDateInputValue(new Date())}.xlsx`, [{
+      name: "Pagamentos",
+      title: "Pro Allen — Relatório financeiro",
+      subtitle: `Gerado em ${new Date().toLocaleString("pt-BR")} · Total de registros: ${allRows.length}`,
+      headers: ["Funcionário", "Tipo", "Data de referência", "Pagamento previsto", "Valor", "Chave PIX", "Status"],
+      rows: allRows.map((row: any) => [
         row.employeeName,
         row.kind,
-        formatDate(row.date),
-        row.kind === "FT" ? formatDate(row.paymentDate) : "—",
-        Number(row.amount).toFixed(2).replace(".", ","),
+        row.date ? new Date(row.date) : null,
+        row.kind === "FT" && row.paymentDate ? new Date(row.paymentDate) : null,
+        Number(row.amount),
         row.employeePixKey || "",
         statusLabel(row.status),
       ]),
-    ]
-      .map(line =>
-        line.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(";")
-      )
-      .join("\n");
-    const url = URL.createObjectURL(
-      new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" })
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `relatorio-financeiro-${new Date().toISOString().slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+      widths: [30, 16, 18, 20, 16, 34, 16],
+      formats: { 2: "dd/mm/yyyy", 3: "dd/mm/yyyy", 4: "R$ #,##0.00" },
+      tabColor: "10B981",
+    }, {
+      name: "Resumo",
+      title: "Pro Allen — Resumo financeiro",
+      subtitle: "Valores calculados a partir dos mesmos lançamentos exibidos na fila.",
+      headers: ["Indicador", "Valor"],
+      rows: [["Total de registros", allRows.length], ["Total aprovado para pagar", total]],
+      widths: [34, 22],
+      formats: { 1: "R$ #,##0.00" },
+      tabColor: "F6C915",
+    }]);
   };
   return (
     <Card className="border-slate-200 shadow-sm xl:col-span-2">
@@ -1020,9 +1034,9 @@ function FinanceQueue({
           <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-black text-emerald-700">
             {formatCurrency(total)}
           </span>
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+          <Button variant="outline" size="sm" onClick={() => void exportExcel()}>
             <Download className="mr-1.5 h-4 w-4" />
-            CSV
+            Excel (.xlsx)
           </Button>
         </div>
       </CardHeader>
@@ -1501,7 +1515,7 @@ function UsersSection({ onRefresh, canManageRoles }: { onRefresh: () => Promise<
             <CardDescription>O perfil ADM mantém acesso global. Senhas nunca são exibidas nesta lista.</CardDescription>
           </CardHeader>
           <CardContent>
-            {usersQuery.isLoading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Carregando usuários...</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th className="px-3 py-3">Usuário</th><th className="px-3 py-3">Login</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Perfil</th></tr></thead><tbody className="divide-y divide-slate-100">{(usersQuery.data ?? []).map((item: any) => <tr key={item.id}><td className="px-3 py-3 font-semibold">{item.name || "Sem nome"}</td><td className="px-3 py-3 text-slate-500">{item.username || item.email || "—"}</td><td className="px-3 py-3"><span className={item.isOperational ? "text-emerald-700" : "text-slate-400"}>{item.isOperational ? "Ativo" : "Inativo"}</span>{item.mustChangePassword && <span className="ml-2 text-xs text-amber-700">Senha provisória</span>}</td><td className="px-3 py-3"><select value={item.role === "admin" ? "ADM" : item.personnelRole || "SUPERVISOR"} onChange={event => void saveRole(item.id, event.target.value as PersonnelRole)} disabled={!canManageRoles || setRole.isPending} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"><option value="SUPERVISOR">Supervisor</option><option value="RH">RH</option><option value="FINANCEIRO">Financeiro</option><option value="ADM">ADM</option></select></td></tr>)}</tbody></table></div>}
+            {usersQuery.isLoading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Carregando usuários...</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th className="px-3 py-3">Usuário</th><th className="px-3 py-3">Login</th><th className="px-3 py-3">Situação</th><th className="px-3 py-3">Perfil</th></tr></thead><tbody className="divide-y divide-slate-100">{(usersQuery.data ?? []).map((item: any) => <tr key={item.id}><td className="px-3 py-3 font-semibold">{item.name || "Sem nome"}</td><td className="px-3 py-3 text-slate-500">{item.username || "—"}</td><td className="px-3 py-3"><span className={item.isOperational ? "text-emerald-700" : "text-slate-400"}>{item.isOperational ? "Ativo" : "Inativo"}</span>{item.mustChangePassword && <span className="ml-2 text-xs text-amber-700">Senha provisória</span>}</td><td className="px-3 py-3"><select value={item.role === "admin" ? "ADM" : item.personnelRole || "SUPERVISOR"} onChange={event => void saveRole(item.id, event.target.value as PersonnelRole)} disabled={!canManageRoles || setRole.isPending} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"><option value="SUPERVISOR">Supervisor</option><option value="RH">RH</option><option value="FINANCEIRO">Financeiro</option><option value="ADM">ADM</option></select></td></tr>)}</tbody></table></div>}
           </CardContent>
         </Card>
       </div>

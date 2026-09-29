@@ -116,6 +116,9 @@ vi.mock("@/lib/trpc", () => ({
           },
         }),
       },
+      personnelOverview: {
+        useQuery: () => ({ data: undefined, isLoading: false, error: null }),
+      },
       schedule: {
         useQuery: () => ({
           isLoading: false,

@@ -20,6 +20,27 @@ import {
   verifySupervisorPassword,
 } from "./local-supervisor-auth";
 import { buildDailyOperationalReport } from "./daily-operational-report";
+import type { User } from "../drizzle/schema";
+
+type PublicUser = Pick<User, "id" | "name" | "username" | "role" | "isOperational" | "defaultShift"> & {
+  personnelRole: User["personnelRole"] | "SUPERVISOR" | "ADM";
+};
+
+export function toPublicUser(user: User): PublicUser;
+export function toPublicUser(user: null | undefined): null;
+export function toPublicUser(user: User | null | undefined): PublicUser | null;
+export function toPublicUser(user: User | null | undefined): PublicUser | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    role: user.role,
+    personnelRole: user.personnelRole ?? (user.role === "admin" ? "ADM" : "SUPERVISOR"),
+    isOperational: user.isOperational,
+    defaultShift: user.defaultShift,
+  };
+}
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -72,7 +93,7 @@ async function createVisitRecord(
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => toPublicUser(opts.ctx.user)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -141,11 +162,11 @@ export const appRouter = router({
       }),
 
     ensureLegacyEmployee: protectedProcedure
-      .input(z.object({ name: z.string().trim().min(2).max(255) }))
+      .input(z.object({ name: z.string().trim().min(2, "Informe o nome do funcionário").max(255) }))
       .mutation(async ({ ctx, input }) => {
-        const role = db.getPersonnelRole(ctx.user);
-        if (role !== "SUPERVISOR" && role !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não pode usar o cadastro temporário" });
-        return db.createLegacyPersonnelEmployee(input.name);
+        void ctx;
+        void input;
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O cadastro temporário foi desativado. O RH deve cadastrar o funcionário na aba Funcionários antes de lançar registros." });
       }),
 
     users: protectedProcedure.query(async ({ ctx }) => {
@@ -166,12 +187,13 @@ export const appRouter = router({
         if (requesterRole !== "RH" && requesterRole !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode criar usuários" });
         if (requesterRole === "RH" && input.personnelRole === "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "O RH não pode criar usuários ADM" });
         try {
-          return db.createPersonnelUser({
+          const created = await db.createPersonnelUser({
             name: input.name,
             username: input.username,
             passwordHash: await hashSupervisorPassword(input.password),
             personnelRole: input.personnelRole,
           });
+          return toPublicUser(created);
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Não foi possível criar o usuário" });
         }
@@ -182,7 +204,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         if (db.getPersonnelRole(ctx.user) !== "ADM") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o ADM pode gerenciar perfis" });
         if (input.userId === ctx.user.id && input.personnelRole !== "ADM") throw new TRPCError({ code: "BAD_REQUEST", message: "O ADM não pode remover o próprio acesso administrativo" });
-        return db.updatePersonnelUserRole(input.userId, input.personnelRole);
+        return toPublicUser(await db.updatePersonnelUserRole(input.userId, input.personnelRole));
       }),
 
     createFt: protectedProcedure
@@ -299,13 +321,7 @@ export const appRouter = router({
         });
         return {
           success: true,
-          user: {
-            id: user.id,
-            name: user.name,
-            username: user.username,
-            role: user.role,
-            personnelRole: user.personnelRole ?? (user.role === "admin" ? "ADM" : "SUPERVISOR"),
-          },
+          user: toPublicUser(user),
         };
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -349,6 +365,7 @@ export const appRouter = router({
     dailyReport: gestorProcedure.input(z.object({ reportDate: z.date().optional(), shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
       return buildDailyOperationalReport(await db.getGestorOperationalSnapshot(input?.reportDate, { includeHistoricalUsers: true, shiftType: input?.shiftType ?? null }));
     }),
+    personnelOverview: gestorProcedure.query(async () => db.getGestorPersonnelOverview()),
     operationalReport: gestorOrAdminProcedure.input(z.object({
       startDate: z.date(),
       endDate: z.date(),

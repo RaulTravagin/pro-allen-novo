@@ -213,7 +213,7 @@ function DashboardLayoutContent({
                       Perfil autenticado
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {user?.email || "-"}
+                      {user?.username || "-"}
                     </p>
                   </div>
                 </button>

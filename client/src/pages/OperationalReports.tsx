@@ -5,9 +5,11 @@ import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, Car, ClipboardCheck, Download, FileDown, FileText, Fuel, Gauge, Loader2, Printer, Route, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { downloadStyledWorkbook } from "@/lib/xlsxExport";
+import { formatDateInputValue } from "@/lib/reportDateRange";
 
 function toDateInput(value: Date) {
-  return value.toISOString().slice(0, 10);
+  return formatDateInputValue(value);
 }
 
 function formatCurrency(value: unknown) {
@@ -83,17 +85,101 @@ export function buildOperationalReportCsv(report: any) {
     ["Data", "Hora", "Viatura", "Supervisor", "KM no Abastecimento", "Combustível", "Litros", "Valor do Abastecimento (R$)", "Média de Consumo (Km/L)", "Custo por KM (R$)"],
     ...(report.fuelLogs ?? []).map((log: any) => [formatDate(log.createdAt), formatTime(log.createdAt), `${log.vehiclePlate ?? "—"}${log.vehicleModel ? ` · ${log.vehicleModel}` : ""}`, log.supervisorName ?? "—", formatNumber(log.odometerKm, " km"), formatFuelType(log.fuelType), log.liters, log.amount, log.consumptionKmPerLiter ?? "—", log.costPerKm ?? "—"]),
   ];
-  return rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
+  return rows.map((row) => row.map(csvCell).join(";")).join("\n");
 }
 
-function downloadCsv(report: any) {
-  const content = buildOperationalReportCsv(report);
-  const url = URL.createObjectURL(new Blob([`\ufeff${content}`], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `pro-allen-relatorio-operacional-${toDateInput(new Date(report.filters.startDate))}-${toDateInput(new Date(report.filters.endDate))}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+function asNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function csvCell(value: unknown) {
+  const text = String(value ?? "");
+  const safeText = typeof value === "string" && /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
+
+async function downloadXlsx(report: any) {
+  const context = reportContext(report);
+  const routesById = new Map((report.routes ?? []).map((route: any) => [route.id, route]));
+  const visits = [...(report.visits ?? [])].sort((first: any, second: any) => new Date(first.arrivalTime ?? first.occurrenceSubmittedAt ?? 0).getTime() - new Date(second.arrivalTime ?? second.occurrenceSubmittedAt ?? 0).getTime());
+  const visitHeaders = ["Data", "Hora", "Supervisor", "Rota", "Turno", "Posto / Condomínio", "Status da Visita", "Início da Visita", "Fim da Visita", "Envio da Ocorrência", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrência / relatório", "Justificativa", "GPS de Chegada", "GPS de Saída"];
+  const visitRows = visits.map((visit: any) => {
+    const route = routesById.get(visit.supervisorRouteId) as any;
+    const reference = visit.arrivalTime ?? visit.occurrenceSubmittedAt;
+    return [
+      reference ? new Date(reference) : null,
+      reference ? new Date(reference) : null,
+      visit.supervisorName ?? "—",
+      route?.routeName ?? "—",
+      shiftLabel(route?.shiftType),
+      visit.postName ?? "—",
+      visitStatusLabel(visit.status),
+      visit.arrivalTime ? new Date(visit.arrivalTime) : null,
+      visit.departureTime ? new Date(visit.departureTime) : null,
+      visit.occurrenceSubmittedAt ? new Date(visit.occurrenceSubmittedAt) : null,
+      asNumber(route?.kmInitial),
+      asNumber(route?.kmFinal),
+      asNumber(route?.kmCovered),
+      visit.occurrenceReport ?? "Registro pendente",
+      visit.coverageReason ?? "—",
+      formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude),
+      formatCoordinates(visit.departureLatitude, visit.departureLongitude),
+    ];
+  });
+  const fuelHeaders = ["Data", "Hora", "Viatura", "Supervisor", "KM no Abastecimento", "Combustível", "Litros", "Valor do Abastecimento (R$)", "Média de Consumo (Km/L)", "Custo por KM (R$)"];
+  const fuelRows = (report.fuelLogs ?? []).map((log: any) => [
+    log.createdAt ? new Date(log.createdAt) : null,
+    log.createdAt ? new Date(log.createdAt) : null,
+    `${log.vehiclePlate ?? "—"}${log.vehicleModel ? ` · ${log.vehicleModel}` : ""}`,
+    log.supervisorName ?? "—",
+    asNumber(log.odometerKm),
+    formatFuelType(log.fuelType),
+    asNumber(log.liters),
+    asNumber(log.amount),
+    asNumber(log.consumptionKmPerLiter),
+    asNumber(log.costPerKm),
+  ]);
+  const fileName = `pro-allen-relatorio-operacional-${toDateInput(new Date(report.filters.startDate))}-${toDateInput(new Date(report.filters.endDate))}.xlsx`;
+  await downloadStyledWorkbook(fileName, [
+    {
+      name: "Resumo",
+      title: "Pro Allen — Relatório de Gestão Operacional",
+      subtitle: `Filtro: ${context.shift} · Supervisor: ${context.supervisor} · Viatura: ${context.vehicle} · Período: ${context.period}`,
+      headers: ["Indicador", "Valor"],
+      rows: [
+        ["Postos previstos", asNumber(report.summary?.plannedPosts) ?? 0],
+        ["Visitas concluídas", asNumber(report.summary?.completedVisits ?? report.summary?.inspections) ?? 0],
+        ["KM total percorrido", asNumber(report.summary?.totalKm) ?? 0],
+        ["Ocorrências enviadas", asNumber(report.summary?.reportedVisits) ?? 0],
+        ["Relatos pendentes", asNumber(report.summary?.pendingReports) ?? 0],
+        ["Total de abastecimentos", (report.fuelLogs ?? []).length],
+      ],
+      widths: [32, 22],
+      formats: { 1: "0.00" },
+      tabColor: "F6C915",
+    },
+    {
+      name: "Visitas",
+      title: "Pro Allen — Visitas e ocorrências",
+      subtitle: `Período operacional: ${context.period} · Os filtros da tabela podem ser usados sem alterar os dados exportados.`,
+      headers: visitHeaders,
+      rows: visitRows,
+      widths: [14, 10, 25, 18, 22, 26, 18, 19, 19, 19, 14, 14, 14, 48, 34, 22, 22],
+      formats: { 0: "dd/mm/yyyy", 1: "hh:mm", 7: "dd/mm/yyyy hh:mm", 8: "dd/mm/yyyy hh:mm", 9: "dd/mm/yyyy hh:mm", 10: '0.00" km"', 11: '0.00" km"', 12: '0.00" km"' },
+      tabColor: "1D4ED8",
+    },
+    {
+      name: "Abastecimentos",
+      title: "Pro Allen — Frota e abastecimentos",
+      subtitle: `Período operacional: ${context.period} · Valores e indicadores mantidos conforme os registros do sistema.`,
+      headers: fuelHeaders,
+      rows: fuelRows,
+      widths: [14, 10, 28, 25, 18, 18, 12, 22, 22, 18],
+      formats: { 0: "dd/mm/yyyy", 1: "hh:mm", 4: '0.00" km"', 6: '0.00" L"', 7: 'R$ #,##0.00', 8: '0.00" km/L"', 9: 'R$ #,##0.00' },
+      tabColor: "10B981",
+    },
+  ]);
 }
 
 function Metric({ label, value, icon: Icon, alert = false }: { label: string; value: string; icon: typeof Gauge; alert?: boolean }) {
@@ -255,7 +341,7 @@ export default function OperationalReports() {
         .print-footer { position: static; display: flex; justify-content: space-between; margin-top: auto; padding-top: 4mm; border-top: .22mm solid #cbd5e1; color: #64748b; font-size: 7pt; break-inside: avoid; page-break-inside: avoid; }
       }
     `}</style>
-    <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Rotas, ocorrências, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && downloadCsv(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar CSV / Excel</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
+    <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Rotas, ocorrências, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && void downloadXlsx(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar Excel (.xlsx)</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
     <div className="screen-report mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6">
       <section className="print-avoid rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><p className="text-sm font-semibold text-amber-300">Pro Allen — Relatório de Gestão Operacional</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Visão executiva da operação de campo</h2><p className="mt-3 text-sm text-slate-300">Parâmetros aplicados: Filtro: {shiftLabel(shiftType)} · Supervisor: {data ? reportContext(data).supervisor : "Carregando"} · Viatura: {data ? reportContext(data).vehicle : "Carregando"} · Período: {data ? reportContext(data).period : "Carregando"} · Emissão: {new Date().toLocaleString("pt-BR")}</p></section>
       <section className="no-print print-avoid rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"><label className="grid gap-1 text-xs font-semibold text-slate-600">Início<input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Fim<input type="date" value={endDate} min={startDate} max={toDateInput(new Date())} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select value={shiftType} onChange={(event) => setShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os turnos</option><option value="day">Diurno · 06h às 18h</option><option value="night">Noturno · 18h às 06h</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Supervisor<select value={supervisorId} onChange={(event) => setSupervisorId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os supervisores</option>{options.supervisors.map((supervisor: any) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name ?? supervisor.username}</option>)}</select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Placa / viatura<select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todas as viaturas</option>{options.vehicles.map((vehicle: any) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}</select></label></div><p className="mt-3 text-xs text-slate-500">O período inicial considera os últimos 30 dias. Cada data operacional vai de 06h até 06h do dia seguinte, mantendo o plantão noturno unido após a meia-noite.</p></section>

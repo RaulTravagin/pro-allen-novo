@@ -9,20 +9,18 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { PostPriorityCard } from "@/components/PostPriorityCard";
 import { AdminHeader } from "@/components/AdminHeader";
+import { createRelativeDateRange, formatDateInputValue, parseDateInputValue } from "@/lib/reportDateRange";
+import { countReportedOccurrences } from "@/lib/reportMetrics";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
-  const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), end: new Date() });
+  const [dateRange, setDateRange] = useState(() => createRelativeDateRange(7));
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
 
   // Queries
   const { data: routes, isLoading: routesLoading } = trpc.routes.list.useQuery();
   const { data: reports, isLoading: reportsLoading } = trpc.reports.occurrencesByDateRange.useQuery({
-    startDate: dateRange.start,
-    endDate: dateRange.end,
-  });
-  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.occurrenceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -89,7 +87,7 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{conformanceLoading ? '...' : conformance?.total ? `${conformance.reported}/${conformance.total}` : '—'}</div>
+              <div className="text-3xl font-bold text-gray-900">{reportsLoading ? '...' : reports?.length ? `${countReportedOccurrences(reports)}/${reports.length}` : '—'}</div>
               <p className="text-xs text-gray-600 mt-2">Visitas com ocorrência enviada no período</p>
             </CardContent>
           </Card>
@@ -239,8 +237,8 @@ export default function AdminDashboard() {
                       <input
                         id="admin-start-date"
                         type="date"
-                        value={dateRange.start.toISOString().split('T')[0]}
-                        onChange={(e) => setDateRange({ ...dateRange, start: new Date(e.target.value) })}
+                        value={formatDateInputValue(dateRange.start)}
+                        onChange={(e) => setDateRange({ ...dateRange, start: parseDateInputValue(e.target.value) })}
                         className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg"
                       />
                     </div>
@@ -249,8 +247,8 @@ export default function AdminDashboard() {
                       <input
                         id="admin-end-date"
                         type="date"
-                        value={dateRange.end.toISOString().split('T')[0]}
-                        onChange={(e) => setDateRange({ ...dateRange, end: new Date(e.target.value) })}
+                        value={formatDateInputValue(dateRange.end)}
+                        onChange={(e) => setDateRange({ ...dateRange, end: parseDateInputValue(e.target.value) })}
                         className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg"
                       />
                     </div>

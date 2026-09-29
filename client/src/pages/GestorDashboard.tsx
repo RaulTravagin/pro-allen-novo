@@ -8,6 +8,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { supervisorErrorMessage } from "@/lib/networkFeedback";
 import GestorPostsManagementPanel from "@/components/GestorPostsManagementPanel";
+import { downloadStyledWorkbook } from "@/lib/xlsxExport";
+import { formatDateInputValue } from "@/lib/reportDateRange";
 
 const REFRESH_INTERVAL = 15_000;
 const STATIC_QUERY_STALE_TIME = 5 * 60_000;
@@ -92,41 +94,49 @@ function alertAppearance(severity: string) {
   return severity === "critical" ? "border-rose-200 bg-rose-50 text-rose-950" : severity === "warning" ? "border-amber-200 bg-amber-50 text-amber-950" : "border-blue-200 bg-blue-50 text-blue-950";
 }
 
-function downloadDailyReportCsv(report: any) {
+async function downloadDailyReportXlsx(report: any) {
   const shift = report.shiftType === "day" ? "Plantão Diurno · 06h às 18h" : report.shiftType === "night" ? "Plantão Noturno · 18h às 06h" : "Todos os turnos";
   const summary = report.summary ?? {};
-  const rows: Array<Array<string | number>> = [
-    ["Pro Allen — Relatório Operacional Diário"],
-    ["Parâmetros aplicados", `Filtro: ${shift} | Supervisor: Todos os supervisores | Período: ${new Date(report.reportDate).toLocaleDateString("pt-BR")}`],
-    [],
-    ["Resumo executivo"],
-    ["Postos previstos", (report.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)],
-    ["Visitas concluídas", summary.completedVisits ?? 0],
-    ["KM total percorrido", summary.kmCovered ?? 0],
-    ["Ocorrências enviadas", summary.reportedOccurrences ?? 0],
-    [],
-    ["Visitas em ordem cronológica"],
-    ["Data", "Hora", "Supervisor", "Rota / Turno", "Posto / Condomínio", "Status da Visita", "Início da Visita", "Fim da Visita", "Duração (min)", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrência / relatório", "Justificativa adicional", "GPS de Chegada", "GPS de Saída", "Alertas"],
-  ];
+  const rows: Array<Array<unknown>> = [];
   for (const supervisor of report.supervisors ?? []) {
     const visits = supervisor.route?.visits?.length ? supervisor.route.visits : [null];
     for (const visit of visits) {
       const referenceTime = visit?.arrivalTime ?? visit?.occurrenceSubmittedAt ?? supervisor.route?.startedAt ?? null;
       rows.push([
-        referenceTime ? new Date(referenceTime).toLocaleDateString("pt-BR") : "—", referenceTime ? new Date(referenceTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", supervisor.supervisorName, `${supervisor.route?.name ?? "Sem rota"} · ${supervisor.route?.shiftType === "day" ? "Diurno" : supervisor.route?.shiftType === "night" ? "Noturno" : "Turno não informado"}`, visit?.postName ?? "—", visit ? visitStatus(visit.status).label : "—",
-        visit?.arrivalTime ? new Date(visit.arrivalTime).toLocaleString("pt-BR") : "—", visit?.departureTime ? new Date(visit.departureTime).toLocaleString("pt-BR") : "—", visit?.durationMinutes ?? "—",
-        supervisor.route?.kmInitial ?? "—", supervisor.route?.kmFinal ?? "—", supervisor.route?.kmCovered ?? "—", visit?.occurrenceReport ?? "Registro pendente", visit?.coverageReason ?? "—", visit ? formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude) : "Não registrado", visit ? formatCoordinates(visit.departureLatitude, visit.departureLongitude) : "Não registrado",
+        referenceTime ? new Date(referenceTime) : null, referenceTime ? new Date(referenceTime) : null, supervisor.supervisorName, `${supervisor.route?.name ?? "Sem rota"} · ${supervisor.route?.shiftType === "day" ? "Diurno" : supervisor.route?.shiftType === "night" ? "Noturno" : "Turno não informado"}`, visit?.postName ?? "—", visit ? visitStatus(visit.status).label : "—",
+        visit?.arrivalTime ? new Date(visit.arrivalTime) : null, visit?.departureTime ? new Date(visit.departureTime) : null, visit?.durationMinutes ?? null,
+        supervisor.route?.kmInitial ?? null, supervisor.route?.kmFinal ?? null, supervisor.route?.kmCovered ?? null, visit?.occurrenceReport ?? "Registro pendente", visit?.coverageReason ?? "—", visit ? formatCoordinates(visit.arrivalLatitude, visit.arrivalLongitude) : "Não registrado", visit ? formatCoordinates(visit.departureLatitude, visit.departureLongitude) : "Não registrado",
         (supervisor.alerts ?? []).map((alert: any) => alert.title).join(" | ") || "Sem alertas",
       ]);
     }
   }
-  const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
-  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `relatorio-diario-${new Date(report.reportDate).toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  await downloadStyledWorkbook(`relatorio-diario-${formatDateInputValue(new Date(report.reportDate))}.xlsx`, [
+    {
+      name: "Resumo",
+      title: "Pro Allen — Relatório Operacional Diário",
+      subtitle: `Filtro: ${shift} · Supervisor: Todos os supervisores · Data operacional: ${new Date(report.reportDate).toLocaleDateString("pt-BR")}`,
+      headers: ["Indicador", "Valor"],
+      rows: [
+        ["Postos previstos", (report.supervisors ?? []).reduce((total: number, supervisor: any) => total + Number(supervisor.route?.totalPosts ?? supervisor.route?.visits?.length ?? 0), 0)],
+        ["Visitas concluídas", summary.completedVisits ?? 0],
+        ["KM total percorrido", summary.kmCovered ?? 0],
+        ["Ocorrências enviadas", summary.reportedOccurrences ?? 0],
+      ],
+      widths: [30, 20],
+      formats: { 1: "0.00" },
+      tabColor: "F6C915",
+    },
+    {
+      name: "Visitas",
+      title: "Pro Allen — Visitas do dia operacional",
+      subtitle: `Filtro: ${shift} · Data operacional: ${new Date(report.reportDate).toLocaleDateString("pt-BR")}`,
+      headers: ["Data", "Hora", "Supervisor", "Rota / Turno", "Posto / Condomínio", "Status da Visita", "Início da Visita", "Fim da Visita", "Duração (min)", "KM Inicial", "KM Final", "KM Percorrido", "Ocorrência / relatório", "Justificativa adicional", "GPS de Chegada", "GPS de Saída", "Alertas"],
+      rows,
+      widths: [14, 10, 25, 24, 26, 18, 19, 19, 14, 14, 14, 14, 48, 34, 22, 22, 40],
+      formats: { 0: "dd/mm/yyyy", 1: "hh:mm", 6: "dd/mm/yyyy hh:mm", 7: "dd/mm/yyyy hh:mm", 8: '0" min"', 9: '0.00" km"', 10: '0.00" km"', 11: '0.00" km"' },
+      tabColor: "1D4ED8",
+    },
+  ]);
 }
 
 export default function GestorDashboard() {
@@ -148,6 +158,7 @@ export default function GestorDashboard() {
   const dashboard = trpc.gestor.dashboard.useQuery(dashboardInput, { enabled: hasConfirmedGestorSession, retry: false, refetchInterval: REFRESH_INTERVAL, refetchIntervalInBackground: false, refetchOnWindowFocus: false, placeholderData: (previous) => previous });
   const dailyReportInput = useMemo(() => ({ reportDate: new Date(`${reportDateValue}T12:00:00`), shiftType: reportShiftType || null }), [reportDateValue, reportShiftType]);
   const dailyReport = trpc.gestor.dailyReport.useQuery(dailyReportInput, { enabled: hasConfirmedGestorSession && showDailyReport, retry: false, staleTime: 30_000, refetchOnWindowFocus: false });
+  const personnelOverview = trpc.gestor.personnelOverview.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, staleTime: 30_000, refetchInterval: REFRESH_INTERVAL, refetchIntervalInBackground: false, refetchOnWindowFocus: false });
   const scheduleInput = useMemo(() => ({ scheduleDate: new Date(`${scheduleDateValue}T12:00:00`) }), [scheduleDateValue]);
   const schedule = trpc.gestor.schedule.useQuery(scheduleInput, { enabled: hasConfirmedGestorSession, retry: false, staleTime: STATIC_QUERY_STALE_TIME, refetchOnWindowFocus: false });
   const postsManagement = trpc.gestor.postsManagement.useQuery(undefined, { enabled: hasConfirmedGestorSession, retry: false, staleTime: STATIC_QUERY_STALE_TIME, refetchOnWindowFocus: false });
@@ -280,9 +291,11 @@ export default function GestorDashboard() {
         </section>
 
         {showDailyReport && <section className="rounded-3xl border border-blue-100 bg-white shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button variant="outline" onClick={() => dailyReport.data && downloadDailyReportCsv(dailyReport.data)} disabled={!dailyReport.data} className="gap-2"><Download className="h-4 w-4" /> Exportar CSV</Button><Button variant="outline" onClick={exportPeriodPdf} disabled={!dailyReport.data || isExportingPdf === "periodo"} className="gap-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"><FileDown className="h-4 w-4" /> {isExportingPdf === "periodo" ? "Gerando PDF..." : "Exportar PDF"}</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-start lg:justify-between"><div><p className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="h-4 w-4" /> Relatório operacional diário</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acompanhamento completo dos supervisores</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A data operacional inicia às 06h e encerra às 06h do dia seguinte. Assim, o plantão noturno permanece agrupado mesmo após a meia-noite.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">Data do relatório<input aria-label="Data do relatório" type="date" value={reportDateValue} max={toDateInputValue(new Date())} onChange={(event) => setReportDateValue(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select aria-label="Turno do relatório" value={reportShiftType} onChange={(event) => setReportShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none ring-blue-600 focus:ring-2"><option value="">Todos os turnos</option><option value="day">Dia · 06h–18h</option><option value="night">Noite · 18h–06h</option></select></label><Button variant="outline" onClick={() => dailyReport.refetch()} disabled={dailyReport.isFetching} className="gap-2"><TimerReset className="h-4 w-4" /> Atualizar dados</Button><Button variant="outline" onClick={() => dailyReport.data && void downloadDailyReportXlsx(dailyReport.data)} disabled={!dailyReport.data} className="gap-2"><Download className="h-4 w-4" /> Exportar Excel (.xlsx)</Button><Button variant="outline" onClick={exportPeriodPdf} disabled={!dailyReport.data || isExportingPdf === "periodo"} className="gap-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"><FileDown className="h-4 w-4" /> {isExportingPdf === "periodo" ? "Gerando PDF..." : "Exportar PDF"}</Button><Button onClick={async () => { if (!dailyReport.data) return; setIsExportingWord(true); try { const { downloadDailyReportWord } = await import("@/lib/dailyReportDocx"); await downloadDailyReportWord(dailyReport.data); } finally { setIsExportingWord(false); } }} disabled={!dailyReport.data || isExportingWord} className="gap-2 bg-slate-950 text-white hover:bg-slate-800"><Download className="h-4 w-4" /> {isExportingWord ? "Gerando Word..." : "Baixar Word"}</Button></div></div>
           {dailyReport.isLoading ? <LoadingRows /> : dailyReport.data ? <DailyOperationalReport report={dailyReport.data} /> : <EmptyState title="Relatório indisponível" description="Tente atualizar os dados do relatório diário." />}
         </section>}
+
+        <PersonnelOverviewPanel data={personnelOverview.data} loading={personnelOverview.isLoading} error={personnelOverview.error?.message} />
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Supervisores em rota" value={metrics?.supervisorsOnRoute ?? 0} icon={UsersRound} tone="blue" />
@@ -338,6 +351,23 @@ function DailyOperationalReport({ report }: { report: any }) {
       </details>;
     })}</div>
   </div>;
+}
+
+function PersonnelOverviewPanel({ data, loading, error }: { data: any; loading: boolean; error?: string }) {
+  const summary = data?.summary ?? {};
+  const entries = [
+    ...(data?.fts ?? []).map((item: any) => ({ ...item, kind: "FT", description: item.reason })),
+    ...(data?.extras ?? []).map((item: any) => ({ ...item, kind: "Extra", description: item.description })),
+    ...(data?.occurrences ?? []).map((item: any) => ({ ...item, kind: item.type, description: item.observation })),
+  ].sort((first: any, second: any) => new Date(second.createdAt ?? second.date ?? 0).getTime() - new Date(first.createdAt ?? first.date ?? 0).getTime());
+  return <section className="rounded-3xl border border-violet-100 bg-white shadow-sm">
+    <div className="flex flex-col gap-2 border-b border-slate-100 p-6"><p className="flex items-center gap-2 text-sm font-semibold text-violet-700"><UsersRound className="h-4 w-4" /> Visão completa de pessoal</p><h2 className="text-2xl font-bold tracking-tight text-slate-950">Funcionários, usuários e lançamentos</h2><p className="max-w-4xl text-sm leading-6 text-slate-600">Leitura integral para o Gestor. Este bloco não cria, edita, aprova ou quita registros; as alterações continuam restritas aos portais responsáveis.</p></div>
+    {loading ? <LoadingRows /> : error ? <p className="m-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">Não foi possível carregar a visão de pessoal: {error}</p> : <div className="space-y-6 p-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><ReportMetric label="Funcionários" value={summary.employees ?? 0} /><ReportMetric label="Funcionários ativos" value={summary.activeEmployees ?? 0} /><ReportMetric label="Usuários operacionais" value={summary.users ?? 0} /><ReportMetric label="Pendentes" value={summary.pending ?? 0} alert={summary.pending > 0} /><ReportMetric label="Pagos" value={summary.paid ?? 0} /></div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[920px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Funcionário</th><th className="px-4 py-3">CPF / matrícula</th><th className="px-4 py-3">Cargo</th><th className="px-4 py-3">Posto</th><th className="px-4 py-3">PIX</th><th className="px-4 py-3">Situação</th></tr></thead><tbody className="divide-y divide-slate-100">{(data?.employees ?? []).length ? (data.employees ?? []).map((employee: any) => <tr key={employee.id}><td className="px-4 py-3 font-semibold text-slate-900">{employee.name}</td><td className="px-4 py-3 text-slate-600">{employee.cpf}</td><td className="px-4 py-3 text-slate-600">{employee.position || "—"}</td><td className="px-4 py-3 text-slate-600">{employee.post || "—"}</td><td className="px-4 py-3 text-slate-600">{employee.pixKey || "—"}</td><td className="px-4 py-3">{employee.isActive ? <Badge className="bg-emerald-100 text-emerald-800">Ativo</Badge> : <Badge className="bg-slate-100 text-slate-600">Inativo</Badge>}</td></tr>) : <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Nenhum funcionário cadastrado. O RH ainda não iniciou o cadastro.</td></tr>}</tbody></table></div>
+      <div className="grid gap-6 xl:grid-cols-2"><div className="rounded-xl border border-slate-200"><div className="border-b border-slate-100 p-4"><p className="font-semibold text-slate-950">Usuários do sistema</p><p className="mt-1 text-xs text-slate-500">Somente login, perfil e situação. Senhas e hashes nunca são exibidos.</p></div><div className="divide-y divide-slate-100">{(data?.users ?? []).length ? (data.users ?? []).map((item: any) => <div key={item.id} className="flex items-center justify-between gap-3 p-4"><div><p className="font-semibold text-slate-900">{item.name || "Sem nome"}</p><p className="text-xs text-slate-500">@{item.username || "sem login"}</p></div><div className="text-right"><Badge variant="outline">{item.role === "admin" ? "ADM" : item.personnelRole || "SUPERVISOR"}</Badge><p className="mt-1 text-xs text-slate-500">{item.isOperational ? "Ativo" : "Inativo"}</p></div></div>) : <p className="p-4 text-sm text-slate-500">Nenhum usuário operacional cadastrado.</p>}</div></div><div className="rounded-xl border border-slate-200"><div className="border-b border-slate-100 p-4"><p className="font-semibold text-slate-950">Últimos lançamentos e ocorrências</p><p className="mt-1 text-xs text-slate-500">O Gestor pode consultar o histórico completo e os documentos autorizados.</p></div><div className="divide-y divide-slate-100">{entries.length ? entries.slice(0, 12).map((item: any) => <div key={`${item.kind}-${item.id}`} className="p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-slate-900">{item.employeeName || "Funcionário não informado"}</p><Badge variant="outline">{item.kind}</Badge></div><p className="mt-1 text-xs text-slate-500">{item.date ? new Date(item.date).toLocaleDateString("pt-BR") : "—"} · {item.status}</p><p className="mt-2 text-sm text-slate-600">{item.description || "Sem observação"}</p>{item.documentUrl && <a href={item.documentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><FileText className="h-3.5 w-3.5" />{item.documentName || "Abrir atestado"}</a>}</div>) : <p className="p-4 text-sm text-slate-500">Nenhum lançamento ou ocorrência registrado.</p>}</div></div></div>
+    </div>}
+  </section>;
 }
 
 function ReportMetric({ label, value, alert = false }: { label: string; value: string | number; alert?: boolean }) {

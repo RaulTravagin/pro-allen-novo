@@ -922,6 +922,10 @@ export async function getAllSupervisorsLatestLocations() {
 }
 
 // Post Visit History queries
+export function getReportQueryPeriod(startDate: Date, endDate: Date) {
+  return getOperationalRangeForCalendarDates(startDate, endDate);
+}
+
 export async function recordPostVisit(postId: number, supervisorId: number, observations?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -954,11 +958,12 @@ export async function getLastPostVisit(postId: number) {
 export async function getPostVisitsByDateRange(startDate: Date, endDate: Date) {
   const db = await getDb();
   if (!db) return [];
+  const period = getReportQueryPeriod(startDate, endDate);
   
   return await db.select().from(postVisitHistory)
     .where(and(
-      gte(postVisitHistory.visitedAt, startDate),
-      lte(postVisitHistory.visitedAt, endDate)
+      gte(postVisitHistory.visitedAt, period.start),
+      lt(postVisitHistory.visitedAt, period.end)
     ))
     .orderBy(desc(postVisitHistory.visitedAt));
 }
@@ -986,6 +991,7 @@ export function calculateVisitPriority(lastVisitDate: Date | null): { priority: 
 export async function getVisitsWithTimes(startDate: Date, endDate: Date) {
   const db = await getDb();
   if (!db) return [];
+  const period = getReportQueryPeriod(startDate, endDate);
   
   return await db.select({
     id: visitChecklists.id,
@@ -1000,6 +1006,8 @@ export async function getVisitsWithTimes(startDate: Date, endDate: Date) {
     arrivalTime: visitChecklists.arrivalTime,
     departureTime: visitChecklists.departureTime,
     visitedAt: visitChecklists.visitedAt,
+    occurrenceSubmittedAt: visitChecklists.occurrenceSubmittedAt,
+    occurrenceReport: visitChecklists.occurrenceReport,
     observations: visitChecklists.observations,
     status: visitChecklists.status,
   })
@@ -1009,8 +1017,8 @@ export async function getVisitsWithTimes(startDate: Date, endDate: Date) {
     .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
     .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
     .where(and(
-      gte(visitChecklists.visitedAt, startDate),
-      lte(visitChecklists.visitedAt, endDate),
+      gte(visitChecklists.visitedAt, period.start),
+      lt(visitChecklists.visitedAt, period.end),
       eq(visitChecklists.status, 'visited')
     ))
     .orderBy(desc(visitChecklists.visitedAt));
@@ -1019,11 +1027,16 @@ export async function getVisitsWithTimes(startDate: Date, endDate: Date) {
 export async function getVisitOccurrenceSummary(startDate: Date, endDate: Date) {
   const db = await getDb();
   if (!db) return { total: 0, reported: 0, pending: 0 };
+  const period = getReportQueryPeriod(startDate, endDate);
   const result = await db.select({
     total: sql<string>`count(*)`,
     reported: sql<string>`count(*) filter (where nullif(trim(coalesce(${visitChecklists.occurrenceReport}, '')), '') is not null)`,
   }).from(visitChecklists)
-    .where(and(gte(visitChecklists.visitedAt, startDate), lte(visitChecklists.visitedAt, endDate)));
+    .where(and(
+      gte(visitChecklists.visitedAt, period.start),
+      lt(visitChecklists.visitedAt, period.end),
+      eq(visitChecklists.status, "visited"),
+    ));
   const total = Number(result[0]?.total ?? 0);
   const reported = Number(result[0]?.reported ?? 0);
   return { total, reported, pending: Math.max(0, total - reported) };
@@ -1687,18 +1700,6 @@ export async function updatePersonnelEmployee(id: number, input: Partial<InsertP
   return getPersonnelEmployeeById(id);
 }
 
-export async function createLegacyPersonnelEmployee(name: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(personnelEmployees).values({
-    name,
-    cpf: `LEGACY-${randomUUID().replace(/-/g, "").slice(0, 8)}`,
-    post: "Cadastro manual temporário",
-    isActive: true,
-  }).returning({ id: personnelEmployees.id });
-  return getPersonnelEmployeeById(getInsertedId(result));
-}
-
 export async function getPersonnelEmployeeById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -1706,11 +1707,11 @@ export async function getPersonnelEmployeeById(id: number) {
   return result[0];
 }
 
-export async function listPersonnelUsers() {
+export async function listPersonnelUsers(includeInactive = false) {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ id: users.id, name: users.name, username: users.username, email: users.email, role: users.role, personnelRole: users.personnelRole, isOperational: users.isOperational, mustChangePassword: users.mustChangePassword })
-    .from(users).where(eq(users.isOperational, true)).orderBy(users.name);
+  const query = db.select({ id: users.id, name: users.name, username: users.username, role: users.role, personnelRole: users.personnelRole, isOperational: users.isOperational, mustChangePassword: users.mustChangePassword }).from(users);
+  return includeInactive ? query.orderBy(users.name) : query.where(eq(users.isOperational, true)).orderBy(users.name);
 }
 
 export async function updatePersonnelUserRole(id: number, personnelRole: PersonnelRole) {
@@ -1771,6 +1772,33 @@ export async function listPersonnelFts(supervisorId: number, role: PersonnelRole
     .leftJoin(users, eq(users.id, personnelFts.supervisorId))
     .where(scope)
     .orderBy(desc(personnelFts.createdAt));
+}
+
+/** Retorno completo, somente leitura, para a sessão separada do Gestor. */
+export async function getGestorPersonnelOverview() {
+  const [employees, usersList, fts, occurrences, extras] = await Promise.all([
+    listPersonnelEmployees(true),
+    listPersonnelUsers(true),
+    listPersonnelFts(0, "RH"),
+    listPersonnelOccurrences(0, "RH"),
+    listPersonnelExtras(0, "RH"),
+  ]);
+  const entries = [...fts, ...occurrences, ...extras];
+  return {
+    employees,
+    users: usersList,
+    fts,
+    occurrences,
+    extras,
+    summary: {
+      employees: employees.length,
+      activeEmployees: employees.filter((employee) => employee.isActive).length,
+      users: usersList.length,
+      pending: entries.filter((entry) => entry.status === "PENDING").length,
+      approved: entries.filter((entry) => entry.status === "APPROVED").length,
+      paid: entries.filter((entry) => entry.status === "PAID").length,
+    },
+  };
 }
 
 export async function createPersonnelFt(input: InsertPersonnelFt) {

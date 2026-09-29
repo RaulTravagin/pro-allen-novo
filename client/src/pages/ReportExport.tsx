@@ -7,10 +7,12 @@ import { FileText, Download, Loader2, Calendar, CheckCircle2 } from "lucide-reac
 import { useState } from "react";
 import { toast } from "sonner";
 import { AdminHeader } from "@/components/AdminHeader";
+import { createRelativeDateRange, formatDateInputValue, parseDateInputValue } from "@/lib/reportDateRange";
+import { downloadStyledWorkbook } from "@/lib/xlsxExport";
 
 export default function ReportExport() {
   const { user, logout } = useAuth();
-  const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), end: new Date() });
+  const [dateRange, setDateRange] = useState(() => createRelativeDateRange(7));
   const [reportType, setReportType] = useState<string>("visits");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -20,7 +22,7 @@ export default function ReportExport() {
     endDate: dateRange.end,
   });
 
-  const generatePDF = async () => {
+  const generateExcel = async () => {
     if (!reports || reports.length === 0) {
       toast.error("Nenhum dado disponível para exportar");
       return;
@@ -28,53 +30,31 @@ export default function ReportExport() {
 
     setIsExporting(true);
     try {
-      // Create CSV content
       const headers = ["Posto", "Rota", "Supervisor", "Chegada", "Saída", "Duração", "Data", "Ocorrência / relatório"];
       const rows = reports.map((r: any) => {
-        const arrival = r.arrivalTime ? new Date(r.arrivalTime).toLocaleTimeString('pt-BR') : '-';
-        const departure = r.departureTime ? new Date(r.departureTime).toLocaleTimeString('pt-BR') : '-';
-        const duration = r.arrivalTime && r.departureTime 
-          ? `${Math.floor((new Date(r.departureTime).getTime() - new Date(r.arrivalTime).getTime()) / 60000)}m`
-          : '-';
-        const date = new Date(r.visitedAt).toLocaleDateString('pt-BR');
-        
+        const duration = r.arrivalTime && r.departureTime
+          ? Math.floor((new Date(r.departureTime).getTime() - new Date(r.arrivalTime).getTime()) / 60000)
+          : null;
         return [
           r.postName || `Posto #${r.postId}`,
           r.routeName || `Rota #${r.routeId}`,
           r.supervisorName || 'Supervisor não informado',
-          arrival,
-          departure,
+          r.arrivalTime ? new Date(r.arrivalTime) : null,
+          r.departureTime ? new Date(r.departureTime) : null,
           duration,
-          date,
+          r.visitedAt ? new Date(r.visitedAt) : null,
           r.occurrenceReport || '-'
         ];
       });
-
-      // Create CSV string
-      const csvContent = [
-        ["RELATÓRIO DE VISITAS"],
-        [`Período: ${dateRange.start.toLocaleDateString('pt-BR')} a ${dateRange.end.toLocaleDateString('pt-BR')}`],
-        [`Total de Visitas: ${reports.length}`],
-        [""],
+      await downloadStyledWorkbook(`relatorio-visitas-${formatDateInputValue(dateRange.start)}-${formatDateInputValue(dateRange.end)}.xlsx`, [{
+        name: "Visitas",
+        title: "Pro Allen — Relatório de Visitas",
+        subtitle: `Período: ${dateRange.start.toLocaleDateString('pt-BR')} a ${dateRange.end.toLocaleDateString('pt-BR')} · Total de visitas: ${reports.length}`,
         headers,
-        ...rows
-      ]
-        .map(row => row.map(cell => `"${cell}"`).join(","))
-        .join("\n");
-
-      // Create blob and download
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      
-      link.setAttribute("href", url);
-      link.setAttribute("download", `relatorio-visitas-${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = "hidden";
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
+        rows,
+        widths: [28, 22, 28, 18, 18, 12, 14, 48],
+        formats: { 3: "dd/mm/yyyy hh:mm", 4: "dd/mm/yyyy hh:mm", 5: '0" min"', 6: "dd/mm/yyyy" },
+      }]);
       toast.success("Relatório exportado com sucesso!");
     } catch (error) {
       toast.error("Erro ao exportar relatório");
@@ -114,8 +94,8 @@ export default function ReportExport() {
                   <label className="text-xs font-medium text-gray-600">Data Inicial</label>
                   <input
                     type="date"
-                    value={dateRange.start.toISOString().split('T')[0]}
-                    onChange={(e) => setDateRange({ ...dateRange, start: new Date(e.target.value) })}
+                        value={formatDateInputValue(dateRange.start)}
+                        onChange={(e) => setDateRange({ ...dateRange, start: parseDateInputValue(e.target.value) })}
                     className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
                 </div>
@@ -123,8 +103,8 @@ export default function ReportExport() {
                   <label className="text-xs font-medium text-gray-600">Data Final</label>
                   <input
                     type="date"
-                    value={dateRange.end.toISOString().split('T')[0]}
-                    onChange={(e) => setDateRange({ ...dateRange, end: new Date(e.target.value) })}
+                        value={formatDateInputValue(dateRange.end)}
+                        onChange={(e) => setDateRange({ ...dateRange, end: parseDateInputValue(e.target.value) })}
                     className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
                 </div>
@@ -161,7 +141,7 @@ export default function ReportExport() {
 
             {/* Export Button */}
             <Button
-              onClick={generatePDF}
+              onClick={generateExcel}
               disabled={isExporting || !reports || reports.length === 0}
               className="w-full bg-blue-600 hover:bg-blue-700"
               size="lg"
@@ -169,12 +149,12 @@ export default function ReportExport() {
               {isExporting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Exportando...
+                  Gerando Excel...
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4 mr-2" />
-                  Exportar Relatório (CSV)
+                  Exportar Relatório Excel (.xlsx)
                 </>
               )}
             </Button>
@@ -210,12 +190,12 @@ export default function ReportExport() {
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-gray-600 space-y-2">
-              <p>Os relatórios são exportados em formato CSV:</p>
+              <p>Os relatórios são exportados em formato Excel (.xlsx):</p>
               <ul className="list-disc list-inside space-y-1">
-                <li>Compatível com Excel</li>
-                <li>Fácil de compartilhar</li>
-                <li>Pronto para análise</li>
-                <li>Linhas com nomes reais dos registros</li>
+                <li>Compatível com Excel, LibreOffice e WPS</li>
+                <li>Filtro automático e primeira linha congelada</li>
+                <li>Datas, horários e duração com formato de planilha</li>
+                <li>Colunas dimensionadas para leitura e impressão</li>
               </ul>
             </CardContent>
           </Card>

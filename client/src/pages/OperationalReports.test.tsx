@@ -24,4 +24,17 @@ describe("relatório operacional CSV", () => {
     expect(csv).toContain("Ajustar limpeza");
     expect(csv).toContain("Plantão Noturno · 18h às 06h");
   });
+
+  it("neutraliza fórmulas em textos vindos dos registros", () => {
+    const csv = buildOperationalReportCsv({
+      filters: { startDate: new Date("2026-08-01T12:00:00"), endDate: new Date("2026-08-01T12:00:00"), shiftType: null, supervisorId: null, vehicleId: null },
+      filterOptions: { supervisors: [], vehicles: [] },
+      summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null, inspections: 1, plannedPosts: 1, reportedVisits: 1, pendingReports: 0 },
+      routes: [],
+      fuelLogs: [],
+      visits: [{ supervisorRouteId: 1, postName: "Posto fictício", supervisorName: "=HYPERLINK(\"https://example.invalid\")", arrivalTime: new Date("2026-08-01T09:00:00"), occurrenceReport: "@cmd", status: "visited" }],
+    });
+    expect(csv).toContain("'=HYPERLINK");
+    expect(csv).toContain("'@cmd");
+  });
 });

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_visitChecklists_occurrenceSubmittedAt" ON "visitChecklists" USING btree ("occurrenceSubmittedAt");

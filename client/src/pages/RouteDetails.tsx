@@ -14,6 +14,7 @@ import PostCard from "@/components/PostCard";
 import SupervisorShiftReportDialog from "@/components/SupervisorShiftReportDialog";
 import { clearRouteDraft, readRouteDraft, saveRouteDraft } from "@/lib/onlineOperationDraft";
 import { notifySupervisorError, supervisorErrorMessage } from "@/lib/networkFeedback";
+import { geolocationErrorMessage, geolocationUnavailableMessage } from "@/lib/geolocationFeedback";
 
 interface RouteDetailsProps {
   params: {
@@ -161,7 +162,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   const captureCoordinates = () => new Promise<{ latitude?: number; longitude?: number }>((resolve) => {
     if (!navigator.geolocation) {
-      setGpsError("Geolocalização não disponível neste navegador. A presença será registrada sem coordenadas.");
+      setGpsError(geolocationUnavailableMessage());
       resolve({});
       return;
     }
@@ -172,8 +173,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       },
       (error) => {
-        setGpsError("Não foi possível capturar a localização. A presença foi registrada sem coordenadas.");
-        console.warn("Geolocation error:", error);
+        setGpsError(geolocationErrorMessage(error.code));
         resolve({});
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -233,12 +233,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               setGpsError("");
             },
             (error) => {
-              setGpsError(`Erro de localização: ${error.message}`);
-              console.error("Geolocation error:", error);
+              setGpsError(geolocationErrorMessage(error.code));
             }
           );
         } else {
-          setGpsError("Geolocalização não disponível neste navegador");
+          setGpsError(geolocationUnavailableMessage());
         }
       }, 30000); // Record every 30 seconds
 
@@ -499,7 +498,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">4. KM final</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">3. KM final</p>
                 {route.kmFinal != null ? (
                   <div className="mt-3 space-y-1">
                     <p className="text-3xl font-bold text-slate-900">{Number(route.kmFinal).toLocaleString("pt-BR")} km</p>
@@ -516,7 +515,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">3. Abastecimento</p><p className="mt-1 text-sm text-emerald-950">Registre durante a operação para acompanhar consumo e custo da viatura.</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">4. Abastecimento</p><p className="mt-1 text-sm text-emerald-950">Registre durante a operação para acompanhar consumo e custo da viatura.</p></div>
                   {route.status === "in_progress" && <Button type="button" onClick={() => setShowFuelForm((value) => !value)} className="bg-emerald-700 hover:bg-emerald-800"><Fuel className="mr-2 h-4 w-4" />Registrar abastecimento</Button>}
                 </div>
                 {showFuelForm && <div className="mt-4 grid gap-3 rounded-lg border border-emerald-200 bg-white p-3 md:grid-cols-2 lg:grid-cols-4">

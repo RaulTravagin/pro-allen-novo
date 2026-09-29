@@ -64,6 +64,13 @@
       "when": 1790266725336,
       "tag": "0008_overconfident_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790653183833,
+      "tag": "0009_preserve_legacy_visit_data",
+      "breakpoints": true
     }
   ]
 }

@@ -271,6 +271,7 @@ export const visitChecklists = pgTable("visitChecklists", {
   supervisorRouteIdIdx: index("idx_visitChecklists_supervisorRouteId").on(table.supervisorRouteId),
   supervisorRouteStatusIdx: index("idx_visitChecklists_route_status").on(table.supervisorRouteId, table.status),
   visitedAtStatusIdx: index("idx_visitChecklists_visitedAt_status").on(table.visitedAt, table.status),
+  occurrenceSubmittedAtIdx: index("idx_visitChecklists_occurrenceSubmittedAt").on(table.occurrenceSubmittedAt),
   postIdIdx: index("idx_visitChecklists_postId").on(table.postId),
   statusIdx: index("idx_visitChecklists_status").on(table.status),
 }));

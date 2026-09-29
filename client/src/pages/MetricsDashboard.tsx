@@ -7,17 +7,15 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { TrendingUp, Clock, CheckCircle2, AlertCircle, Loader2, Calendar, Route as RouteIcon } from "lucide-react";
 import { useState } from "react";
 import { AdminHeader } from "@/components/AdminHeader";
+import { createRelativeDateRange, formatDateInputValue, parseDateInputValue } from "@/lib/reportDateRange";
+import { countReportedOccurrences } from "@/lib/reportMetrics";
 
 export default function MetricsDashboard() {
   const { user, logout } = useAuth();
-  const [dateRange, setDateRange] = useState({ start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), end: new Date() });
+  const [dateRange, setDateRange] = useState(() => createRelativeDateRange(30));
 
   // Queries
   const { data: reports, isLoading: reportsLoading } = trpc.reports.occurrencesByDateRange.useQuery({
-    startDate: dateRange.start,
-    endDate: dateRange.end,
-  });
-  const { data: conformance, isLoading: conformanceLoading } = trpc.reports.occurrenceSummaryByDateRange.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
@@ -63,16 +61,17 @@ export default function MetricsDashboard() {
     });
     const visitsByRouteData = Object.entries(visitsByRoute).map(([route, count]) => ({ route: `Rota ${route}`, visits: count }));
 
-    const occurrenceTotal = conformance?.total ?? 0;
+    const occurrenceTotal = reports.length;
+    const reportedOccurrences = countReportedOccurrences(reports);
     const conformanceData = occurrenceTotal > 0 ? [
-      { name: 'Ocorrência enviada', value: conformance?.reported ?? 0, fill: '#10b981' },
-      { name: 'Registro pendente', value: Math.max(0, occurrenceTotal - (conformance?.reported ?? 0)), fill: '#f59e0b' },
+      { name: 'Ocorrência enviada', value: reportedOccurrences, fill: '#10b981' },
+      { name: 'Registro pendente', value: Math.max(0, occurrenceTotal - reportedOccurrences), fill: '#f59e0b' },
     ].filter((item) => item.value > 0) : [];
 
     return {
       totalVisits,
       avgVisitTime,
-      occurrenceRate: occurrenceTotal > 0 ? Math.round(((conformance?.reported ?? 0) / occurrenceTotal) * 100) : 0,
+      occurrenceRate: occurrenceTotal > 0 ? Math.round((reportedOccurrences / occurrenceTotal) * 100) : 0,
       visitsByDay: visitsByDayData,
       visitsByRoute: visitsByRouteData,
       conformanceData,
@@ -80,7 +79,7 @@ export default function MetricsDashboard() {
   };
 
   const metrics = calculateMetrics();
-  const isLoading = reportsLoading || conformanceLoading;
+  const isLoading = reportsLoading;
   const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6'];
 
   return (
@@ -107,8 +106,8 @@ export default function MetricsDashboard() {
                 <label className="text-sm font-medium text-gray-700">Data Inicial</label>
                 <input
                   type="date"
-                  value={dateRange.start.toISOString().split('T')[0]}
-                  onChange={(e) => setDateRange({ ...dateRange, start: new Date(e.target.value) })}
+                  value={formatDateInputValue(dateRange.start)}
+                  onChange={(e) => setDateRange({ ...dateRange, start: parseDateInputValue(e.target.value) })}
                   className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -116,8 +115,8 @@ export default function MetricsDashboard() {
                 <label className="text-sm font-medium text-gray-700">Data Final</label>
                 <input
                   type="date"
-                  value={dateRange.end.toISOString().split('T')[0]}
-                  onChange={(e) => setDateRange({ ...dateRange, end: new Date(e.target.value) })}
+                  value={formatDateInputValue(dateRange.end)}
+                  onChange={(e) => setDateRange({ ...dateRange, end: parseDateInputValue(e.target.value) })}
                   className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -161,7 +160,7 @@ export default function MetricsDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-gray-900">{conformance?.total ? `${conformance.reported}/${conformance.total}` : '—'}</p>
+              <p className="text-3xl font-bold text-gray-900">{reports?.length ? `${countReportedOccurrences(reports)}/${reports.length}` : '—'}</p>
               <p className="text-xs text-gray-600 mt-2">Visitas com ocorrência enviada</p>
             </CardContent>
           </Card>
@@ -307,7 +306,7 @@ export default function MetricsDashboard() {
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-gray-600">
-                  <strong>Ocorrências enviadas:</strong> {conformance?.total ? `${metrics.occurrenceRate}%` : 'Sem dados'}
+                  <strong>Ocorrências enviadas:</strong> {reports?.length ? `${metrics.occurrenceRate}%` : 'Sem dados'}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Rotas Ativas:</strong> {metrics.visitsByRoute.length}

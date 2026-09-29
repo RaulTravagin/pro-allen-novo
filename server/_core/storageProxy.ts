@@ -1,11 +1,46 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { ENV } from "./env";
+import { getLocalSupervisorSessionUserId } from "../local-supervisor-auth";
+import { hasGestorSession } from "../gestor-access";
+import { getPersonnelRole, getUserById } from "../db";
+
+export function personnelOccurrenceOwnerId(key: string) {
+  const match = /^personnel\/occurrences\/(\d+)\//.exec(key);
+  return match ? Number(match[1]) : null;
+}
+
+export function isSafeStorageKey(key: string) {
+  return Boolean(key) && !key.includes("..") && !key.includes("\\") && !key.startsWith("/");
+}
+
+async function canReadStorageKey(req: Pick<Request, "headers">, key: string) {
+  if (!key.startsWith("personnel/occurrences/")) return true;
+  if (await hasGestorSession(req)) return true;
+
+  const localUserId = await getLocalSupervisorSessionUserId(req);
+  if (!localUserId) return false;
+  const user = await getUserById(localUserId);
+  if (!user) return false;
+  const role = getPersonnelRole(user);
+  const ownerId = personnelOccurrenceOwnerId(key);
+  return role === "RH" || role === "ADM" || ownerId === localUserId;
+}
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
     const key = (req.params as Record<string, string>)[0];
     if (!key) {
       res.status(400).send("Missing storage key");
+      return;
+    }
+
+    if (!isSafeStorageKey(key)) {
+      res.status(400).send("Invalid storage key");
+      return;
+    }
+
+    if (!(await canReadStorageKey(req, key))) {
+      res.status(403).send("Storage access denied");
       return;
     }
 
@@ -26,8 +61,7 @@ export function registerStorageProxy(app: Express) {
       });
 
       if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
+        console.error(`[StorageProxy] forge error status=${forgeResp.status}`);
         res.status(502).send("Storage backend error");
         return;
       }
