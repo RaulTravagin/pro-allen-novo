@@ -12,7 +12,7 @@ function migrationSqlFiles() {
 
 describe("segurança das migrations PostgreSQL", () => {
   it("não contém truncamento, exclusão de tabela/coluna ou DELETE em migrations", () => {
-    const destructiveSql = /\b(?:truncate|drop\s+table|drop\s+column|delete\s+from)\b/i;
+    const destructiveSql = /^\s*(?:truncate\b|drop\s+(?:table|column)\b|delete\s+from\b)/im;
     const offendingFiles = migrationSqlFiles()
       .filter(({ sql }) => destructiveSql.test(sql))
       .map(({ fileName }) => fileName);

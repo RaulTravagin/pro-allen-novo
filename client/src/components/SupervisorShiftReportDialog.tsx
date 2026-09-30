@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, ClipboardList, Download, FileText, Fuel, Gauge, Loader2, MapPin, MessageCircle, Route, Share2, Timer, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -17,7 +16,7 @@ interface SupervisorShiftReportDialogProps {
   isClosing?: boolean;
   initialKmFinal?: string;
   canClose?: boolean;
-  onConfirmClose: (kmFinal: number, exceptionJustification?: string) => Promise<any>;
+  onConfirmClose: (kmFinal: number) => Promise<any>;
 }
 
 function formatDateTime(value: unknown) {
@@ -38,6 +37,11 @@ function formatCurrency(value: unknown) {
 function number(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasClosurePendencies(audit: any) {
+  const counts = audit?.pendingSummary?.counts ?? {};
+  return Object.values(counts).some(value => Number(value) > 0);
 }
 
 function activityName(activity: any) {
@@ -98,8 +102,6 @@ function Kpi({ label, value, detail, icon: Icon, tone }: { label: string; value:
 
 export default function SupervisorShiftReportDialog({ open, onOpenChange, report, isLoading = false, isClosing = false, initialKmFinal = "", canClose = false, onConfirmClose }: SupervisorShiftReportDialogProps) {
   const [kmFinal, setKmFinal] = useState(initialKmFinal);
-  const [pendingSummary, setPendingSummary] = useState<any | null>(null);
-  const [exceptionJustification, setExceptionJustification] = useState("");
   const [closureAudit, setClosureAudit] = useState<any | null>(null);
   const [isExporting, setIsExporting] = useState<"pdf" | "word" | null>(null);
 
@@ -107,14 +109,23 @@ export default function SupervisorShiftReportDialog({ open, onOpenChange, report
     if (open) setKmFinal(initialKmFinal || (report?.metrics?.kmFinal != null ? String(report.metrics.kmFinal) : ""));
   }, [initialKmFinal, open, report?.metrics?.kmFinal]);
 
+  useEffect(() => {
+    setClosureAudit(null);
+  }, [report?.supervisorRouteId]);
+
   const isClosed = report?.status === "completed" || report?.status === "cancelled";
   const metrics = report?.metrics ?? {};
   const visits = report?.visits ?? [];
+  const closureVisits = visits.filter((visit: any) => visit.supervisorRouteId === report?.supervisorRouteId);
   const activities = report?.activities ?? [];
   const fuelLogs = report?.fuelLogs ?? [];
   const observations = report?.observations ?? [];
   const completedVisits = number(metrics.completedVisits);
   const totalVisits = number(metrics.totalVisits);
+  const pendingVisitCount = closureVisits.filter((visit: any) => visit.status === "pending" || visit.status === "skipped").length;
+  const activeVisitCount = closureVisits.filter((visit: any) => visit.status === "in_progress").length;
+  const unsentReportCount = closureVisits.filter((visit: any) => (visit.status === "visited" || visit.status === "in_progress") && (!visit.occurrenceSubmittedAt || !visit.occurrenceReport?.trim())).length;
+  const hasPendencies = pendingVisitCount > 0 || activeVisitCount > 0 || unsentReportCount > 0;
   const visitProgress = totalVisits ? Math.min(100, Math.round((completedVisits / totalVisits) * 100)) : 0;
   const attentionCount = number(metrics.occurrenceCount);
 
@@ -163,19 +174,9 @@ export default function SupervisorShiftReportDialog({ open, onOpenChange, report
       toast.error("O KM final não pode ser menor que o KM inicial");
       return;
     }
-    if (pendingSummary && exceptionJustification.trim().length < 8) {
-      toast.error("Informe uma justificativa com pelo menos 8 caracteres para a exceção");
-      return;
-    }
-    const result = await onConfirmClose(parsedKmFinal, pendingSummary ? exceptionJustification.trim() : undefined);
-    if (result?.requiresExceptionJustification) {
-      setPendingSummary(result.pendingSummary);
-      setExceptionJustification("");
-      return;
-    }
+    const result = await onConfirmClose(parsedKmFinal);
     if (result?.closed) {
-      setPendingSummary(null);
-      setClosureAudit(result.exceptionAudit ?? { normal: true });
+      setClosureAudit(result.closureAudit ?? null);
     }
   };
 
@@ -196,9 +197,8 @@ export default function SupervisorShiftReportDialog({ open, onOpenChange, report
         </div>
 
         {isLoading || !report ? <div className="flex items-center justify-center gap-2 px-6 py-20 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-blue-700" /> Compilando relatório do turno...</div> : <div className="space-y-6 px-6 py-6 sm:px-8">
-          {closureAudit?.normal && report.status === "completed" && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><p className="font-semibold">Turno encerrado sem pendências</p><p className="mt-1">O KM final e a conclusão foram registrados pelo fluxo oficial.</p></div>}
-          {closureAudit && !closureAudit.normal && <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">Encerramento excepcional registrado para auditoria</p><p className="mt-1">Rota {closureAudit.supervisorRouteId} · Supervisor {closureAudit.supervisorId} · {formatDateTime(closureAudit.closedAt)}</p><p className="mt-2"><strong>Justificativa:</strong> {closureAudit.justification}</p><p className="mt-2 text-xs">Snapshot no fechamento: {closureAudit.pendingSummary?.counts?.pendingPosts ?? 0} posto(s) pendente(s), {closureAudit.pendingSummary?.counts?.pendingVisits ?? 0} visita(s) pendente(s), {closureAudit.pendingSummary?.counts?.activeVisits ?? 0} atendimento(s) ativo(s) e {closureAudit.pendingSummary?.counts?.unsentReports ?? 0} relato(s) não enviado(s).</p></div>}
-          {pendingSummary && <section aria-labelledby="exception-title" className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-sm"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div className="min-w-0 flex-1"><h3 id="exception-title" className="font-bold text-amber-950">Há pendências — exceção exige justificativa</h3><p className="mt-1 text-sm text-amber-900">O encerramento normal não foi feito. Revise o snapshot validado pelo servidor ou justifique por que a rota deve ser concluída mesmo assim.</p><div className="mt-3 grid gap-2 text-xs text-amber-950 sm:grid-cols-2"><p>{pendingSummary.counts?.pendingPosts ?? 0} posto(s) planejado(s) pendente(s)</p><p>{pendingSummary.counts?.pendingVisits ?? 0} visita(s) pendente(s)</p><p>{pendingSummary.counts?.activeVisits ?? 0} atendimento(s) ativo(s)</p><p>{pendingSummary.counts?.unsentReports ?? 0} relato(s) não enviado(s)</p></div><ul className="mt-3 space-y-1 text-xs text-amber-950">{[...(pendingSummary.pendingPosts ?? []).map((item: any) => `Posto: ${item.postName} (${item.status})`), ...(pendingSummary.pendingVisits ?? []).map((item: any) => `Visita: ${item.postName} (${item.status})`), ...(pendingSummary.activeVisits ?? []).map((item: any) => `Em atendimento: ${item.postName}`), ...(pendingSummary.unsentReports ?? []).map((item: any) => `Relato não enviado: ${item.postName}`)].map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}</ul><label htmlFor="route-exception-justification" className="mt-4 block text-sm font-semibold text-amber-950">Justificativa obrigatória <span className="text-rose-700">*</span></label><Textarea id="route-exception-justification" value={exceptionJustification} onChange={(event) => setExceptionJustification(event.target.value)} minLength={8} maxLength={2000} required aria-required="true" disabled={isClosing} placeholder="Explique por que a rota precisa ser encerrada com estas pendências." className="mt-2 min-h-24 border-amber-300 bg-white" /><p className="mt-1 text-xs text-amber-800">Mínimo de 8 caracteres. O motivo e este snapshot serão registrados no histórico de auditoria.</p></div></div></section>}
+          {closureAudit && report.status === "completed" && <div role="status" className={`rounded-xl border p-4 text-sm ${hasClosurePendencies(closureAudit) ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}><p className="font-semibold">{hasClosurePendencies(closureAudit) ? "Turno encerrado com pendências registradas" : "Turno encerrado sem pendências"}</p><p className="mt-1">Rota de turno {closureAudit.supervisorRouteId} · Supervisor {closureAudit.supervisorId} · {formatDateTime(closureAudit.closedAt)} · KM final {formatKm(closureAudit.kmFinal)}</p><p className="mt-2 text-xs">Snapshot imutável: {closureAudit.pendingSummary?.counts?.pendingPosts ?? 0} posto(s) pendente(s), {closureAudit.pendingSummary?.counts?.pendingVisits ?? 0} visita(s) pendente(s), {closureAudit.pendingSummary?.counts?.activeVisits ?? 0} atendimento(s) ativo(s) e {closureAudit.pendingSummary?.counts?.unsentReports ?? 0} relato(s) não enviado(s).</p></div>}
+          {!isClosed && hasPendencies && <section role="status" className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><h3 className="font-bold">O turno pode ser encerrado com pendências</h3><p className="mt-1">{pendingVisitCount} visita(s) pendente(s), {activeVisitCount} atendimento(s) ativo(s) e {unsentReportCount} relato(s) pendente(s). Ao encerrar, os registros mantêm o estado atual e ficam na auditoria; não é necessário informar justificativa.</p></div></div></section>}
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Indicadores do turno">
             <Kpi label="KM percorrido" value={formatKm(metrics.kmCovered)} detail={`${formatKm(metrics.kmInitial)} → ${formatKm(metrics.kmFinal)}`} icon={TrendingUp} tone="blue" />
             <Kpi label="Visitas concluídas" value={`${completedVisits}/${totalVisits}`} detail={`${visitProgress}% da jornada registrada`} icon={CheckCircle2} tone="emerald" />
@@ -232,7 +232,7 @@ export default function SupervisorShiftReportDialog({ open, onOpenChange, report
         <DialogFooter className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4 sm:px-8">
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={handleExportPdf} disabled={!report || isLoading || Boolean(isExporting) || isClosing} className="gap-2 border-slate-300"><Download className="h-4 w-4 text-blue-700" />{isExporting === "pdf" ? "Gerando PDF..." : "Baixar PDF"}</Button><Button type="button" variant="outline" onClick={handleExportWord} disabled={!report || isLoading || Boolean(isExporting) || isClosing} className="gap-2 border-slate-300"><FileText className="h-4 w-4 text-blue-700" />{isExporting === "word" ? "Gerando Word..." : "Baixar Word"}</Button><Button type="button" variant="outline" onClick={handleShare} disabled={!report || isLoading || isClosing} className="gap-2 border-emerald-200 text-emerald-800 hover:bg-emerald-50"><MessageCircle className="h-4 w-4" />WhatsApp</Button></div>
-            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isClosing}>{isClosed ? "Fechar relatório" : "Voltar"}</Button>{!isClosed && canClose && <Button type="button" onClick={handleConfirm} disabled={isClosing || isLoading || Boolean(pendingSummary && exceptionJustification.trim().length < 8)} className="gap-2 bg-blue-700 font-bold text-white shadow-sm hover:bg-blue-800">{isClosing ? <><Loader2 className="h-4 w-4 animate-spin" /> Encerrando...</> : <><Share2 className="h-4 w-4" /> {pendingSummary ? "Justificar e encerrar excepcionalmente" : "Confirmar e gerar relatório"}</>}</Button>}</div>
+            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isClosing}>{isClosed ? "Fechar relatório" : "Voltar"}</Button>{!isClosed && canClose && <Button type="button" onClick={handleConfirm} disabled={isClosing || isLoading} className="gap-2 bg-blue-700 font-bold text-white shadow-sm hover:bg-blue-800">{isClosing ? <><Loader2 className="h-4 w-4 animate-spin" /> Encerrando...</> : <><Share2 className="h-4 w-4" /> {hasPendencies ? "Encerrar com pendências e gerar relatório" : "Confirmar e gerar relatório"}</>}</Button>}</div>
           </div>
         </DialogFooter>
       </DialogContent>

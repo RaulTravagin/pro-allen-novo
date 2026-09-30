@@ -314,13 +314,13 @@ export const supervisorRoutes = pgTable("supervisorRoutes", {
 export type SupervisorRoute = typeof supervisorRoutes.$inferSelect;
 export type InsertSupervisorRoute = typeof supervisorRoutes.$inferInsert;
 
-/** Exceções são eventos imutáveis; não armazenar justificativas dentro do registro mutável da rota. */
+/** Fechamentos são eventos imutáveis; não armazenar justificativas no registro mutável da rota. */
 export const supervisorRouteClosureExceptions = pgTable("supervisor_route_closure_exceptions", {
   id: serial("id").primaryKey(),
   supervisorRouteId: integer("supervisor_route_id").notNull(),
   supervisorId: integer("supervisor_id").notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }).notNull(),
-  justification: text("justification").notNull(),
+  justification: text("justification"),
   pendingSummary: jsonb("pending_summary").notNull(),
 }, (table) => ({
   routeClosedAtIdx: index("idx_route_closure_exceptions_route_closed_at").on(table.supervisorRouteId, table.closedAt),

@@ -1,0 +1,1 @@
+ALTER TABLE "supervisor_route_closure_exceptions" ALTER COLUMN "justification" DROP NOT NULL;

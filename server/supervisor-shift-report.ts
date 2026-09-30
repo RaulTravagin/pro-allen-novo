@@ -14,15 +14,20 @@ function chronologicalValue(value: unknown) {
   return timeValue(value)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** Converte o snapshot operacional em um relatório individual do turno do supervisor. */
+/** Converte o snapshot em relatório da rota solicitada e atividades anteriores do mesmo turno. */
 export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: number, supervisorRouteId: number) {
-  const routeViews: AnyRecord[] = (snapshot.activeRoutes ?? [])
+  const supervisorRoutes: AnyRecord[] = (snapshot.activeRoutes ?? [])
     .filter((route: AnyRecord) => route.supervisorId === supervisorId)
     .sort((first: AnyRecord, second: AnyRecord) => chronologicalValue(first.startedAt ?? first.shiftStartedAt) - chronologicalValue(second.startedAt ?? second.shiftStartedAt));
-  if (!routeViews.length) return null;
-
-  const currentRoute = routeViews.find((route: AnyRecord) => route.id === supervisorRouteId);
+  const currentRoute = supervisorRoutes.find((route: AnyRecord) => route.id === supervisorRouteId);
   if (!currentRoute) return null;
+
+  const currentRouteStart = chronologicalValue(currentRoute.startedAt ?? currentRoute.shiftStartedAt);
+  const routeViews = supervisorRoutes.filter((route: AnyRecord) => {
+    if (route.id === supervisorRouteId) return true;
+    if (currentRoute.shiftType && route.shiftType !== currentRoute.shiftType) return false;
+    return route.startedAt != null && chronologicalValue(route.startedAt) <= currentRouteStart;
+  });
   const activities: AnyRecord[] = routeViews.map((route: AnyRecord) => ({
     id: route.id,
     routeName: route.routeName,
@@ -69,7 +74,7 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
   }
   const fuelLogs: AnyRecord[] = Array.from(fuelById.values()).sort((first: AnyRecord, second: AnyRecord) => chronologicalValue(first.createdAt) - chronologicalValue(second.createdAt));
   const firstStartedActivity = activities.find((activity: AnyRecord) => activity.startedAt) ?? activities[0];
-  const lastActivity = activities.at(-1);
+  const currentActivity = activities.find((activity: AnyRecord) => activity.id === supervisorRouteId);
   const kmCovered = activities.reduce((total: number, activity: AnyRecord) => total + (activity.kmCovered ?? 0), 0);
   const observations: AnyRecord[] = visits.flatMap((visit: AnyRecord) => [
     visit.occurrenceReport?.trim() ? { type: "occurrence", postName: visit.postName, text: visit.occurrenceReport.trim() } : null,
@@ -81,21 +86,21 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
     generatedAt: new Date(),
     supervisor: {
       id: supervisorId,
-      name: currentRoute?.supervisorName ?? `Supervisor #${supervisorId}`,
-      username: currentRoute?.supervisorUsername ?? null,
+      name: currentRoute.supervisorName ?? `Supervisor #${supervisorId}`,
+      username: currentRoute.supervisorUsername ?? null,
     },
     supervisorRouteId,
-    status: currentRoute?.status ?? lastActivity?.status ?? "completed",
-    shiftType: currentRoute?.shiftType ?? firstStartedActivity?.shiftType ?? null,
+    status: currentRoute.status ?? "completed",
+    shiftType: currentRoute.shiftType ?? firstStartedActivity?.shiftType ?? null,
     startedAt: firstStartedActivity?.startedAt ?? firstStartedActivity?.shiftStartedAt ?? null,
-    completedAt: lastActivity?.completedAt ?? null,
+    completedAt: currentActivity?.completedAt ?? null,
     activities,
     visits,
     fuelLogs,
     observations,
     metrics: {
       kmInitial: firstStartedActivity?.kmInitial ?? null,
-      kmFinal: lastActivity?.kmFinal ?? null,
+      kmFinal: currentActivity?.kmFinal ?? null,
       kmCovered: Number(kmCovered.toFixed(2)),
       totalVisits: visits.length,
       completedVisits: visits.filter((visit: AnyRecord) => visit.status === "visited").length,

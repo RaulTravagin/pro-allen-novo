@@ -8,7 +8,6 @@ import {
   visitChecklists,
 } from "../drizzle/schema";
 import { closeSupervisorRouteInTransaction } from "./supervisor-route-closure";
-import type { CloseSupervisorRouteInput } from "./supervisor-route-closure";
 
 const supervisorId = 7;
 const supervisorRouteId = 13;
@@ -23,34 +22,31 @@ const routeFixture = {
   completedAt: null,
 };
 
-function createTransactionFixture(options: { hasPendingVisit?: boolean } = {}) {
+function createTransactionFixture(options: { hasPendingVisits?: boolean } = {}) {
   const route = { ...routeFixture };
   const auditRows: Array<Record<string, unknown>> = [];
   const deleteCalls: unknown[] = [];
-  const occurrences = Array.from({ length: 7 }, (_, index) => ({
-    id: index + 1,
-    postId: index + 1,
-    postName: `Posto fictício ${index + 1}`,
-    status: options.hasPendingVisit && index === 6 ? "pending" : "visited",
-    isCoverage: false,
-    arrivalTime: new Date(
-      `2026-09-30T${String(8 + index).padStart(2, "0")}:00:00.000Z`
-    ),
-    departureTime: new Date(
-      `2026-09-30T${String(8 + index).padStart(2, "0")}:30:00.000Z`
-    ),
-    occurrenceReport:
-      options.hasPendingVisit && index === 6
+  const checklists = Array.from({ length: 9 }, (_, index) => {
+    const pending = Boolean(options.hasPendingVisits && index >= 7);
+    return {
+      id: index + 1,
+      postId: index + 1,
+      postName: `Posto fictício ${index + 1}`,
+      status: pending ? "pending" : "visited",
+      isCoverage: false,
+      arrivalTime: pending
         ? null
-        : `Relato fictício ${index + 1}`,
-    occurrenceSubmittedAt:
-      options.hasPendingVisit && index === 6
+        : new Date(`2026-09-30T${String(8 + index).padStart(2, "0")}:00:00.000Z`),
+      departureTime: pending
         ? null
-        : new Date(
-            `2026-09-30T${String(8 + index).padStart(2, "0")}:35:00.000Z`
-          ),
-  }));
-  const plannedPosts = occurrences.map(item => ({
+        : new Date(`2026-09-30T${String(8 + index).padStart(2, "0")}:30:00.000Z`),
+      occurrenceReport: pending ? null : `Relato fictício ${index + 1}`,
+      occurrenceSubmittedAt: pending
+        ? null
+        : new Date(`2026-09-30T${String(8 + index).padStart(2, "0")}:35:00.000Z`),
+    };
+  });
+  const plannedPosts = checklists.map(item => ({
     id: item.postId,
     name: item.postName,
   }));
@@ -58,7 +54,7 @@ function createTransactionFixture(options: { hasPendingVisit?: boolean } = {}) {
     select: () => ({
       from: (table: unknown) => ({
         leftJoin: () => ({
-          where: async () => (table === visitChecklists ? occurrences : []),
+          where: async () => (table === visitChecklists ? checklists : []),
         }),
         where: () => {
           if (table === users)
@@ -78,6 +74,7 @@ function createTransactionFixture(options: { hasPendingVisit?: boolean } = {}) {
       set: (values: Record<string, unknown>) => ({
         where: () => ({
           returning: async () => {
+            if (route.status !== "in_progress") return [];
             Object.assign(route, values);
             return [{ id: supervisorRouteId }];
           },
@@ -96,91 +93,130 @@ function createTransactionFixture(options: { hasPendingVisit?: boolean } = {}) {
       throw new Error("O fechamento não pode apagar registros operacionais");
     },
   };
-  return { transaction, route, auditRows, deleteCalls };
+  return { transaction, route, checklists, auditRows, deleteCalls };
 }
 
 describe("closeSupervisorRouteInTransaction", () => {
   beforeEach(() => vi.useRealTimers());
 
-  it("fecha normalmente com 7 registros completos, KM final 340226 e sem apagar dados", async () => {
+  it("encerra sem pendências e grava auditoria estruturada com KM e resumo zerado", async () => {
     const fixture = createTransactionFixture();
-    const result = await closeSupervisorRouteInTransaction(
-      fixture.transaction,
-      {
+    const statusesBefore = fixture.checklists.map(item => item.status);
+    const result = await closeSupervisorRouteInTransaction(fixture.transaction, {
+      supervisorRouteId,
+      supervisorId,
+      kmFinal: 340226,
+    });
+
+    expect(result).toMatchObject({
+      closed: true,
+      closureAudit: {
         supervisorRouteId,
         supervisorId,
+        routeId: 3,
         kmFinal: 340226,
-      }
-    );
-
-    expect(result).toMatchObject({ closed: true, exceptionAudit: null });
+        justification: null,
+        pendingSummary: {
+          closureStatus: "completed",
+          counts: {
+            pendingPosts: 0,
+            pendingVisits: 0,
+            activeVisits: 0,
+            unsentReports: 0,
+          },
+        },
+      },
+    });
     expect(fixture.route).toMatchObject({
       status: "completed",
       kmFinal: "340226.00",
       completedAt: expect.any(Date),
     });
-    expect(fixture.auditRows).toEqual([]);
-    expect(fixture.deleteCalls).toEqual([]);
-  });
-
-  it("não fecha sem motivo quando há pendência e persiste snapshot auditável com justificativa", async () => {
-    const fixture = createTransactionFixture({ hasPendingVisit: true });
-    const firstAttempt = await closeSupervisorRouteInTransaction(
-      fixture.transaction,
-      {
-        supervisorRouteId,
-        supervisorId,
-        kmFinal: 340226,
-      }
-    );
-    expect(firstAttempt).toMatchObject({
-      closed: false,
-      requiresExceptionJustification: true,
-      pendingSummary: { counts: { pendingPosts: 1, pendingVisits: 1 } },
-    });
-    expect(fixture.route.status).toBe("in_progress");
-    expect(fixture.auditRows).toEqual([]);
-
-    const result = await closeSupervisorRouteInTransaction(
-      fixture.transaction,
-      {
-        supervisorRouteId,
-        supervisorId,
-        kmFinal: 340226,
-        exceptionJustification:
-          "Encerramento por indisponibilidade do posto fictício.",
-      }
-    );
-    expect(result).toMatchObject({
-      closed: true,
-      exceptionAudit: {
-        justification: "Encerramento por indisponibilidade do posto fictício.",
-        pendingSummary: { counts: { pendingPosts: 1, pendingVisits: 1 } },
-      },
-    });
-    expect(fixture.route.status).toBe("completed");
     expect(fixture.auditRows).toHaveLength(1);
     expect(fixture.auditRows[0]).toMatchObject({
       supervisorRouteId,
       supervisorId,
-      justification: "Encerramento por indisponibilidade do posto fictício.",
-      pendingSummary: { counts: { pendingPosts: 1, pendingVisits: 1 } },
+      closedAt: expect.any(Date),
+      justification: null,
+      pendingSummary: { routeId: 3, kmFinal: 340226, closureStatus: "completed" },
     });
+    expect(fixture.checklists.map(item => item.status)).toEqual(statusesBefore);
     expect(fixture.deleteCalls).toEqual([]);
   });
 
-  it("rejeita justificativa vazia em uma tentativa excepcional", async () => {
-    const fixture = createTransactionFixture({ hasPendingVisit: true });
-    const input: CloseSupervisorRouteInput = {
+  it("encerra com visitas pendentes sem justificativa e preserva o estado e o histórico", async () => {
+    const fixture = createTransactionFixture({ hasPendingVisits: true });
+    const statusesBefore = fixture.checklists.map(item => item.status);
+    const result = await closeSupervisorRouteInTransaction(fixture.transaction, {
       supervisorRouteId,
       supervisorId,
       kmFinal: 340226,
-      exceptionJustification: "   ",
-    };
+    });
+
+    expect(result).toMatchObject({
+      closed: true,
+      closureAudit: {
+        supervisorRouteId,
+        supervisorId,
+        routeId: 3,
+        kmFinal: 340226,
+        justification: null,
+        pendingSummary: {
+          counts: { pendingPosts: 2, pendingVisits: 2, activeVisits: 0, unsentReports: 0 },
+          pendingPosts: [
+            { postId: 8, postName: "Posto fictício 8", status: "pending" },
+            { postId: 9, postName: "Posto fictício 9", status: "pending" },
+          ],
+          pendingVisits: [
+            { checklistId: 8, postId: 8, postName: "Posto fictício 8", status: "pending", isCoverage: false },
+            { checklistId: 9, postId: 9, postName: "Posto fictício 9", status: "pending", isCoverage: false },
+          ],
+        },
+      },
+    });
+    expect(fixture.route).toMatchObject({ status: "completed", kmFinal: "340226.00" });
+    expect(fixture.auditRows).toHaveLength(1);
+    expect(fixture.auditRows[0]).toMatchObject({
+      supervisorRouteId,
+      supervisorId,
+      closedAt: expect.any(Date),
+      justification: null,
+      pendingSummary: {
+        routeId: 3,
+        kmFinal: 340226,
+        closureStatus: "completed",
+        counts: { pendingPosts: 2, pendingVisits: 2 },
+      },
+    });
+    expect(fixture.checklists.map(item => item.status)).toEqual(statusesBefore);
+    expect(fixture.checklists.slice(-2).every(item => item.occurrenceReport === null)).toBe(true);
+    expect(fixture.deleteCalls).toEqual([]);
+  });
+
+  it("rejeita KM final menor que o inicial sem concluir nem auditar", async () => {
+    const fixture = createTransactionFixture({ hasPendingVisits: true });
     await expect(
-      closeSupervisorRouteInTransaction(fixture.transaction, input)
+      closeSupervisorRouteInTransaction(fixture.transaction, {
+        supervisorRouteId,
+        supervisorId,
+        kmFinal: 340090,
+      })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(fixture.route.status).toBe("in_progress");
     expect(fixture.auditRows).toEqual([]);
+  });
+
+  it("rejeita uma tentativa concorrente atrasada sem duplicar a auditoria", async () => {
+    const fixture = createTransactionFixture();
+    const input = { supervisorRouteId, supervisorId, kmFinal: 340226 };
+    await expect(
+      closeSupervisorRouteInTransaction(fixture.transaction, input)
+    ).resolves.toMatchObject({ closed: true });
+
+    await expect(
+      closeSupervisorRouteInTransaction(fixture.transaction, input)
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(fixture.auditRows).toHaveLength(1);
+    expect(fixture.route.status).toBe("completed");
   });
 });

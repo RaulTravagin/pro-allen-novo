@@ -44,26 +44,35 @@ describe("supervisorRoutes.finishShift", () => {
     vi.clearAllMocks();
   });
 
-  it("não fecha com pendências sem justificativa e devolve snapshot para solicitar exceção", async () => {
+  it("fecha com pendências sem justificativa e retorna auditoria e relatório da rota", async () => {
+    const closureAudit = {
+      supervisorRouteId: 11,
+      supervisorId: 7,
+      routeId: 3,
+      closedAt: new Date("2026-09-30T20:00:00.000Z"),
+      kmFinal: 140,
+      justification: null,
+      pendingSummary: { ...pendingSummary, routeId: 3, kmFinal: 140, closureStatus: "completed" },
+    };
+    const report = { status: "completed", supervisorRouteId: 11, metrics: { kmFinal: 140 } };
     vi.mocked(db.closeSupervisorRoute).mockResolvedValue({
-      closed: false,
-      requiresExceptionJustification: true,
-      pendingSummary,
+      closed: true,
+      closureAudit,
     } as never);
+    vi.mocked(db.getSupervisorShiftReport).mockResolvedValue(report as never);
     const caller = appRouter.createCaller(userContext);
 
     await expect(caller.supervisorRoutes.finishShift({ supervisorRouteId: 11, kmFinal: 140 })).resolves.toEqual({
-      closed: false,
-      requiresExceptionJustification: true,
-      pendingSummary,
+      closed: true,
+      closureAudit,
+      report,
     });
     expect(db.closeSupervisorRoute).toHaveBeenCalledWith({
       supervisorRouteId: 11,
       supervisorId: 7,
       kmFinal: 140,
-      exceptionJustification: undefined,
     });
-    expect(db.getSupervisorShiftReport).not.toHaveBeenCalled();
+    expect(db.getSupervisorShiftReport).toHaveBeenCalledWith(7, 11);
   });
 
   it("usa o ID autenticado (nunca um supervisor informado pelo cliente) e oculta rota de outro supervisor", async () => {
@@ -75,30 +84,9 @@ describe("supervisorRoutes.finishShift", () => {
     expect(db.getSupervisorShiftReport).not.toHaveBeenCalled();
   });
 
-  it("encaminha justificativa exigida ao caminho canônico e retorna a auditoria após encerrar", async () => {
-    const closedAt = new Date("2026-09-28T16:30:00.000Z");
-    const exceptionAudit = { supervisorRouteId: 11, supervisorId: 7, closedAt, justification: "Encerramento solicitado por pane do veículo.", pendingSummary };
-    vi.mocked(db.closeSupervisorRoute).mockResolvedValue({ closed: true, exceptionAudit } as never);
-    vi.mocked(db.getSupervisorShiftReport).mockResolvedValue({ status: "completed", metrics: { kmFinal: 140 } } as never);
+  it("rejeita KM final inválido antes de chegar ao serviço de encerramento", async () => {
     const caller = appRouter.createCaller(userContext);
-
-    await expect(caller.supervisorRoutes.finishShift({
-      supervisorRouteId: 11,
-      kmFinal: 140,
-      exceptionJustification: exceptionAudit.justification,
-    })).resolves.toEqual({ closed: true, exceptionAudit, report: { status: "completed", metrics: { kmFinal: 140 } } });
-    expect(db.closeSupervisorRoute).toHaveBeenCalledWith(expect.objectContaining({ supervisorId: 7, exceptionJustification: exceptionAudit.justification }));
-  });
-
-  it("rejeita justificativa insuficiente antes de chegar ao serviço de encerramento", async () => {
-    const caller = appRouter.createCaller(userContext);
-    await expect(caller.supervisorRoutes.finishShift({ supervisorRouteId: 11, kmFinal: 140, exceptionJustification: "curta" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(db.closeSupervisorRoute).not.toHaveBeenCalled();
-  });
-
-  it("rejeita justificativa vazia antes de chegar ao serviço de encerramento", async () => {
-    const caller = appRouter.createCaller(userContext);
-    await expect(caller.supervisorRoutes.finishShift({ supervisorRouteId: 11, kmFinal: 140, exceptionJustification: "   " })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.supervisorRoutes.finishShift({ supervisorRouteId: 11, kmFinal: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.closeSupervisorRoute).not.toHaveBeenCalled();
   });
 

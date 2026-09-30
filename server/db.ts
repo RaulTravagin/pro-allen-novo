@@ -808,7 +808,6 @@ export async function closeSupervisorRoute(input: {
   supervisorRouteId: number;
   supervisorId: number;
   kmFinal: number;
-  exceptionJustification?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
 
 describe("selectOpenSupervisorRoute", () => {
+  it("retoma uma rota em andamento existente antes de escolher outra pendente", () => {
+    const inProgressRoute = { id: 12, status: "in_progress" };
+    const pendingRoute = { id: 13, status: "pending" };
+
+    expect(selectOpenSupervisorRoute([pendingRoute, inProgressRoute])).toBe(
+      inProgressRoute
+    );
+  });
+
   it("não retoma a rota concluída do turno anterior quando existe uma rota pendente nova", () => {
     const previousShift = {
       id: 13,

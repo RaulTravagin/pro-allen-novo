@@ -33,15 +33,15 @@ const context: TrpcContext = {
 describe("supervisorRoutes.finishShift", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(db.closeSupervisorRoute).mockResolvedValue({ closed: true, exceptionAudit: null } as never);
+    vi.mocked(db.closeSupervisorRoute).mockResolvedValue({ closed: true, closureAudit: { supervisorRouteId: 13, supervisorId: 7, routeId: 3, closedAt: new Date("2026-09-30T20:00:00.000Z"), kmFinal: 12025, justification: null, pendingSummary: { counts: { pendingPosts: 0, pendingVisits: 0, activeVisits: 0, unsentReports: 0 } } } } as never);
     vi.mocked(db.getSupervisorShiftReport).mockResolvedValue({ status: "completed", supervisorRouteId: 13, metrics: { kmFinal: 12025 } } as never);
   });
 
   it("fecha a rota e retorna o relatório compilado", async () => {
     const result = await appRouter.createCaller(context).supervisorRoutes.finishShift({ supervisorRouteId: 13, kmFinal: 12025 });
 
-    expect(result).toEqual({ closed: true, exceptionAudit: null, report: expect.objectContaining({ status: "completed", supervisorRouteId: 13 }) });
-    expect(db.closeSupervisorRoute).toHaveBeenCalledWith({ supervisorRouteId: 13, supervisorId: 7, kmFinal: 12025, exceptionJustification: undefined });
+    expect(result).toMatchObject({ closed: true, closureAudit: { supervisorRouteId: 13, routeId: 3, kmFinal: 12025, justification: null }, report: { status: "completed", supervisorRouteId: 13 } });
+    expect(db.closeSupervisorRoute).toHaveBeenCalledWith({ supervisorRouteId: 13, supervisorId: 7, kmFinal: 12025 });
     expect(db.getSupervisorShiftReport).toHaveBeenCalledWith(7, 13);
   });
 

@@ -874,7 +874,6 @@ export const appRouter = router({
       .input(z.object({
         supervisorRouteId: z.number().int().positive(),
         kmFinal: z.number().finite().nonnegative(),
-        exceptionJustification: z.string().trim().min(8, "Informe uma justificativa com pelo menos 8 caracteres").max(2000).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -884,7 +883,6 @@ export const appRouter = router({
             supervisorRouteId: input.supervisorRouteId,
             supervisorId: ctx.user.id,
             kmFinal: input.kmFinal,
-            exceptionJustification: input.exceptionJustification,
           });
         } catch (error) {
           if (error instanceof RouteClosureError) {
@@ -892,7 +890,6 @@ export const appRouter = router({
           }
           throw error;
         }
-        if (!closure.closed) return closure;
         const report = await db.getSupervisorShiftReport(ctx.user.id, input.supervisorRouteId);
         if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Turno encerrado, mas o relatório não pôde ser consolidado' });
         return { ...closure, report };

@@ -11,7 +11,6 @@ import {
   withLockedSupervisorRoute,
 } from "./route-checklist-lock";
 import {
-  hasRouteClosurePendencies,
   RouteClosureError,
   summarizeRouteClosure,
 } from "./route-closure";
@@ -20,10 +19,9 @@ export type CloseSupervisorRouteInput = {
   supervisorRouteId: number;
   supervisorId: number;
   kmFinal: number;
-  exceptionJustification?: string;
 };
 
-/** Fecha a rota e persiste o snapshot excepcional na mesma transação. */
+/** Fecha a rota e persiste o snapshot estruturado do fechamento na mesma transação. */
 export async function closeSupervisorRouteInTransaction(
   transaction: any,
   input: CloseSupervisorRouteInput
@@ -88,34 +86,13 @@ export async function closeSupervisorRouteInTransaction(
             ? []
             : checklistRows,
       });
-      const hasPendencies = hasRouteClosurePendencies(pendingSummary);
-      const justification = input.exceptionJustification?.trim();
-
-      if (
-        hasPendencies &&
-        input.exceptionJustification !== undefined &&
-        (!justification ||
-          justification.length < 8 ||
-          justification.length > 2000)
-      ) {
-        throw new RouteClosureError(
-          "BAD_REQUEST",
-          "A justificativa da exceção deve ter entre 8 e 2000 caracteres"
-        );
-      }
-      if (hasPendencies && !justification) {
-        return {
-          closed: false as const,
-          requiresExceptionJustification: true as const,
-          pendingSummary,
-        };
-      }
 
       const closedAt = new Date();
+      const kmFinal = Number(input.kmFinal.toFixed(2));
       const [closedRoute] = await transaction
         .update(supervisorRoutes)
         .set({
-          kmFinal: input.kmFinal.toFixed(2),
+          kmFinal: kmFinal.toFixed(2),
           status: "completed",
           completedAt: closedAt,
         })
@@ -134,27 +111,31 @@ export async function closeSupervisorRouteInTransaction(
         );
       }
 
-      if (hasPendencies) {
-        await transaction.insert(supervisorRouteClosureExceptions).values({
-          supervisorRouteId: input.supervisorRouteId,
-          supervisorId: input.supervisorId,
-          closedAt,
-          justification: justification!,
-          pendingSummary,
-        });
-        return {
-          closed: true as const,
-          exceptionAudit: {
-            supervisorRouteId: input.supervisorRouteId,
-            supervisorId: input.supervisorId,
-            closedAt,
-            justification: justification!,
-            pendingSummary,
-          },
-        };
-      }
+      const auditPendingSummary = {
+        ...pendingSummary,
+        routeId: route.routeId,
+        kmFinal,
+        closureStatus: "completed" as const,
+      };
+      const closureAudit = {
+        supervisorRouteId: input.supervisorRouteId,
+        supervisorId: input.supervisorId,
+        routeId: route.routeId,
+        closedAt,
+        kmFinal,
+        justification: null,
+        pendingSummary: auditPendingSummary,
+      };
 
-      return { closed: true as const, exceptionAudit: null };
+      await transaction.insert(supervisorRouteClosureExceptions).values({
+        supervisorRouteId: input.supervisorRouteId,
+        supervisorId: input.supervisorId,
+        closedAt,
+        justification: null,
+        pendingSummary: auditPendingSummary,
+      });
+
+      return { closed: true as const, closureAudit };
     }
   );
 }
