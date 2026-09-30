@@ -121,6 +121,37 @@ describe("autorização tRPC de POPs por posto", () => {
     expect(popMocks.storagePut).not.toHaveBeenCalled();
   });
 
+  it("explica quando o storage do Render ainda não foi configurado", async () => {
+    popMocks.storagePut.mockRejectedValueOnce(new Error("Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"));
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+
+    await expect(caller.gestor.postPops.upload({
+      postId: 31,
+      name: "procedimento.pdf",
+      mimeType: "application/pdf",
+      base64: "JVBERi0x",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("BUILT_IN_FORGE_API_URL"),
+    });
+    expect(popMocks.createPostPopDocument).not.toHaveBeenCalled();
+  });
+
+  it("distingue uma recusa do serviço de arquivos do erro genérico de anexo", async () => {
+    popMocks.storagePut.mockRejectedValueOnce(new Error("Storage presign failed (401)"));
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+
+    await expect(caller.gestor.postPops.upload({
+      postId: 31,
+      name: "procedimento.pdf",
+      mimeType: "application/pdf",
+      base64: "JVBERi0x",
+    })).rejects.toMatchObject({
+      code: "BAD_GATEWAY",
+      message: expect.stringContaining("serviço de arquivos"),
+    });
+  });
+
   it("lista anexos ao supervisor apenas na instância de rota vinculada ao posto", async () => {
     const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "SUPERVISOR", id: 21 }));
     await expect(caller.supervisorRoutes.getPostPops({ supervisorRouteId: 88, postId: 31 })).resolves.toHaveLength(1);

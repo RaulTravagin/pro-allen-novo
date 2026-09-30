@@ -93,6 +93,23 @@ const postPopManagerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   return next();
 });
 
+function getPostPopStorageFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("Storage config missing")) {
+    return {
+      code: "PRECONDITION_FAILED" as const,
+      message: "O armazenamento de arquivos não está configurado no Render. Cadastre BUILT_IN_FORGE_API_URL e BUILT_IN_FORGE_API_KEY no serviço.",
+    };
+  }
+  if (message.startsWith("Storage presign") || message.startsWith("Storage upload")) {
+    return {
+      code: "BAD_GATEWAY" as const,
+      message: "O serviço de arquivos recusou o POP. Verifique a configuração do storage no Render e tente novamente.",
+    };
+  }
+  return null;
+}
+
 const gestorPostInput = z.object({
   routeId: z.number().int().positive(),
   name: z.string().trim().min(2, "Informe o nome do posto").max(255),
@@ -650,8 +667,17 @@ export const appRouter = router({
         }
         const safeName = input.name.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "").slice(-200) || "procedimento";
         const key = `posts/pops/${input.postId}/${randomUUID()}-${safeName}`;
+        let stored: { key: string; url: string };
         try {
-          const stored = await storagePut(key, bytes, mimeType);
+          stored = await storagePut(key, bytes, mimeType);
+        } catch (error) {
+          const storageFailure = getPostPopStorageFailure(error);
+          console.error("[Post POP] Falha no storage:", error instanceof Error ? error.message : "erro desconhecido");
+          if (storageFailure) throw new TRPCError(storageFailure);
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "Não foi possível enviar o POP ao armazenamento. Tente novamente." });
+        }
+
+        try {
           const document = await db.createPostPopDocument({
             postId: input.postId,
             originalName: input.name,
@@ -662,8 +688,8 @@ export const appRouter = router({
           if (!document) throw new Error("Não foi possível registrar o POP");
           return { id: document.id, postId: document.postId, originalName: document.originalName, mimeType: document.mimeType, createdAt: document.createdAt };
         } catch (error) {
-          console.error("[Post POP] Falha ao armazenar ou registrar documento:", error);
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível anexar o POP" });
+          console.error("[Post POP] Falha ao registrar documento:", error instanceof Error ? error.message : "erro desconhecido");
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O arquivo foi enviado, mas não foi possível registrar o POP. Verifique se a migration 0013 foi aplicada." });
         }
       }),
       delete: postPopManagerProcedure.input(z.object({ postId: z.number().int().positive(), documentId: z.number().int().positive() })).mutation(async ({ input }) => {

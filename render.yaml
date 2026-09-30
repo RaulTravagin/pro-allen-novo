@@ -12,6 +12,10 @@ services:
         value: production
       - key: MANUS_OAUTH_ENABLED
         value: "false"
+      - key: BUILT_IN_FORGE_API_URL
+        sync: false
+      - key: BUILT_IN_FORGE_API_KEY
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_SSL

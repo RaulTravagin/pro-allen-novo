@@ -48,7 +48,7 @@ pnpm start
 
 O perfil efetivo segue estas regras: contas existentes com `users.role = admin` são tratadas como **ADM**; contas operacionais sem `personnelRole` são tratadas como **SUPERVISOR**. A tela inicial permite escolher Supervisor, RH, Financeiro ou Admin, mas o perfil real retornado pelo servidor sempre prevalece no redirecionamento. RH e ADM podem atribuir **SUPERVISOR**, **RH**, **FINANCEIRO** ou **ADM** e criar novos logins na aba **Usuários do Sistema** dentro de `/pessoal`. Supervisores lançam registros, RH aprova ou rejeita, e Financeiro quita somente valores aprovados.
 
-O upload de atestados aceita PDF, JPG, PNG e WEBP de até 10 MB. Os bytes são enviados para o storage configurado e apenas a referência do arquivo é persistida no banco. Para habilitar o upload, defina `BUILT_IN_FORGE_API_URL` e `BUILT_IN_FORGE_API_KEY`; sem essas variáveis, os demais fluxos do módulo continuam disponíveis, mas o envio de atestado será recusado com uma mensagem de configuração.
+O upload de atestados aceita PDF, JPG, PNG e WEBP de até 10 MB; o upload de POPs aceita PDF, DOC e DOCX de até 10 MB. Os bytes são enviados para o storage configurado e apenas a referência do arquivo é persistida no banco. No Render, defina `BUILT_IN_FORGE_API_URL` e `BUILT_IN_FORGE_API_KEY` no serviço `pro-allen-oficial`; sem essas variáveis, os demais fluxos continuam disponíveis, mas o envio mostrará uma mensagem de configuração. Os POPs também usam o proxy privado de storage, inclusive quando `MANUS_OAUTH_ENABLED=false` e o acesso administrativo é feito pelo login local.
 
 ## Portabilidade
 

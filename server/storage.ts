@@ -40,13 +40,17 @@ export async function storagePut(
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
   presignUrl.searchParams.set("path", key);
 
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
+  let presignResp: Response;
+  try {
+    presignResp = await fetch(presignUrl, {
+      headers: { Authorization: `Bearer ${forgeKey}` },
+    });
+  } catch {
+    throw new Error("Storage presign unavailable");
+  }
 
   if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+    throw new Error(`Storage presign failed (${presignResp.status})`);
   }
 
   const { url: s3Url } = (await presignResp.json()) as { url: string };
@@ -58,11 +62,16 @@ export async function storagePut(
       ? new Blob([data], { type: contentType })
       : new Blob([data as any], { type: contentType });
 
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob,
-  });
+  let uploadResp: Response;
+  try {
+    uploadResp = await fetch(s3Url, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: blob,
+    });
+  } catch {
+    throw new Error("Storage upload unavailable");
+  }
 
   if (!uploadResp.ok) {
     throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);

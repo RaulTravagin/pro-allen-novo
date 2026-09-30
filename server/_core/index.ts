@@ -74,8 +74,9 @@ async function startServer() {
   app.get("/healthz", (_req, res) => {
     res.status(200).json({ ok: true, service: "pro-allen" });
   });
+  // O storage privado também é usado pelo login local do Render, sem OAuth.
+  registerStorageProxy(app);
   if (process.env.MANUS_OAUTH_ENABLED !== "false") {
-    registerStorageProxy(app);
     registerOAuthRoutes(app);
   }
   // tRPC API
