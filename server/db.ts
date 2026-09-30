@@ -2,7 +2,7 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, sql } from "driz
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, supervisorRouteClosureExceptions, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
 import { ENV } from './_core/env';
@@ -11,8 +11,10 @@ import { buildSupervisorShiftReport } from "./supervisor-shift-report";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { storagePut } from "./storage";
 import { randomUUID } from "node:crypto";
-import { hasRouteClosurePendencies, RouteClosureError, summarizeRouteClosure } from "./route-closure";
-import { withLockedSupervisorRoute } from "./route-checklist-lock";
+import { RouteClosureError } from "./route-closure";
+import { lockSupervisorRouteOperations, withLockedSupervisorRoute } from "./route-checklist-lock";
+import { closeSupervisorRouteInTransaction } from "./supervisor-route-closure";
+import { startSupervisorRouteInTransaction, type StartSupervisorRouteInput } from "./supervisor-route-start";
 import { MAX_UPLOAD_FILE_BYTES, isValidUploadBase64, resolvePersonnelDocumentMimeType } from "../shared/upload-file-types";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
@@ -521,17 +523,29 @@ export async function createSupervisorRoute(supervisorId: number, routeId: numbe
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const shift = getOperationalShift(date);
-  
-  const result = await db.insert(supervisorRoutes).values({
-    supervisorId,
-    routeId,
-    date,
-    shiftType: shift.shiftType,
-    shiftStartedAt: shift.shiftStartedAt,
-    status: 'pending',
-  }).returning({ id: supervisorRoutes.id });
 
-  return getInsertedId(result);
+  return db.transaction(async (transaction) => {
+    await lockSupervisorRouteOperations(transaction, supervisorId);
+    const openRoutes = await transaction.select({ id: supervisorRoutes.id, status: supervisorRoutes.status })
+      .from(supervisorRoutes)
+      .where(and(
+        eq(supervisorRoutes.supervisorId, supervisorId),
+        inArray(supervisorRoutes.status, ["pending", "in_progress"]),
+      ));
+    const openRoute = openRoutes.find((item) => item.status === "in_progress")
+      ?? openRoutes.find((item) => item.status === "pending");
+    if (openRoute) return openRoute.id;
+
+    const result = await transaction.insert(supervisorRoutes).values({
+      supervisorId,
+      routeId,
+      date,
+      shiftType: shift.shiftType,
+      shiftStartedAt: shift.shiftStartedAt,
+      status: "pending",
+    }).returning({ id: supervisorRoutes.id });
+    return getInsertedId(result);
+  });
 }
 
 function normalizeVehiclePlate(value: string) {
@@ -783,16 +797,13 @@ export async function getSupervisorRoutesToday(supervisorId: number) {
     ));
 }
 
-export async function updateSupervisorRoute(id: number, updates: any) {
+export async function startSupervisorRoute(input: StartSupervisorRouteInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  return await db.update(supervisorRoutes)
-    .set(updates)
-    .where(eq(supervisorRoutes.id, id));
+  return db.transaction((transaction) => startSupervisorRouteInTransaction(transaction, input));
 }
 
-/** Fecha somente a rota ativa do supervisor autenticado; atualiza rota e trilha excepcional na mesma transação. */
+/** Fecha somente a rota ativa do supervisor autenticado; estado e trilha excepcional compartilham o commit. */
 export async function closeSupervisorRoute(input: {
   supervisorRouteId: number;
   supervisorId: number;
@@ -801,95 +812,30 @@ export async function closeSupervisorRoute(input: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
-    supervisorRouteId: input.supervisorRouteId,
-    supervisorId: input.supervisorId,
-    allowedStatuses: ["in_progress"],
-    statusMessage: "Somente uma rota ativa do supervisor pode ser encerrada",
-  }, async (route) => {
-    if (!Number.isFinite(input.kmFinal) || input.kmFinal < 0 || (route.kmInitial != null && input.kmFinal < Number(route.kmInitial))) {
-      throw new RouteClosureError("BAD_REQUEST", "O KM final informado é inválido ou menor que o KM inicial");
-    }
-
-    const [routeCatalog] = await transaction.select({ activityType: routes.activityType }).from(routes)
-      .where(eq(routes.id, route.routeId)).limit(1);
-    const [activePosts, checklistRows] = await Promise.all([
-      transaction.select({ id: posts.id, name: posts.name }).from(posts)
-        .where(and(eq(posts.routeId, route.routeId), eq(posts.isActive, true))),
-      transaction.select({
-        id: visitChecklists.id,
-        postId: visitChecklists.postId,
-        postName: posts.name,
-        status: visitChecklists.status,
-        isCoverage: visitChecklists.isCoverage,
-        arrivalTime: visitChecklists.arrivalTime,
-        departureTime: visitChecklists.departureTime,
-        occurrenceReport: visitChecklists.occurrenceReport,
-        occurrenceSubmittedAt: visitChecklists.occurrenceSubmittedAt,
-      }).from(visitChecklists)
-        .leftJoin(posts, eq(posts.id, visitChecklists.postId))
-        .where(eq(visitChecklists.supervisorRouteId, input.supervisorRouteId)),
-    ]);
-    const pendingSummary = summarizeRouteClosure({
-      posts: routeCatalog?.activityType === "operational_base" ? [] : activePosts,
-      checklists: routeCatalog?.activityType === "operational_base" ? [] : checklistRows,
-    });
-    const hasPendencies = hasRouteClosurePendencies(pendingSummary);
-    const justification = input.exceptionJustification?.trim();
-
-    if (hasPendencies && !justification) {
-      return { closed: false as const, requiresExceptionJustification: true as const, pendingSummary };
-    }
-    if (hasPendencies && (justification!.length < 8 || justification!.length > 2000)) {
-      throw new RouteClosureError("BAD_REQUEST", "A justificativa da exceção deve ter entre 8 e 2000 caracteres");
-    }
-
-    const closedAt = new Date();
-    await transaction.update(supervisorRoutes)
-      .set({ kmFinal: input.kmFinal.toFixed(2), status: "completed", completedAt: closedAt })
-      .where(and(
-        eq(supervisorRoutes.id, input.supervisorRouteId),
-        eq(supervisorRoutes.supervisorId, input.supervisorId),
-        eq(supervisorRoutes.status, "in_progress"),
-      ));
-
-    if (hasPendencies) {
-      await transaction.insert(supervisorRouteClosureExceptions).values({
-        supervisorRouteId: input.supervisorRouteId,
-        supervisorId: input.supervisorId,
-        closedAt,
-        justification: justification!,
-        pendingSummary,
-      });
-      return {
-        closed: true as const,
-        exceptionAudit: { supervisorRouteId: input.supervisorRouteId, supervisorId: input.supervisorId, closedAt, justification: justification!, pendingSummary },
-      };
-    }
-
-    return { closed: true as const, exceptionAudit: null };
-  }));
+  return db.transaction((transaction) => closeSupervisorRouteInTransaction(transaction, input));
 }
 
 /** Cancela uma preparação ainda pendente e remove os checklists ainda não utilizados dela. */
 export async function cancelPendingSupervisorRoute(id: number, supervisorId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.transaction((transaction) => withLockedSupervisorRoute(transaction, {
-    supervisorRouteId: id,
-    supervisorId,
-    allowedStatuses: ["pending"],
-    statusMessage: "Somente uma rota ainda não iniciada pode ser cancelada",
-  }, async (route) => {
-    if (route.kmInitial != null || route.startedAt != null) {
-      throw new RouteClosureError("CONFLICT", "Somente uma rota ainda não iniciada pode ser cancelada");
-    }
-    await transaction.delete(visitChecklists).where(eq(visitChecklists.supervisorRouteId, id));
-    await transaction.update(supervisorRoutes).set({ status: "cancelled" })
-      .where(and(eq(supervisorRoutes.id, id), eq(supervisorRoutes.supervisorId, supervisorId), eq(supervisorRoutes.status, "pending")));
-    return { cancelled: true as const, supervisorRouteId: id };
-  }));
+  return db.transaction(async (transaction) => {
+    await lockSupervisorRouteOperations(transaction, supervisorId);
+    return withLockedSupervisorRoute(transaction, {
+      supervisorRouteId: id,
+      supervisorId,
+      allowedStatuses: ["pending"],
+      statusMessage: "Somente uma rota ainda não iniciada pode ser cancelada",
+    }, async (route) => {
+      if (route.kmInitial != null || route.startedAt != null) {
+        throw new RouteClosureError("CONFLICT", "Somente uma rota ainda não iniciada pode ser cancelada");
+      }
+      await transaction.delete(visitChecklists).where(eq(visitChecklists.supervisorRouteId, id));
+      await transaction.update(supervisorRoutes).set({ status: "cancelled" })
+        .where(and(eq(supervisorRoutes.id, id), eq(supervisorRoutes.supervisorId, supervisorId), eq(supervisorRoutes.status, "pending")));
+      return { cancelled: true as const, supervisorRouteId: id };
+    });
+  });
 }
 
 // Visit Checklists queries
@@ -1975,7 +1921,12 @@ export async function getOperationalManagementReport(input: OperationalReportFil
 
 /** Consolida todas as atividades do período operacional para o encerramento de um turno individual. */
 export async function getSupervisorShiftReport(supervisorId: number, supervisorRouteId: number) {
-  const snapshot = await getGestorOperationalSnapshot(undefined, { includeHistoricalUsers: true });
+  const route = await getSupervisorRouteById(supervisorRouteId);
+  if (!route || route.supervisorId !== supervisorId || !route.shiftStartedAt) return null;
+  const snapshot = await getGestorOperationalSnapshot(route.shiftStartedAt, {
+    includeHistoricalUsers: true,
+    shiftType: route.shiftType,
+  });
   return buildSupervisorShiftReport(snapshot, supervisorId, supervisorRouteId);
 }
 

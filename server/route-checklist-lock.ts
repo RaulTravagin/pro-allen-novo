@@ -1,6 +1,18 @@
 import { and, eq } from "drizzle-orm";
-import { supervisorRoutes, type SupervisorRoute } from "../drizzle/schema";
+import { supervisorRoutes, users, type SupervisorRoute } from "../drizzle/schema";
 import { RouteClosureError } from "./route-closure";
+
+/** Serializa criação/início/encerramento/cancelamento de rotas do mesmo supervisor. */
+export async function lockSupervisorRouteOperations(transaction: any, supervisorId: number) {
+  const [supervisor] = await transaction.select({ id: users.id }).from(users)
+    .where(eq(users.id, supervisorId))
+    .for("update")
+    .limit(1);
+
+  if (!supervisor) {
+    throw new RouteClosureError("NOT_FOUND", "Supervisor não encontrado");
+  }
+}
 
 /**
  * All checklist mutations and route closure use this same supervisorRoutes row

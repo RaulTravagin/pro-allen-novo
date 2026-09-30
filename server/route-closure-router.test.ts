@@ -6,7 +6,7 @@ vi.mock("./db", () => ({
   closeSupervisorRoute: vi.fn(),
   getSupervisorRouteById: vi.fn(),
   getSupervisorShiftReport: vi.fn(),
-  updateSupervisorRoute: vi.fn(),
+  startSupervisorRoute: vi.fn(),
   markVisitVisitedForActiveRoute: vi.fn(),
 }));
 
@@ -96,20 +96,26 @@ describe("supervisorRoutes.finishShift", () => {
     expect(db.closeSupervisorRoute).not.toHaveBeenCalled();
   });
 
+  it("rejeita justificativa vazia antes de chegar ao serviço de encerramento", async () => {
+    const caller = appRouter.createCaller(userContext);
+    await expect(caller.supervisorRoutes.finishShift({ supervisorRouteId: 11, kmFinal: 140, exceptionJustification: "   " })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.closeSupervisorRoute).not.toHaveBeenCalled();
+  });
+
   it("rejeita tentativas de encerrar por updateKm", async () => {
     vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 11, supervisorId: 7, status: "in_progress", kmInitial: 100 } as never);
     const caller = appRouter.createCaller(userContext);
 
     await expect(caller.supervisorRoutes.updateKm({ id: 11, kmFinal: 140 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(db.updateSupervisorRoute).not.toHaveBeenCalled();
+    expect(db.startSupervisorRoute).not.toHaveBeenCalled();
   });
 
-  it("não permite alterar quilometragem nem viatura após a rota concluída", async () => {
-    vi.mocked(db.getSupervisorRouteById).mockResolvedValue({ id: 11, supervisorId: 7, status: "completed", kmInitial: "100" } as never);
+  it("encaminha o início à transação canônica sem mutação por update genérico", async () => {
+    vi.mocked(db.startSupervisorRoute).mockRejectedValue(new RouteClosureError("CONFLICT", "Somente uma rota pendente pode ser iniciada"));
     const caller = appRouter.createCaller(userContext);
 
     await expect(caller.supervisorRoutes.updateKm({ id: 11, kmInitial: 120, vehicleId: 5 })).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(db.updateSupervisorRoute).not.toHaveBeenCalled();
+    expect(db.startSupervisorRoute).toHaveBeenCalledWith({ supervisorRouteId: 11, supervisorId: 7, kmInitial: 120, vehicleId: 5 });
   });
 });
 

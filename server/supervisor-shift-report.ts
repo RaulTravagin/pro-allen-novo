@@ -21,7 +21,8 @@ export function buildSupervisorShiftReport(snapshot: AnyRecord, supervisorId: nu
     .sort((first: AnyRecord, second: AnyRecord) => chronologicalValue(first.startedAt ?? first.shiftStartedAt) - chronologicalValue(second.startedAt ?? second.shiftStartedAt));
   if (!routeViews.length) return null;
 
-  const currentRoute = routeViews.find((route: AnyRecord) => route.id === supervisorRouteId) ?? routeViews.at(-1);
+  const currentRoute = routeViews.find((route: AnyRecord) => route.id === supervisorRouteId);
+  if (!currentRoute) return null;
   const activities: AnyRecord[] = routeViews.map((route: AnyRecord) => ({
     id: route.id,
     routeName: route.routeName,

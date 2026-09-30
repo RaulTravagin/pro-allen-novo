@@ -6,6 +6,8 @@ import { z } from "zod";
 import * as db from "./db";
 import { isCivilDate, isCivilMonth } from "../shared/personnel-schedules";
 import { TRPCError } from "@trpc/server";
+import { RouteClosureError } from "./route-closure";
+import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
 import {
   createGestorSession,
   GESTOR_COOKIE_NAME,
@@ -31,7 +33,6 @@ import {
 } from "./personnel-security";
 import type { MovementPeriod } from "../shared/personnel-movement-report";
 import type { User } from "../drizzle/schema";
-import { RouteClosureError } from "./route-closure";
 import { randomUUID } from "node:crypto";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { canManagePostPops } from "./post-pops-access";
@@ -814,8 +815,7 @@ export const appRouter = router({
         const route = await db.getRouteById(input.routeId);
         if (!route) throw new TRPCError({ code: 'NOT_FOUND', message: 'Rota não encontrada' });
         const todayRoutes = await db.getSupervisorRoutesToday(ctx.user.id);
-        const openRoute = todayRoutes.find((item) => item.status === 'in_progress')
-          ?? todayRoutes.find((item) => item.status === 'pending');
+        const openRoute = selectOpenSupervisorRoute(todayRoutes);
         if (openRoute) {
           return openRoute.id;
         }
@@ -825,9 +825,7 @@ export const appRouter = router({
     getTodayRoute: protectedProcedure.query(async ({ ctx }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       const routes = await db.getSupervisorRoutesToday(ctx.user.id);
-      return routes.find((route) => route.status === 'in_progress')
-        ?? routes.find((route) => route.status === 'pending')
-        ?? null;
+      return selectOpenSupervisorRoute(routes);
     }),
 
     getTodayHistory: protectedProcedure.query(async ({ ctx }) => {
@@ -890,33 +888,25 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), vehicleId: z.number().int().positive().optional(), kmInitial: z.number().optional(), kmFinal: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        const route = await db.getSupervisorRouteById(input.id);
-        if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (route.status === 'completed' || route.status === 'cancelled') {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Rotas encerradas não podem ser alteradas por updateKm' });
-        }
         if (input.kmFinal !== undefined) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'O KM final só pode encerrar a rota pelo fluxo canônico “Encerrar turno”' });
         }
-        const updates: Record<string, unknown> = {};
-        if (input.kmInitial !== undefined) {
-          if (!Number.isFinite(input.kmInitial) || input.kmInitial < 0 || route.status !== 'pending') {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Informe um KM inicial válido para uma rota pendente' });
-          }
-          if (!input.vehicleId) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selecione a viatura antes de registrar o KM inicial' });
-          }
-          const vehicle = await db.getVehicleById(input.vehicleId);
-          if (!vehicle?.isActive) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Viatura inválida ou indisponível' });
-          }
-          updates.kmInitial = input.kmInitial;
-          updates.vehicleId = input.vehicleId;
-          updates.status = 'in_progress';
-          updates.startedAt = new Date();
+        if (input.kmInitial === undefined || !input.vehicleId) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Informe o KM inicial e selecione a viatura para iniciar a rota' });
         }
-        if (Object.keys(updates).length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nenhuma alteração informada' });
-        return await db.updateSupervisorRoute(input.id, updates);
+        try {
+          return await db.startSupervisorRoute({
+            supervisorRouteId: input.id,
+            supervisorId: ctx.user.id,
+            vehicleId: input.vehicleId,
+            kmInitial: input.kmInitial,
+          });
+        } catch (error) {
+          if (error instanceof RouteClosureError) {
+            throw new TRPCError({ code: error.code, message: error.message });
+          }
+          throw error;
+        }
       }),
   }),
 

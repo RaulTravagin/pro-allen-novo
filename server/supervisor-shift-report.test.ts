@@ -93,4 +93,27 @@ describe("buildSupervisorShiftReport", () => {
     expect(report?.visits[1]?.coverageReason).toBe("Retorno à base para apoio operacional");
     expect(report?.activities.map((activity) => activity.routeActivityType)).toEqual(["operational_base", "field_route"]);
   });
+
+  it("não reutiliza dados da atividade mais recente quando a rota solicitada pertence a outro turno", () => {
+    const nextShiftRoute = {
+      id: 14,
+      supervisorId: 7,
+      routeName: "Rota Nova Fictícia",
+      routeRegion: "Região de teste",
+      routeActivityType: "field_route",
+      shiftType: "night",
+      status: "in_progress",
+      shiftStartedAt: new Date("2026-09-30T21:00:00.000Z"),
+      startedAt: new Date("2026-09-30T21:05:00.000Z"),
+      visits: [{ id: 41, postName: "Posto Novo Fictício", status: "visited", occurrenceReport: "Relato do novo turno" }],
+      fuelLogs: [],
+    };
+    const snapshot = { activeRoutes: [nextShiftRoute] };
+
+    expect(buildSupervisorShiftReport(snapshot, 7, 13)).toBeNull();
+    const report = buildSupervisorShiftReport(snapshot, 7, 14);
+    expect(report?.supervisorRouteId).toBe(14);
+    expect(report?.visits.map((visit) => visit.postName)).toEqual(["Posto Novo Fictício"]);
+    expect(report?.visits.some((visit) => visit.postName === "Posto antigo fictício")).toBe(false);
+  });
 });

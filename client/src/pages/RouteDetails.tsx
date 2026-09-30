@@ -354,7 +354,21 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         : "Turno encerrado sem pendências e relatório gerado com sucesso");
       return result;
     } catch (error) {
-      notifySupervisorError(error, "Não foi possível encerrar o turno");
+      const [latestRoute] = await Promise.all([
+        routeQuery.refetch().catch(() => undefined),
+        Promise.all([
+          utils.supervisorRoutes.getTodayRoute.invalidate(),
+          utils.supervisorRoutes.getTodayHistory.invalidate(),
+          utils.supervisorRoutes.getShiftReport.invalidate({ supervisorRouteId }),
+          utils.checklists.getByRoute.invalidate({ supervisorRouteId }),
+        ]).catch(() => undefined),
+      ]);
+      if (latestRoute?.data?.status === "completed") {
+        if (user?.id) clearRouteDraft(user.id, supervisorRouteId);
+        toast.warning("A rota já consta como encerrada. Atualize o painel para consultar o relatório do turno.");
+      } else {
+        notifySupervisorError(error, "Não foi possível encerrar o turno");
+      }
       return null;
     }
   };
