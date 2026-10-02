@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
 vi.mock("./db", () => ({
+  getPersonnelRole: vi.fn((user: { role: string; personnelRole?: string | null }) => user.role === "admin" ? "ADM" : user.personnelRole ?? "SUPERVISOR"),
   getGestorOperationalSnapshot: vi.fn(),
   getGestorOperationalKpis: vi.fn(),
   getGestorSchedule: vi.fn(),
@@ -113,5 +114,61 @@ describe("gestorAccess", () => {
     expect(db.deleteGestorPost).toHaveBeenCalledWith(99);
     await expect(authorizedCaller.gestor.updateFuelAmount({ id: 7, amount: 155.89 })).resolves.toMatchObject({ id: 7, amount: 155.89 });
     expect(db.updateFuelLogAmount).toHaveBeenCalledWith(7, 155.89);
+  });
+
+  it("nega ao Admin o dashboard amplo do Gestor que inclui KPIs, e mantém mutations fechadas", async () => {
+    const admin = createContext();
+    admin.context.user = {
+      id: 99,
+      openId: "admin-read-only",
+      name: "Admin",
+      email: "admin@example.com",
+      loginMethod: "local",
+      role: "admin",
+      personnelRole: "SUPERVISOR",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    };
+    const caller = appRouter.createCaller(admin.context);
+    await expect(caller.gestor.dashboard()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.operationalReport({ startDate: new Date("2026-10-01"), endDate: new Date("2026-10-02") })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.updateFuelAmount({ id: 70, amount: 120 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.updateSchedule({ scheduleDate: new Date(), entries: [{ supervisorId: 7, assignment: "day" }] }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.replaceGestorSchedule).not.toHaveBeenCalled();
+    expect(db.getOperationalManagementReport).not.toHaveBeenCalled();
+    expect(db.updateFuelLogAmount).not.toHaveBeenCalled();
+    expect(db.getGestorOperationalSnapshot).not.toHaveBeenCalled();
+    expect(db.getGestorOperationalKpis).not.toHaveBeenCalled();
+  });
+
+  it("nega ao perfil personnelRole ADM o dashboard amplo e mantém as mutations de Gestor fechadas", async () => {
+    const admin = createContext();
+    admin.context.user = {
+      id: 100,
+      openId: "personnel-admin-read-only",
+      name: "Admin de pessoal",
+      email: null,
+      loginMethod: "local",
+      role: "user",
+      personnelRole: "ADM",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    };
+    const caller = appRouter.createCaller(admin.context);
+    await expect(caller.gestor.dashboard()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.operationalReport({ startDate: new Date("2026-10-01"), endDate: new Date("2026-10-02") }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.updateSchedule({ scheduleDate: new Date(), entries: [{ supervisorId: 7, assignment: "day" }] }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.updateFuelAmount({ id: 7, amount: 155.89 }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.replaceGestorSchedule).not.toHaveBeenCalled();
+    expect(db.getOperationalManagementReport).not.toHaveBeenCalled();
+    expect(db.updateFuelLogAmount).not.toHaveBeenCalled();
+    expect(db.getGestorOperationalSnapshot).not.toHaveBeenCalled();
+    expect(db.getGestorOperationalKpis).not.toHaveBeenCalled();
   });
 });

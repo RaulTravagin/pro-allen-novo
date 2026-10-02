@@ -1,9 +1,11 @@
 /* @vitest-environment jsdom */
 import React, { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import PostCard from "./PostCard";
+
+afterEach(cleanup);
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
@@ -71,7 +73,7 @@ describe("PostCard", () => {
         status="visited"
         arrivalTime={new Date("2026-08-12T11:00:00.000Z")}
         departureTime={new Date("2026-08-12T11:30:00.000Z")}
-        arrivalLatitude="-23.12345678"
+        arrivalLatitude="-12.5"
         arrivalLongitude="-46.98765432"
         departureLatitude="-23.12340000"
         departureLongitude="-46.98760000"
@@ -81,7 +83,48 @@ describe("PostCard", () => {
       />,
     );
 
-    expect(screen.getByText("-23.123457, -46.987654")).toBeTruthy();
+    expect(screen.getByText("-12.500000, -46.987654")).toBeTruthy();
     expect(screen.getByText("-23.123400, -46.987600")).toBeTruthy();
+  });
+
+  it("mostra somente posto, status e horários em modo Admin read-only", () => {
+    const onCheckIn = vi.fn(async () => undefined);
+    const onCheckOut = vi.fn(async () => undefined);
+    const onOpenOccurrence = vi.fn();
+    render(
+      <PostCard
+        id={24}
+        postId={5}
+        supervisorRouteId={10}
+        postName="Posto Admin"
+        postAddress="Endereço não autorizado"
+        observations="Observação não autorizada"
+        occurrenceReport="Relato não autorizado"
+        isCoverage
+        coverageReason="Motivo não autorizado"
+        status="in_progress"
+        arrivalTime={new Date("2026-10-01T10:00:00.000Z")}
+        departureTime={new Date("2026-10-01T10:30:00.000Z")}
+        arrivalLatitude="-12.5"
+        arrivalLongitude="-46.98765432"
+        departureLatitude="-23.1234"
+        departureLongitude="-46.9876"
+        onCheckIn={onCheckIn}
+        onCheckOut={onCheckOut}
+        onOpenOccurrence={onOpenOccurrence}
+        readOnly
+      />,
+    );
+
+    expect(screen.getByText("Posto Admin")).toBeTruthy();
+    expect(screen.getByText("Em Visita")).toBeTruthy();
+    expect(screen.getByText("Entrada: 10:00")).toBeTruthy();
+    expect(screen.getByText("Saída: 10:30")).toBeTruthy();
+    expect(screen.queryByText(/não autorizado/)).toBeNull();
+    expect(screen.queryByText(/-12\.500000|-46\.987654|-23\.123400|-46\.987600/)).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(onCheckIn).not.toHaveBeenCalled();
+    expect(onCheckOut).not.toHaveBeenCalled();
+    expect(onOpenOccurrence).not.toHaveBeenCalled();
   });
 });

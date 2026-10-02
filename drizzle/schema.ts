@@ -64,6 +64,7 @@ export const personnelWorkSchedules = pgTable("personnel_work_schedules", {
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
+  nameCaseInsensitiveUnique: uniqueIndex("uq_personnel_work_schedules_name_ci").on(sql`lower(${table.name})`),
   nameIdx: index("idx_personnel_work_schedules_name").on(table.name),
 }));
 

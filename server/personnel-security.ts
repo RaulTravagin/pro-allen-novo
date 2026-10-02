@@ -64,6 +64,7 @@ export function projectPersonnelDashboard<T extends RecordValue>(data: T, role: 
   const employees = role === "FINANCEIRO"
     ? []
     : mapRows(data.employees, (row) => projectPersonnelEmployee(row, role));
+  const posts = role === "RH" || role === "ADM" ? data.posts : [];
 
   const summary = data.summary && typeof data.summary === "object"
     ? { ...(data.summary as RecordValue) }
@@ -76,7 +77,7 @@ export function projectPersonnelDashboard<T extends RecordValue>(data: T, role: 
     summary.pendingCount = financialRows.filter((row) => row.status === "PENDING").length;
   }
 
-  return { ...data, employees, fts, extras, occurrences, summary };
+  return { ...data, employees, posts, fts, extras, occurrences, summary };
 }
 
 export function projectGestorPersonnelOverview<T extends RecordValue>(data: T) {

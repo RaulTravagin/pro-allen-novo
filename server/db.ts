@@ -5,6 +5,7 @@ import * as schema from "../drizzle/schema";
 import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
+import { isValidCoordinatePair } from "../shared/geographic-coordinates";
 import { ENV } from './_core/env';
 import { getCurrentOperationalPeriod, getOperationalPeriodForCalendarDate, getOperationalRangeForCalendarDates, getOperationalShift, type OperationShift } from "./operational-shifts";
 import { buildSupervisorShiftReport } from "./supervisor-shift-report";
@@ -15,7 +16,7 @@ import { RouteClosureError } from "./route-closure";
 import { lockSupervisorRouteOperations, withLockedSupervisorRoute } from "./route-checklist-lock";
 import { closeSupervisorRouteInTransaction } from "./supervisor-route-closure";
 import { startSupervisorRouteInTransaction, type StartSupervisorRouteInput } from "./supervisor-route-start";
-import { MAX_UPLOAD_FILE_BYTES, isValidUploadBase64, resolvePersonnelDocumentMimeType } from "../shared/upload-file-types";
+import { MAX_UPLOAD_FILE_BYTES, isValidUploadBase64, isValidUploadContent, resolvePersonnelDocumentMimeType } from "../shared/upload-file-types";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _pool: Pool | null = null;
@@ -108,8 +109,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+    throw new Error("Database not available: cannot persist OAuth user");
   }
 
   try {
@@ -1034,6 +1034,9 @@ export async function checkInVisitForRoute(input: {
   latitude?: number;
   longitude?: number;
 }) {
+  if (!isValidCoordinatePair(input.latitude, input.longitude)) {
+    throw new Error("Latitude e longitude devem ser enviadas juntas e estar dentro das faixas geográficas válidas");
+  }
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
@@ -1077,6 +1080,9 @@ export async function checkOutVisitForRoute(input: {
   latitude?: number;
   longitude?: number;
 }) {
+  if (!isValidCoordinatePair(input.latitude, input.longitude)) {
+    throw new Error("Latitude e longitude devem ser enviadas juntas e estar dentro das faixas geográficas válidas");
+  }
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const supervisorRouteId = await getChecklistRouteReference(db, input.checklistId);
@@ -1184,6 +1190,12 @@ export async function markVisitVisitedForActiveRoute(input: { checklistId: numbe
 
 // Supervisor Locations queries
 export async function saveSupervisorLocation(supervisorId: number, supervisorRouteId: number | null, latitude: number, longitude: number, accuracy?: number) {
+  if (!isValidCoordinatePair(latitude, longitude)) {
+    throw new Error("Informe latitude e longitude dentro das faixas geográficas válidas");
+  }
+  if (accuracy !== undefined && (!Number.isFinite(accuracy) || accuracy < 0)) {
+    throw new Error("A acurácia deve ser um número finito e não negativo");
+  }
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -2102,7 +2114,16 @@ export async function createPersonnelWorkSchedule(input: { name: string; pattern
     weeklyHours: weeklyHoursFromPattern(input.pattern).toFixed(2),
     createdBy: input.createdBy,
   };
-  const inserted = await db.insert(personnelWorkSchedules).values(values).returning({ id: personnelWorkSchedules.id });
+  const inserted = await db.insert(personnelWorkSchedules).values(values).returning({ id: personnelWorkSchedules.id }).catch((error: unknown) => {
+    const databaseError = error as { code?: string; constraint?: string };
+    if (
+      databaseError?.code === "23505" &&
+      ["personnel_work_schedules_name_unique", "uq_personnel_work_schedules_name_ci"].includes(databaseError.constraint ?? "")
+    ) {
+      throw new Error("Já existe uma jornada com esse nome");
+    }
+    throw error;
+  });
   const id = getInsertedId(inserted);
   return (await db.select().from(personnelWorkSchedules).where(eq(personnelWorkSchedules.id, id)).limit(1))[0];
 }
@@ -2635,6 +2656,7 @@ export async function uploadPersonnelDocument(userId: number, file: { name: stri
   if (!isValidUploadBase64(file.base64)) throw new Error("Arquivo em formato inválido");
   const bytes = Buffer.from(file.base64, "base64");
   if (bytes.length === 0 || bytes.length > MAX_UPLOAD_FILE_BYTES) throw new Error("O arquivo deve ter entre 1 byte e 10 MB");
+  if (!isValidUploadContent(bytes, mimeType)) throw new Error("O conteúdo do atestado não corresponde ao formato informado");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120) || "atestado";
   const result = await storagePut(`personnel/occurrences/${userId}/${randomUUID()}-${safeName}`, bytes, mimeType);
   return { ...result, name: safeName };
@@ -2643,7 +2665,7 @@ export async function uploadPersonnelDocument(userId: number, file: { name: stri
 export async function getPersonnelDashboardData(supervisorId: number, role: PersonnelRole) {
   const [employees, posts, fts, occurrences, extras] = await Promise.all([
     listPersonnelEmployees(role !== "SUPERVISOR", role === "RH" || role === "ADM"),
-    listPersonnelPosts(),
+    role === "RH" || role === "ADM" ? listPersonnelPosts() : Promise.resolve([]),
     listPersonnelFts(supervisorId, role),
     role === "FINANCEIRO" ? Promise.resolve([]) : listPersonnelOccurrences(supervisorId, role),
     listPersonnelExtras(supervisorId, role),
@@ -2777,4 +2799,174 @@ export async function getGestorPersonnelMovementReport(month: string, period: Mo
     ...extraCounts.map((row) => ({ civilDate: row.civilDate, kind: "EXTRA" as const, count: row.count })),
   ].sort((left, right) => left.civilDate.localeCompare(right.civilDate) || left.kind.localeCompare(right.kind));
   return { window, rows };
+}
+
+
+/** Projeção operacional para leitura Admin: não seleciona veículo, quilometragem nem dados de abastecimento. */
+export async function getAdminSupervisorRouteStatusById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select({
+    id: supervisorRoutes.id,
+    status: supervisorRoutes.status,
+  }).from(supervisorRoutes)
+    .where(eq(supervisorRoutes.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+/** Status/chegadas para a tela Admin. A consulta deliberadamente não lê quilometragem, veículos, GPS ou abastecimentos. */
+export async function getAdminOperationalLiveSnapshot() {
+  const now = new Date();
+  const db = await getDb();
+  if (!db) return { visits: [] as Array<{ postName: string; status: string; arrivalTime: Date | null; departureTime: Date | null }> };
+
+  const period = getCurrentOperationalPeriod(now);
+  const routeWindowCondition = or(
+    and(gte(supervisorRoutes.shiftStartedAt, period.start), lt(supervisorRoutes.shiftStartedAt, period.end)),
+    inArray(supervisorRoutes.status, ["pending", "in_progress"]),
+  );
+  const todayRoutes = await db.select({
+    id: supervisorRoutes.id,
+    supervisorId: supervisorRoutes.supervisorId,
+    status: supervisorRoutes.status,
+    startedAt: supervisorRoutes.startedAt,
+    updatedAt: supervisorRoutes.updatedAt,
+  }).from(supervisorRoutes)
+    .innerJoin(users, eq(users.id, supervisorRoutes.supervisorId))
+    .where(and(routeWindowCondition, eq(users.role, "user"), eq(users.isOperational, true)))
+    .orderBy(desc(supervisorRoutes.updatedAt));
+
+  const routeIds = todayRoutes.map((route) => route.id);
+  const todayChecklists = routeIds.length ? await db.select({
+    supervisorRouteId: visitChecklists.supervisorRouteId,
+    postName: posts.name,
+    postOrder: posts.order,
+    status: visitChecklists.status,
+    arrivalTime: visitChecklists.arrivalTime,
+    departureTime: visitChecklists.departureTime,
+  }).from(visitChecklists)
+    .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+    .where(inArray(visitChecklists.supervisorRouteId, routeIds))
+    .orderBy(asc(posts.order), asc(visitChecklists.id)) : [];
+
+  const routesBySupervisor = new Map<number, typeof todayRoutes>();
+  for (const route of todayRoutes) {
+    const routesForSupervisor = routesBySupervisor.get(route.supervisorId) ?? [];
+    routesForSupervisor.push(route);
+    routesBySupervisor.set(route.supervisorId, routesForSupervisor);
+  }
+
+  const selectedRouteIds = new Set<number>();
+  routesBySupervisor.forEach((activities) => {
+    const orderedActivities = activities.sort((a, b) => (a.startedAt ?? a.updatedAt).getTime() - (b.startedAt ?? b.updatedAt).getTime());
+    const selectedRoute = orderedActivities.find((activity) => activity.status === "in_progress")
+      ?? orderedActivities.find((activity) => activity.status === "pending")
+      ?? orderedActivities.at(-1);
+    if (selectedRoute) selectedRouteIds.add(selectedRoute.id);
+  });
+
+  return {
+    visits: todayChecklists
+      .filter((visit) => selectedRouteIds.has(visit.supervisorRouteId))
+      .map(({ postName, status, arrivalTime, departureTime }) => ({ postName, status, arrivalTime, departureTime })),
+  };
+}
+
+
+/** Projeção mínima de postos para a tela operacional Admin; omite coordenadas geográficas. */
+export async function getAdminPostsByRouteId(routeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: posts.id,
+    routeId: posts.routeId,
+    name: posts.name,
+    address: posts.address,
+    region: posts.region,
+    order: posts.order,
+    isActive: posts.isActive,
+  }).from(posts)
+    .where(and(eq(posts.routeId, routeId), eq(posts.isActive, true)))
+    .orderBy(posts.order);
+}
+
+/** Projeção Admin mínima de uma visita: nome do posto, status e horários, sem texto livre ou coordenadas. */
+export async function getAdminVisitChecklistsByRoute(supervisorRouteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    postName: posts.name,
+    arrivalTime: visitChecklists.arrivalTime,
+    departureTime: visitChecklists.departureTime,
+    status: visitChecklists.status,
+  }).from(visitChecklists)
+    .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+    .where(eq(visitChecklists.supervisorRouteId, supervisorRouteId))
+    .orderBy(asc(posts.order), asc(visitChecklists.id));
+}
+
+/** Projeção Admin mínima de uma visita por ID, sem texto livre ou coordenadas. */
+export async function getAdminVisitChecklistById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [visit] = await db.select({
+    supervisorRouteId: visitChecklists.supervisorRouteId,
+    postName: posts.name,
+    arrivalTime: visitChecklists.arrivalTime,
+    departureTime: visitChecklists.departureTime,
+    status: visitChecklists.status,
+  }).from(visitChecklists)
+    .innerJoin(posts, eq(posts.id, visitChecklists.postId))
+    .where(eq(visitChecklists.id, id)).limit(1);
+  return visit ?? null;
+}
+
+
+/** Rotas para a interface Admin com dados de posto necessários à navegação, sem coordenadas. */
+export async function getAdminRoutesWithoutPostCoordinates() {
+  const db = await getDb();
+  if (!db) return [];
+  const [routeRows, postRows] = await Promise.all([
+    db.select().from(routes),
+    db.select({
+      id: posts.id,
+      routeId: posts.routeId,
+      name: posts.name,
+      address: posts.address,
+      region: posts.region,
+      order: posts.order,
+      isActive: posts.isActive,
+    }).from(posts).where(eq(posts.isActive, true)).orderBy(posts.routeId, posts.order),
+  ]);
+  const postsByRoute = new Map<number, typeof postRows>();
+  for (const post of postRows) {
+    const group = postsByRoute.get(post.routeId) ?? [];
+    group.push(post);
+    postsByRoute.set(post.routeId, group);
+  }
+  return routeRows.map((route) => {
+    const routePosts = postsByRoute.get(route.id) ?? [];
+    return { ...route, posts: routePosts, postCount: routePosts.length };
+  });
+}
+
+/** Registro de posto para consulta Admin sem latitude/longitude. */
+export async function getAdminPostByIdWithoutCoordinates(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [post] = await db.select({
+    id: posts.id,
+    routeId: posts.routeId,
+    name: posts.name,
+    address: posts.address,
+    addressStreet: posts.addressStreet,
+    addressNumber: posts.addressNumber,
+    addressNeighborhood: posts.addressNeighborhood,
+    addressCity: posts.addressCity,
+    addressPostalCode: posts.addressPostalCode,
+    region: posts.region,
+    order: posts.order,
+    isActive: posts.isActive,
+  }).from(posts).where(eq(posts.id, id)).limit(1);
+  return post ?? null;
 }

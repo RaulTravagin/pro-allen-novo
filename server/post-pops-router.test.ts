@@ -1,9 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Document, Packer, Paragraph } from "docx";
+import { jsPDF } from "jspdf";
 import type { TrpcContext } from "./_core/context";
 
 const popMocks = vi.hoisted(() => ({
   getPersonnelRole: vi.fn(),
   getPostById: vi.fn(),
+  getSupervisorRouteById: vi.fn(),
+  getAdminSupervisorRouteStatusById: vi.fn(),
   listPostPopDocuments: vi.fn(),
   getPostPopDocumentById: vi.fn(),
   createPostPopDocument: vi.fn(),
@@ -19,6 +23,8 @@ vi.mock("./db", async (importOriginal) => {
     ...actual,
     getPersonnelRole: popMocks.getPersonnelRole,
     getPostById: popMocks.getPostById,
+    getSupervisorRouteById: popMocks.getSupervisorRouteById,
+    getAdminSupervisorRouteStatusById: popMocks.getAdminSupervisorRouteStatusById,
     listPostPopDocuments: popMocks.listPostPopDocuments,
     getPostPopDocumentById: popMocks.getPostPopDocumentById,
     createPostPopDocument: popMocks.createPostPopDocument,
@@ -51,12 +57,23 @@ const doc = {
   uploadedBy: 4,
   createdAt: new Date("2026-09-01T12:00:00Z"),
 };
+const validPdfBase64 = (() => {
+  const pdf = new jsPDF();
+  pdf.text("Fixture isolada", 10, 10);
+  return Buffer.from(pdf.output("arraybuffer")).toString("base64");
+})();
+const validLegacyWord = Buffer.concat([
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  Buffer.from("WordDocument", "utf16le"),
+]);
 
 describe("autorização tRPC de POPs por posto", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     popMocks.getPersonnelRole.mockImplementation((user: { personnelRole?: string; role?: string } | null) => user?.personnelRole ?? (user?.role === "admin" ? "ADM" : "SUPERVISOR"));
     popMocks.getPostById.mockResolvedValue({ id: 31, routeId: 4, isActive: true });
+    popMocks.getSupervisorRouteById.mockImplementation((id: number) => Promise.resolve({ id, supervisorId: 21 }));
+    popMocks.getAdminSupervisorRouteStatusById.mockImplementation((id: number) => Promise.resolve({ id, supervisorId: 21 }));
     popMocks.listPostPopDocuments.mockResolvedValue([doc]);
     popMocks.getPostPopDocumentById.mockResolvedValue(doc);
     popMocks.createPostPopDocument.mockResolvedValue(doc);
@@ -81,7 +98,7 @@ describe("autorização tRPC de POPs por posto", () => {
   it.each(["SUPERVISOR", "RH", "FINANCEIRO"] as const)("nega administração de POPs ao perfil %s", async (personnelRole) => {
     const caller = appRouter.createCaller(createContext({ role: "user", personnelRole }));
     await expect(caller.gestor.postPops.list({ postId: 31 })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(caller.gestor.postPops.upload({ postId: 31, name: "procedimento.pdf", mimeType: "application/pdf", base64: "JVBERi0x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.gestor.postPops.upload({ postId: 31, name: "procedimento.pdf", mimeType: "application/pdf", base64: validPdfBase64 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.gestor.postPops.delete({ postId: 31, documentId: 77 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -91,23 +108,41 @@ describe("autorização tRPC de POPs por posto", () => {
     const token = await createGestorSession();
     const manager = appRouter.createCaller(createContext({ cookie: `gestor_access=${token}` }));
     await expect(manager.gestor.postPops.list({ postId: 31 })).resolves.toHaveLength(1);
-    await expect(manager.gestor.postPops.upload({ postId: 31, name: "procedimento.pdf", mimeType: "application/pdf", base64: "JVBERi0x" })).resolves.toMatchObject({ id: 77, postId: 31 });
+    await expect(manager.gestor.postPops.upload({ postId: 31, name: "procedimento.pdf", mimeType: "application/pdf", base64: validPdfBase64 })).resolves.toMatchObject({ id: 77, postId: 31 });
     await expect(manager.gestor.postPops.delete({ postId: 31, documentId: 77 })).resolves.toEqual({ id: 77, deleted: true });
   });
 
-  it.each([
-    ["procedimento.doc", "application/octet-stream", "application/msword", "AA=="],
-    ["procedimento.docx", "", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "UEsDBA=="],
-  ])("envia POP Word %s ao storage privado com MIME canônico", async (name, reportedMime, canonicalMime, base64) => {
+  it("envia POP Word legado ao storage privado com MIME canônico", async () => {
     const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
-    await caller.gestor.postPops.upload({ postId: 31, name, mimeType: reportedMime, base64 });
+    const base64 = validLegacyWord.toString("base64");
+    await caller.gestor.postPops.upload({ postId: 31, name: "procedimento.doc", mimeType: "application/octet-stream", base64 });
 
     expect(popMocks.storagePut).toHaveBeenCalledWith(
       expect.stringMatching(/^posts\/pops\/31\/[0-9a-f-]+-/),
-      Buffer.from(base64, "base64"),
-      canonicalMime,
+      validLegacyWord,
+      "application/msword",
     );
-    expect(popMocks.createPostPopDocument).toHaveBeenCalledWith(expect.objectContaining({ mimeType: canonicalMime }));
+    expect(popMocks.createPostPopDocument).toHaveBeenCalledWith(expect.objectContaining({ mimeType: "application/msword" }));
+  });
+
+  it("envia um pacote DOCX válido ao storage privado com MIME canônico", async () => {
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+    const bytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph("Fixture isolada")] }] }));
+    await caller.gestor.postPops.upload({
+      postId: 31,
+      name: "procedimento.docx",
+      mimeType: "",
+      base64: bytes.toString("base64"),
+    });
+
+    expect(popMocks.storagePut).toHaveBeenCalledWith(
+      expect.stringMatching(/^posts\/pops\/31\/[0-9a-f-]+-/),
+      bytes,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(popMocks.createPostPopDocument).toHaveBeenCalledWith(expect.objectContaining({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }));
   });
 
   it("rejeita extensão Word com MIME de outro formato antes de chamar storage", async () => {
@@ -121,6 +156,17 @@ describe("autorização tRPC de POPs por posto", () => {
     expect(popMocks.storagePut).not.toHaveBeenCalled();
   });
 
+  it("rejeita bytes arbitrários com extensão e MIME PDF compatíveis antes do storage", async () => {
+    const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
+    await expect(caller.gestor.postPops.upload({
+      postId: 31,
+      name: "procedimento.pdf",
+      mimeType: "application/pdf",
+      base64: Buffer.from("conteúdo arbitrário").toString("base64"),
+    })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(popMocks.storagePut).not.toHaveBeenCalled();
+  });
+
   it("explica quando o storage do Render ainda não foi configurado", async () => {
     popMocks.storagePut.mockRejectedValueOnce(new Error("Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"));
     const caller = appRouter.createCaller(createContext({ role: "user", personnelRole: "ADM" }));
@@ -129,7 +175,7 @@ describe("autorização tRPC de POPs por posto", () => {
       postId: 31,
       name: "procedimento.pdf",
       mimeType: "application/pdf",
-      base64: "JVBERi0x",
+      base64: validPdfBase64,
     })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: expect.stringContaining("BUILT_IN_FORGE_API_URL"),
@@ -145,7 +191,7 @@ describe("autorização tRPC de POPs por posto", () => {
       postId: 31,
       name: "procedimento.pdf",
       mimeType: "application/pdf",
-      base64: "JVBERi0x",
+      base64: validPdfBase64,
     })).rejects.toMatchObject({
       code: "BAD_GATEWAY",
       message: expect.stringContaining("serviço de arquivos"),
@@ -159,6 +205,14 @@ describe("autorização tRPC de POPs por posto", () => {
     popMocks.supervisorRouteCanAccessPost.mockResolvedValueOnce(false);
     await expect(caller.supervisorRoutes.getPostPops({ supervisorRouteId: 89, postId: 31 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(popMocks.listPostPopDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it("nega ao Admin a consulta de POP por rota operacional", async () => {
+    const caller = appRouter.createCaller(createContext({ role: "admin", personnelRole: "SUPERVISOR", id: 99 }));
+    await expect(caller.supervisorRoutes.getPostPops({ supervisorRouteId: 88, postId: 31 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(popMocks.getAdminSupervisorRouteStatusById).not.toHaveBeenCalled();
+    expect(popMocks.supervisorRouteCanAccessPost).not.toHaveBeenCalled();
+    expect(popMocks.listPostPopDocuments).not.toHaveBeenCalled();
   });
 
   it("só emite URL de leitura ao supervisor depois de conferir o vínculo rota-posto", async () => {

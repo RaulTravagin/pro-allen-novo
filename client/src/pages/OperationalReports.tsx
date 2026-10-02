@@ -88,6 +88,30 @@ export function buildOperationalReportCsv(report: any) {
   return rows.map((row) => row.map(csvCell).join(";")).join("\n");
 }
 
+export function buildOperationalReportCsvFile(report: any) {
+  return {
+    fileName: `pro-allen-relatorio-operacional-${toDateInput(new Date(report.filters.startDate))}-${toDateInput(new Date(report.filters.endDate))}.csv`,
+    mimeType: "text/csv;charset=utf-8",
+    content: `\uFEFF${buildOperationalReportCsv(report)}`,
+  };
+}
+
+export function downloadOperationalReportCsv(report: any) {
+  const file = buildOperationalReportCsvFile(report);
+  const blob = new Blob([file.content], { type: file.mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = file.fileName;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+}
+
 function asNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -341,7 +365,7 @@ export default function OperationalReports() {
         .print-footer { position: static; display: flex; justify-content: space-between; margin-top: auto; padding-top: 4mm; border-top: .22mm solid #cbd5e1; color: #64748b; font-size: 7pt; break-inside: avoid; page-break-inside: avoid; }
       }
     `}</style>
-    <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Rotas, ocorrências, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && void downloadXlsx(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar Excel (.xlsx)</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
+    <header className="no-print border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Pro Allen</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Relatórios de Gestão Operacional</h1><p className="mt-1 text-sm text-slate-600">Rotas, ocorrências, viaturas e consumo de combustível.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(isAdmin ? "/admin" : "/gestor")}><ArrowLeft className="mr-2 h-4 w-4" /> Voltar</Button><Button variant="outline" onClick={() => data && downloadOperationalReportCsv(data)} disabled={!data}><FileDown className="mr-2 h-4 w-4" /> Exportar CSV</Button><Button variant="outline" onClick={() => data && void downloadXlsx(data)} disabled={!data}><Download className="mr-2 h-4 w-4" /> Exportar Excel (.xlsx)</Button><Button onClick={() => window.print()} disabled={!data} className="bg-slate-950 text-white hover:bg-slate-800"><Printer className="mr-2 h-4 w-4" /> Exportar PDF</Button></div></div></header>
     <div className="screen-report mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6">
       <section className="print-avoid rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><p className="text-sm font-semibold text-amber-300">Pro Allen — Relatório de Gestão Operacional</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Visão executiva da operação de campo</h2><p className="mt-3 text-sm text-slate-300">Parâmetros aplicados: Filtro: {shiftLabel(shiftType)} · Supervisor: {data ? reportContext(data).supervisor : "Carregando"} · Viatura: {data ? reportContext(data).vehicle : "Carregando"} · Período: {data ? reportContext(data).period : "Carregando"} · Emissão: {new Date().toLocaleString("pt-BR")}</p></section>
       <section className="no-print print-avoid rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"><label className="grid gap-1 text-xs font-semibold text-slate-600">Início<input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Fim<input type="date" value={endDate} min={startDate} max={toDateInput(new Date())} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Turno<select value={shiftType} onChange={(event) => setShiftType(event.target.value as "" | "day" | "night")} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os turnos</option><option value="day">Diurno · 06h às 18h</option><option value="night">Noturno · 18h às 06h</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Supervisor<select value={supervisorId} onChange={(event) => setSupervisorId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todos os supervisores</option>{options.supervisors.map((supervisor: any) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name ?? supervisor.username}</option>)}</select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Placa / viatura<select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"><option value="">Todas as viaturas</option>{options.vehicles.map((vehicle: any) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}</select></label></div><p className="mt-3 text-xs text-slate-500">O período inicial considera os últimos 30 dias. Cada data operacional vai de 06h até 06h do dia seguinte, mantendo o plantão noturno unido após a meia-noite.</p></section>

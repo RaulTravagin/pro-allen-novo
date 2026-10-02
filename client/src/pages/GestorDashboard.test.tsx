@@ -206,6 +206,27 @@ describe("GestorDashboard", () => {
     })));
   });
 
+  it("bloqueia o cadastro incompleto com validação nativa antes da mutação", async () => {
+    postCreate.mockReset();
+    render(<GestorDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar Novo Posto" }));
+    await waitFor(() => expect((screen.getByLabelText("Rota vinculada do posto") as HTMLSelectElement).value).toBe("1"));
+
+    const requiredLabels = ["Rota vinculada do posto", "Nome do Posto", "Rua do posto", "Número do posto", "Bairro do posto", "Cidade do posto", "CEP do posto"];
+    for (const label of requiredLabels) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).required).toBe(true);
+    }
+
+    const nameField = screen.getByLabelText("Nome do Posto") as HTMLInputElement;
+    const submitButton = screen.getByRole("button", { name: "Cadastrar posto" });
+    expect(submitButton.getAttribute("type")).toBe("submit");
+    fireEvent.click(submitButton);
+
+    expect(nameField.validity.valueMissing).toBe(true);
+    expect(postCreate).not.toHaveBeenCalled();
+  });
+
   it("permite cadastrar um novo posto com endereço estruturado", async () => {
     postCreate.mockReset();
     render(<GestorDashboard />);

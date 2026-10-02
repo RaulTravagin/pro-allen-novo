@@ -8,6 +8,23 @@ import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { supervisorErrorMessage } from "@/lib/networkFeedback";
+import { canMutateSupervisorOperations, isAdminOperationalViewer } from "@/lib/supervisor-access";
+
+const LIVE_OPERATION_REFRESH_INTERVAL = 15_000;
+
+function formatOperationDateTime(value: Date | string | null | undefined) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function operationVisitLabel(status: string) {
+  return ({ pending: "Pendente", in_progress: "Em atendimento", visited: "Concluído", skipped: "Não realizado" } as Record<string, string>)[status] ?? status;
+}
+
+function operationStatusLabel(status: string | undefined) {
+  return ({ sem_rota: "Sem rota", pending: "Aguardando início", in_progress: "Em deslocamento", completed: "Concluída", cancelled: "Cancelada", em_atendimento: "Em atendimento", em_deslocamento: "Em deslocamento", em_base_operacional: "Na Base Operacional", rota_concluida: "Rota concluída", base_concluida: "Base concluída", rota_cancelada: "Rota cancelada" } as Record<string, string>)[status ?? ""] ?? status ?? "Sem atividade";
+}
 
 export function describeRoutePosts(route: { posts?: Array<{ name: string }> }) {
   return route.posts?.length ? `Postos: ${route.posts.map((post) => post.name).join(", ")}` : "Postos: nenhum posto cadastrado";
@@ -17,12 +34,21 @@ export default function SupervisorDashboard() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
+  const isAdminReadOnly = isAdminOperationalViewer(user);
+  const canManageOperations = canMutateSupervisorOperations(user);
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
   const [hasAttemptedAutomaticResume, setHasAttemptedAutomaticResume] = useState(false);
 
-  const routesQuery = trpc.routes.list.useQuery(undefined, { retry: false });
-  const todayRouteQuery = trpc.supervisorRoutes.getTodayRoute.useQuery(undefined, { retry: false });
-  const todayHistoryQuery = trpc.supervisorRoutes.getTodayHistory.useQuery(undefined, { retry: false });
+  const adminLiveQuery = trpc.adminOperations.liveSnapshot.useQuery(undefined, {
+    enabled: isAdminReadOnly,
+    retry: false,
+    refetchInterval: isAdminReadOnly ? LIVE_OPERATION_REFRESH_INTERVAL : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+  });
+  const routesQuery = trpc.routes.list.useQuery(undefined, { retry: false, enabled: canManageOperations });
+  const todayRouteQuery = trpc.supervisorRoutes.getTodayRoute.useQuery(undefined, { retry: false, enabled: canManageOperations });
+  const todayHistoryQuery = trpc.supervisorRoutes.getTodayHistory.useQuery(undefined, { retry: false, enabled: canManageOperations });
   const { data: routes, isLoading: routesLoading } = routesQuery;
   const { data: todayRoute, isLoading: todayRouteLoading } = todayRouteQuery;
   const { data: todayHistory, isLoading: todayHistoryLoading } = todayHistoryQuery;
@@ -80,12 +106,53 @@ export default function SupervisorDashboard() {
   };
 
   useEffect(() => {
-    if (hasAttemptedAutomaticResume || !todayRoute || todayRoute.status !== "in_progress") return;
+    if (!canManageOperations || hasAttemptedAutomaticResume || !todayRoute || todayRoute.status !== "in_progress") return;
     setHasAttemptedAutomaticResume(true);
     navigate(`/supervisor/route/${todayRoute.id}`);
-  }, [hasAttemptedAutomaticResume, navigate, todayRoute?.id, todayRoute?.status]);
+  }, [canManageOperations, hasAttemptedAutomaticResume, navigate, todayRoute?.id, todayRoute?.status]);
 
   const isStarting = createRouteMutation.isPending || createChecklistsMutation.isPending;
+
+  if (isAdminReadOnly) {
+    const visits = adminLiveQuery.data?.visits ?? [];
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
+        <header className="border-b border-slate-200 bg-white/95">
+          <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Operação em campo · leitura administrativa</p>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Monitoramento operacional em tempo real</h1>
+              <p className="mt-1 text-sm text-slate-600">Posto, status e horários de chegada/saída. Atualização automática a cada 15 segundos.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+              <Button onClick={() => navigate("/admin")} variant="outline">Painel administrativo</Button>
+              <Button onClick={() => logout()} variant="outline">Sair</Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:py-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+            <span><ShieldCheck className="mr-2 inline h-4 w-4" />Acesso somente para consulta; ações operacionais permanecem exclusivas do Supervisor.</span>
+            <span>Atualização automática a cada 15 segundos.</span>
+          </div>
+
+          {adminLiveQuery.error && <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><span>{supervisorErrorMessage(adminLiveQuery.error, "Não foi possível carregar o monitoramento operacional.")}</span><Button type="button" size="sm" variant="outline" onClick={() => void adminLiveQuery.refetch()} className="border-red-300 bg-white text-red-900">Tentar novamente</Button></div>}
+          {adminLiveQuery.isLoading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando dados operacionais...</div> : (
+            <section aria-label="Postos, status e horários" className="overflow-x-auto rounded-lg border bg-white">
+              {visits.length === 0 ? <p className="py-8 text-center text-sm text-slate-600">Nenhum registro de visita no período atual.</p> : (
+                <table className="min-w-[620px] w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2">Posto</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Chegada</th><th className="px-3 py-2">Saída</th></tr></thead>
+                  <tbody className="divide-y">{visits.map((visit, index) => <tr key={`${visit.postName}-${index}`}><td className="px-3 py-3 font-medium text-slate-900">{visit.postName}</td><td className="px-3 py-3">{operationVisitLabel(visit.status)}</td><td className="px-3 py-3">{formatOperationDateTime(visit.arrivalTime)}</td><td className="px-3 py-3">{formatOperationDateTime(visit.departureTime)}</td></tr>)}</tbody>
+                </table>
+              )}
+            </section>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">

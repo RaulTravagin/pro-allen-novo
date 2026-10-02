@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildOperationalReportCsv } from "./OperationalReports";
+import { describe, expect, it, vi } from "vitest";
+import { buildOperationalReportCsv, buildOperationalReportCsvFile, downloadOperationalReportCsv } from "./OperationalReports";
 
 describe("relatório operacional CSV", () => {
   it("inclui contexto executivo e colunas operacionais em português no arquivo exportado", () => {
@@ -52,5 +52,54 @@ describe("relatório operacional CSV", () => {
     for (const value of formulaValues) {
       expect(csv).toContain(`"'${value}"`);
     }
+  });
+
+  it("monta arquivo CSV UTF-8 baixável com nome por período e sanitização preservada", () => {
+    const file = buildOperationalReportCsvFile({
+      filters: { startDate: new Date("2026-08-01T12:00:00"), endDate: new Date("2026-08-15T12:00:00"), shiftType: null, supervisorId: null, vehicleId: null },
+      filterOptions: { supervisors: [], vehicles: [] },
+      summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null, inspections: 1, plannedPosts: 1, reportedVisits: 1, pendingReports: 0 },
+      routes: [],
+      fuelLogs: [],
+      visits: [{ supervisorRouteId: 1, postName: "=HYPERLINK(\"https://example.invalid\")", status: "visited" }],
+    });
+
+    expect(file.fileName).toBe("pro-allen-relatorio-operacional-2026-08-01-2026-08-15.csv");
+    expect(file.mimeType).toBe("text/csv;charset=utf-8");
+    expect(file.content.startsWith("\uFEFF")).toBe(true);
+    expect(file.content).toContain("'=HYPERLINK");
+  });
+
+  it("dispara o download usando um link temporário e o conteúdo CSV sanitizado", async () => {
+    const link = { href: "", download: "", click: vi.fn(), remove: vi.fn() } as unknown as HTMLAnchorElement;
+    const createElement = vi.fn(() => link);
+    const appendChild = vi.fn();
+    vi.stubGlobal("document", { createElement, body: { appendChild } } as unknown as Document);
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:operational-csv");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    downloadOperationalReportCsv({
+      filters: { startDate: new Date("2026-08-01T12:00:00"), endDate: new Date("2026-08-15T12:00:00"), shiftType: null, supervisorId: null, vehicleId: null },
+      filterOptions: { supervisors: [], vehicles: [] },
+      summary: { totalKm: 0, totalFuelAmount: 0, averageConsumptionKmPerLiter: null, inspections: 1, plannedPosts: 1, reportedVisits: 1, pendingReports: 0 },
+      routes: [],
+      fuelLogs: [],
+      visits: [{ supervisorRouteId: 1, postName: "=1+1", status: "visited" }],
+    });
+
+    expect(createElement).toHaveBeenCalledWith("a");
+    expect(appendChild).toHaveBeenCalledWith(link);
+    expect(link.href).toBe("blob:operational-csv");
+    expect(link.download).toBe("pro-allen-relatorio-operacional-2026-08-01-2026-08-15.csv");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(link.remove).toHaveBeenCalledOnce();
+    const blob = createObjectUrl.mock.calls[0]?.[0] as Blob;
+    expect(blob.type).toBe("text/csv;charset=utf-8");
+    expect(Array.from(new Uint8Array(await blob.arrayBuffer()).slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+    expect(await blob.text()).toContain("'=1+1");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:operational-csv");
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 });

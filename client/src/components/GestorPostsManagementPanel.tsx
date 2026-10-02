@@ -192,8 +192,8 @@ export default function GestorPostsManagementPanel({
     setFormError(null);
   }
 
-  function submitForm(event?: React.SyntheticEvent) {
-    event?.preventDefault();
+  function submitForm(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     const routeId = Number(form.routeId);
     if (!Number.isSafeInteger(routeId) || routeId <= 0) {
       setFormError("Selecione a rota vinculada ao posto");
@@ -503,8 +503,7 @@ export default function GestorPostsManagementPanel({
                 Cancelar
               </Button>
               <Button
-                type="button"
-                onClick={() => submitForm()}
+                type="submit"
                 disabled={isSaving}
                 className="gap-2 bg-emerald-700 text-white hover:bg-emerald-800"
               >

@@ -7,9 +7,9 @@ import { useState, useMemo, memo, useCallback } from "react";
 import { toast } from "sonner";
 
 interface PostCardProps {
-  id: number;
-  postId: number;
-  supervisorRouteId: number;
+  id?: number;
+  postId?: number;
+  supervisorRouteId?: number;
   postName: string;
   postAddress?: string;
   status: 'pending' | 'in_progress' | 'visited';
@@ -30,12 +30,13 @@ interface PostCardProps {
   isLoading?: boolean;
   hasActiveVisit?: boolean;
   isActiveVisit?: boolean;
+  readOnly?: boolean;
 }
 
 const PostCard = memo(function PostCard({
-  id,
-  postId,
-  supervisorRouteId,
+  id = 0,
+  postId = 0,
+  supervisorRouteId = 0,
   postName,
   postAddress,
   status,
@@ -56,10 +57,11 @@ const PostCard = memo(function PostCard({
   isLoading = false,
   hasActiveVisit = false,
   isActiveVisit = status === 'in_progress',
+  readOnly = false,
 }: PostCardProps) {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const showPostPops = !isCoverage && !isOperationalBaseCoverage;
+  const showPostPops = !readOnly && !isCoverage && !isOperationalBaseCoverage;
   const postPops = trpc.supervisorRoutes.getPostPops.useQuery(
     { supervisorRouteId, postId },
     { enabled: showPostPops && supervisorRouteId > 0 && postId > 0, retry: false },
@@ -131,8 +133,8 @@ const PostCard = memo(function PostCard({
   const cardStyles = useMemo(() => getCardStyles(), [status]);
   const statusIcon = useMemo(() => getStatusIcon(), [status]);
   const statusLabel = useMemo(() => getStatusLabel(), [status]);
-  const arrivalCoordinates = useMemo(() => formatCoordinates(arrivalLatitude, arrivalLongitude), [arrivalLatitude, arrivalLongitude]);
-  const departureCoordinates = useMemo(() => formatCoordinates(departureLatitude, departureLongitude), [departureLatitude, departureLongitude]);
+  const arrivalCoordinates = useMemo(() => readOnly ? null : formatCoordinates(arrivalLatitude, arrivalLongitude), [readOnly, arrivalLatitude, arrivalLongitude]);
+  const departureCoordinates = useMemo(() => readOnly ? null : formatCoordinates(departureLatitude, departureLongitude), [readOnly, departureLatitude, departureLongitude]);
   
   const memoizedCheckIn = useCallback(handleCheckIn, [id, onCheckIn]);
   const memoizedCheckOut = useCallback(handleCheckOut, [id, onCheckOut]);
@@ -146,6 +148,26 @@ const PostCard = memo(function PostCard({
       toast.error(error instanceof Error ? error.message : "Não foi possível abrir o POP");
     }
   };
+
+  if (readOnly) {
+    return (
+      <Card className={`transition-all ${cardStyles}`} aria-live="polite">
+        <CardHeader className="pb-3">
+          <div className="flex items-start gap-3">
+            {statusIcon}
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-lg">{postName}</CardTitle>
+              <CardDescription className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800">{statusLabel}</span>
+                <span>Entrada: {formatTime(arrivalTime)}</span>
+                <span>Saída: {formatTime(departureTime)}</span>
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card className={`transition-all ${cardStyles}`}>
@@ -185,7 +207,7 @@ const PostCard = memo(function PostCard({
 
           {/* Action Buttons - Responsive Layout */}
           <div className="flex flex-row md:flex-col gap-2 flex-shrink-0 w-full md:w-auto">
-            {status === 'pending' && (
+            {!readOnly && status === 'pending' && (
               <Button
                 onClick={memoizedCheckIn}
                 disabled={isCheckingIn || isLoading || hasActiveVisit}
@@ -209,7 +231,7 @@ const PostCard = memo(function PostCard({
               </Button>
             )}
 
-            {status === 'in_progress' && (
+            {!readOnly && status === 'in_progress' && (
               <>
                 {isActiveVisit ? (
                 <Button
@@ -253,9 +275,24 @@ const PostCard = memo(function PostCard({
               </>
             )}
 
+            {readOnly && status === 'in_progress' && !occurrenceReport?.trim() && (
+              <span className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-800" role="status">
+                Relato pendente
+              </span>
+            )}
+            {readOnly && status === 'in_progress' && occurrenceReport?.trim() && (
+              <Button type="button" onClick={memoizedOpenOccurrence} disabled={isLoading} variant="outline" className="text-blue-600 border-blue-600 flex-1 md:flex-none" size="sm">
+                <FileText className="mr-1 h-4 w-4" />Ver ocorrência
+              </Button>
+            )}
+
             {status === 'visited' && (
               <>
-                <Button
+                {readOnly ? (
+                  <span role="status" aria-label={`Visita concluída em ${postName}`} className="flex-1 rounded-md bg-green-100 px-3 py-2 text-center text-sm font-medium text-green-800 md:flex-none">
+                    <CheckCircle2 className="mr-1 inline h-4 w-4" />Visita concluída
+                  </span>
+                ) : <Button
                   type="button"
                   disabled
                   aria-label={`Visita concluída em ${postName}`}
@@ -265,8 +302,8 @@ const PostCard = memo(function PostCard({
                 >
                   <CheckCircle2 className="mr-1 h-4 w-4" />
                   Visita concluída
-                </Button>
-                <Button
+                </Button>}
+                {!readOnly && <Button
                   type="button"
                   onClick={memoizedCheckIn}
                   disabled={isCheckingIn || isLoading || hasActiveVisit}
@@ -280,7 +317,7 @@ const PostCard = memo(function PostCard({
                   ) : (
                     <><LogIn className="mr-1 h-4 w-4" />Registrar chegada</>
                   )}
-                </Button>
+                </Button>}
                 <Button
                   type="button"
                   onClick={memoizedOpenOccurrence}

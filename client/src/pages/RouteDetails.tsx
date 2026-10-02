@@ -1,3 +1,4 @@
+import React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import SupervisorShiftReportDialog from "@/components/SupervisorShiftReportDialo
 import { clearRouteDraft, readRouteDraft, saveRouteDraft } from "@/lib/onlineOperationDraft";
 import { notifySupervisorError, supervisorErrorMessage } from "@/lib/networkFeedback";
 import { geolocationErrorMessage, geolocationUnavailableMessage } from "@/lib/geolocationFeedback";
+import { canMutateSupervisorOperations, isAdminOperationalViewer } from "@/lib/supervisor-access";
 
 interface RouteDetailsProps {
   params: {
@@ -24,6 +26,8 @@ interface RouteDetailsProps {
 
 export default function RouteDetails({ params }: RouteDetailsProps) {
   const { user, logout } = useAuth();
+  const canManageOperations = canMutateSupervisorOperations(user);
+  const isAdminReadOnly = isAdminOperationalViewer(user);
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const supervisorRouteId = parseInt(params.supervisorRouteId);
@@ -55,15 +59,47 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   const OPERATIONAL_BASE_OCCURRENCE_VALUE = "operational_base";
 
   // Queries
-  const routeQuery = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId }, { retry: false });
-  const { data: route, isLoading: routeLoading, error: routeError } = routeQuery;
-  const checklistsQuery = trpc.checklists.getByRoute.useQuery({ supervisorRouteId }, { retry: false });
-  const { data: checklists, isLoading: checklistsLoading, error: checklistsError } = checklistsQuery;
-  const { data: vehicles } = trpc.fleet.listVehicles.useQuery();
+  const routeQuery = trpc.supervisorRoutes.getById.useQuery({ id: supervisorRouteId }, {
+    retry: false,
+    refetchInterval: isAdminReadOnly ? 15_000 : false,
+    refetchIntervalInBackground: false,
+  });
+  const { isLoading: routeLoading, error: routeError } = routeQuery;
+  type RouteDetailsRecord = NonNullable<typeof routeQuery.data> & {
+    routeId?: number;
+    vehicleId?: number | null;
+    vehiclePlate?: string | null;
+    vehicleModel?: string | null;
+    kmInitial?: number | string | null;
+    kmFinal?: number | string | null;
+    routeActivityType?: string | null;
+  };
+  const route = routeQuery.data as RouteDetailsRecord | undefined;
+  const checklistsQuery = trpc.checklists.getByRoute.useQuery({ supervisorRouteId }, {
+    retry: false,
+    refetchInterval: isAdminReadOnly ? 15_000 : false,
+    refetchIntervalInBackground: false,
+  });
+  const { isLoading: checklistsLoading, error: checklistsError } = checklistsQuery;
+  type RouteChecklistRecord = NonNullable<typeof checklistsQuery.data>[number] & {
+    id?: number;
+    postId?: number;
+    isCoverage?: boolean;
+    observations?: string | null;
+    occurrenceReport?: string | null;
+    coverageReason?: string | null;
+    postName?: string;
+    arrivalLatitude?: number | string | null;
+    arrivalLongitude?: number | string | null;
+    departureLatitude?: number | string | null;
+    departureLongitude?: number | string | null;
+  };
+  const checklists = checklistsQuery.data as RouteChecklistRecord[] | undefined;
+  const { data: vehicles } = trpc.fleet.listVehicles.useQuery(undefined, { enabled: canManageOperations });
   const effectiveVehicleId = Number(route?.vehicleId ?? selectedVehicleId);
   const { data: fuelSummary } = trpc.fleet.getFuelSummary.useQuery(
     { vehicleId: effectiveVehicleId },
-    { enabled: Number.isSafeInteger(effectiveVehicleId) && effectiveVehicleId > 0 },
+    { enabled: canManageOperations && Number.isSafeInteger(effectiveVehicleId) && effectiveVehicleId > 0 },
   );
   const activeChecklist = checklists?.find((checklist) => checklist.status === 'in_progress');
   const isBaseOperational = route?.routeActivityType === "operational_base";
@@ -74,6 +110,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   useEffect(() => {
     if (!route || !user?.id) return;
+    if (!canManageOperations) {
+      setDraftLoaded(true);
+      return;
+    }
     if (route.status === "completed") {
       clearRouteDraft(user.id, route.id);
       setDraftLoaded(true);
@@ -92,20 +132,20 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       setFuelType(draft.fuelType);
     }
     setDraftLoaded(true);
-  }, [route?.id, route?.status, route?.vehicleId, user?.id]);
+  }, [canManageOperations, route?.id, route?.status, route?.vehicleId, user?.id]);
 
   useEffect(() => {
-    if (!route || !user?.id || !draftLoaded || route.status === "completed") return;
+    if (!canManageOperations || !route || !user?.id || !draftLoaded || route.status === "completed") return;
     saveRouteDraft(user.id, route.id, { kmInitial, kmFinal, selectedVehicleId, coveragePostId: occurrencePostId, coverageReason: occurrenceReason, fuelOdometer, fuelAmount, fuelLiters, fuelType });
-  }, [occurrencePostId, occurrenceReason, draftLoaded, fuelAmount, fuelLiters, fuelOdometer, fuelType, kmFinal, kmInitial, route?.id, route?.status, selectedVehicleId, user?.id]);
+  }, [canManageOperations, occurrencePostId, occurrenceReason, draftLoaded, fuelAmount, fuelLiters, fuelOdometer, fuelType, kmFinal, kmInitial, route?.id, route?.status, selectedVehicleId, user?.id]);
 
   const { data: posts } = trpc.routes.getPostsByRoute.useQuery(
     { routeId: route?.routeId || 0 },
-    { enabled: !!route?.routeId }
+    { enabled: !isAdminReadOnly && !!route?.routeId }
   );
   const { data: occurrencePosts } = trpc.checklists.getCoveragePosts.useQuery(
     { supervisorRouteId },
-    { enabled: route?.status === "in_progress" },
+    { enabled: canManageOperations && route?.status === "in_progress" },
   );
   const shiftReportQuery = trpc.supervisorRoutes.getShiftReport.useQuery(
     { supervisorRouteId },
@@ -149,7 +189,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
   };
 
   useEffect(() => {
-    if (!route || checklistsLoading || !posts?.length || (checklists?.length ?? 0) > 0 || createChecklistsMutation.isPending) {
+    if (!canManageOperations || !route || checklistsLoading || !posts?.length || (checklists?.length ?? 0) > 0 || createChecklistsMutation.isPending) {
       return;
     }
 
@@ -158,7 +198,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
       .catch((error) => {
         notifySupervisorError(error, "Não foi possível preparar os postos da rota");
       });
-  }, [route?.id, posts?.length, checklists?.length, checklistsLoading, supervisorRouteId, createChecklistsMutation, utils]);
+  }, [canManageOperations, route?.id, posts?.length, checklists?.length, checklistsLoading, supervisorRouteId, createChecklistsMutation, utils]);
 
   const captureCoordinates = () => new Promise<{ latitude?: number; longitude?: number }>((resolve) => {
     if (!navigator.geolocation) {
@@ -180,18 +220,27 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
     );
   });
 
-  const plannedPostCards = (posts ?? []).flatMap((post) => {
+  const adminPostCards = isAdminReadOnly ? (checklists ?? []).map((checklist, index) => {
+    const arrivalKey = checklist.arrivalTime instanceof Date ? checklist.arrivalTime.toISOString() : String(checklist.arrivalTime ?? "");
+    const departureKey = checklist.departureTime instanceof Date ? checklist.departureTime.toISOString() : String(checklist.departureTime ?? "");
+    return {
+      cardKey: `admin:${checklist.postName ?? ""}:${checklist.status}:${arrivalKey}:${departureKey}:${index}`,
+      post: { name: checklist.postName ?? "Posto", address: undefined },
+      checklist,
+    };
+  }) : [];
+  const plannedPostCards = isAdminReadOnly ? [] : (posts ?? []).flatMap((post) => {
     const latestChecklist = (checklists ?? [])
       .filter((checklist) => checklist.postId === post.id && !checklist.isCoverage)
-      .sort((a, b) => b.id - a.id)[0];
-    return latestChecklist ? [{ post, checklist: latestChecklist }] : [];
+      .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+    return latestChecklist ? [{ cardKey: `visit:${latestChecklist.id ?? ""}`, post, checklist: latestChecklist }] : [];
   });
   const occurrencePostById = new Map((occurrencePosts ?? []).map((post) => [post.id, post]));
   const selectableOccurrencePosts = (occurrencePosts ?? []).filter((post) => post.routeActivityType !== "operational_base");
-  const occurrencePostCards = (checklists ?? [])
+  const occurrencePostCards = isAdminReadOnly ? [] : (checklists ?? [])
     .filter((checklist) => checklist.isCoverage)
-    .map((checklist) => ({ post: occurrencePostById.get(checklist.postId), checklist }));
-  const postCards = [...plannedPostCards, ...occurrencePostCards];
+    .map((checklist, index) => ({ cardKey: `coverage:${checklist.id ?? ""}:${index}`, post: occurrencePostById.get(checklist.postId ?? -1), checklist }));
+  const postCards = isAdminReadOnly ? adminPostCards : [...plannedPostCards, ...occurrencePostCards];
 
   const handleCreateOccurrence = async () => {
     const postId = occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE
@@ -219,7 +268,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
   useEffect(() => {
     // Start recording GPS location periodically
-    if (route && route.status === 'in_progress') {
+    if (canManageOperations && route && route.status === 'in_progress') {
       const interval = setInterval(() => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
@@ -243,7 +292,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
       return () => clearInterval(interval);
     }
-  }, [route?.status, supervisorRouteId, recordLocationMutation]);
+  }, [canManageOperations, route?.status, supervisorRouteId, recordLocationMutation]);
 
   const handleStartRoute = async () => {
     const initialKm = Number(kmInitial);
@@ -432,7 +481,8 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {route.status === "pending" && <Button onClick={() => setShowCancelConfirmation(true)} variant="outline" className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"><XCircle className="mr-2 h-4 w-4" />Cancelar rota</Button>}
+            {canManageOperations && route.status === "pending" && <Button onClick={() => setShowCancelConfirmation(true)} variant="outline" className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"><XCircle className="mr-2 h-4 w-4" />Cancelar rota</Button>}
+            {isAdminReadOnly && <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-900">Somente leitura</span>}
             <Button onClick={() => logout()} variant="outline">Sair</Button>
           </div>
         </div>
@@ -455,7 +505,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         )}
 
-        <section className="mb-8" aria-labelledby="vehicle-control-title">
+        {canManageOperations && <section className="mb-8" aria-labelledby="vehicle-control-title">
           <Card className="border-amber-200 bg-white shadow-sm">
             <CardHeader>
               <CardTitle id="vehicle-control-title" className="flex items-center gap-2">
@@ -463,7 +513,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 Controle da viatura
               </CardTitle>
               <CardDescription>
-                Selecione a viatura, registre retirada, abastecimentos e devolução. Tudo fica associado à placa selecionada.
+                {canManageOperations ? "Selecione a viatura e registre retirada, abastecimentos e devolução. Tudo fica associado à placa selecionada." : "Consulta do veículo e dos registros de operação vinculados à rota."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -473,18 +523,18 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">1. Seleção de viatura</p>
                     {route.vehicleId ? (
                       <p className="mt-1 text-lg font-bold text-slate-950">{route.vehiclePlate} <span className="font-medium text-slate-600">· {route.vehicleModel}</span></p>
-                    ) : <p className="mt-1 text-sm text-slate-700">A seleção da placa é obrigatória antes do KM inicial.</p>}
+                    ) : <p className="mt-1 text-sm text-slate-700">{canManageOperations ? "A seleção da placa é obrigatória antes do KM inicial." : "Viatura ainda não vinculada."}</p>}
                   </div>
-                  {!route.vehicleId && <Button type="button" variant="outline" onClick={() => setShowNewVehicle((value) => !value)} className="border-amber-300 bg-white"><Plus className="mr-2 h-4 w-4" />Nova viatura</Button>}
+                  {!route.vehicleId && canManageOperations && <Button type="button" variant="outline" onClick={() => setShowNewVehicle((value) => !value)} className="border-amber-300 bg-white"><Plus className="mr-2 h-4 w-4" />Nova viatura</Button>}
                 </div>
-                {!route.vehicleId && <div className="mt-4 space-y-2">
+                {!route.vehicleId && canManageOperations && <div className="mt-4 space-y-2">
                   <Label htmlFor="vehicle-select">Placa / modelo</Label>
                   <select id="vehicle-select" value={selectedVehicleId} onChange={(event) => setSelectedVehicleId(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring">
                     <option value="">Selecione a viatura</option>
                     {(vehicles ?? []).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.model}</option>)}
                   </select>
                 </div>}
-                {!route.vehicleId && showNewVehicle && <div className="mt-4 grid gap-3 rounded-lg border border-amber-200 bg-white p-3 md:grid-cols-[1fr_1.4fr_auto] md:items-end">
+                {!route.vehicleId && canManageOperations && showNewVehicle && <div className="mt-4 grid gap-3 rounded-lg border border-amber-200 bg-white p-3 md:grid-cols-[1fr_1.4fr_auto] md:items-end">
                   <div className="space-y-2"><Label htmlFor="vehicle-plate">Placa</Label><Input id="vehicle-plate" value={vehiclePlate} onChange={(event) => setVehiclePlate(event.target.value.toUpperCase())} placeholder="Ex.: ABC1D23" /></div>
                   <div className="space-y-2"><Label htmlFor="vehicle-model">Modelo</Label><Input id="vehicle-model" value={vehicleModel} onChange={(event) => setVehicleModel(event.target.value)} placeholder="Ex.: Fiat Strada" /></div>
                   <Button type="button" onClick={handleSaveVehicle} disabled={saveVehicleMutation.isPending} className="bg-amber-600 hover:bg-amber-700">{saveVehicleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cadastrar"}</Button>
@@ -494,7 +544,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">2. KM inicial</p>
-                {route.kmInitial == null ? (
+                {route.kmInitial == null ? canManageOperations ? (
                   <div className="mt-3 space-y-3">
                     <Label htmlFor="kmInitial">Leitura ao retirar a viatura</Label>
                     <Input
@@ -513,7 +563,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                       {updateKmMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Iniciar turno / registrar KM inicial"}
                     </Button>
                   </div>
-                ) : (
+                ) : <p className="mt-3 text-sm text-slate-600">Aguardando registro do KM inicial pelo Supervisor.</p> : (
                   <p className="mt-3 text-3xl font-bold text-slate-900">{Number(route.kmInitial).toLocaleString("pt-BR")} km</p>
                 )}
               </div>
@@ -524,10 +574,12 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   <div className="mt-3 space-y-1">
                     <p className="text-3xl font-bold text-slate-900">{Number(route.kmFinal).toLocaleString("pt-BR")} km</p>
                     <p className="text-sm text-slate-600">Total percorrido: {(Number(route.kmFinal) - Number(route.kmInitial ?? 0)).toFixed(2)} km</p>
-                    {isBaseOperational && <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-950">Base Operacional encerrada</p><p className="mt-1 text-xs leading-5 text-violet-800">Você já pode selecionar uma rota de campo para continuar o turno.</p><Button type="button" onClick={() => navigate("/supervisor")} className="mt-3 w-full bg-violet-700 hover:bg-violet-800">Selecionar rota de campo <ArrowLeft className="ml-2 h-4 w-4 rotate-180" /></Button></div>}
+                    {isBaseOperational && <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-950">Base Operacional encerrada</p><p className="mt-1 text-xs leading-5 text-violet-800">Você já pode selecionar uma rota de campo para continuar o turno.</p>{canManageOperations && <Button type="button" onClick={() => navigate("/supervisor")} className="mt-3 w-full bg-violet-700 hover:bg-violet-800">Selecionar rota de campo <ArrowLeft className="ml-2 h-4 w-4 rotate-180" /></Button>}</div>}
                   </div>
                 ) : route.status === "in_progress" ? (
-                  <Button onClick={handleOpenShiftReport} className="mt-3 w-full bg-slate-900 hover:bg-slate-800"><ClipboardList className="mr-2 h-4 w-4" />Encerrar turno e gerar relatório</Button>
+                  canManageOperations ? (
+                    <Button onClick={handleOpenShiftReport} className="mt-3 w-full bg-slate-900 hover:bg-slate-800"><ClipboardList className="mr-2 h-4 w-4" />Encerrar turno e gerar relatório</Button>
+                  ) : <p className="mt-3 text-sm text-slate-600">Turno em andamento; o encerramento é exclusivo do Supervisor.</p>
                 ) : (
                   <p className="mt-3 text-sm text-slate-600">Disponível depois do registro do KM inicial.</p>
                 )}
@@ -537,9 +589,9 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">4. Abastecimento</p><p className="mt-1 text-sm text-emerald-950">Registre durante a operação para acompanhar consumo e custo da viatura.</p></div>
-                  {route.status === "in_progress" && <Button type="button" onClick={() => setShowFuelForm((value) => !value)} className="bg-emerald-700 hover:bg-emerald-800"><Fuel className="mr-2 h-4 w-4" />Registrar abastecimento</Button>}
+                  {canManageOperations && route.status === "in_progress" && <Button type="button" onClick={() => setShowFuelForm((value) => !value)} className="bg-emerald-700 hover:bg-emerald-800"><Fuel className="mr-2 h-4 w-4" />Registrar abastecimento</Button>}
                 </div>
-                {showFuelForm && <div className="mt-4 grid gap-3 rounded-lg border border-emerald-200 bg-white p-3 md:grid-cols-2 lg:grid-cols-4">
+                {canManageOperations && showFuelForm && <div className="mt-4 grid gap-3 rounded-lg border border-emerald-200 bg-white p-3 md:grid-cols-2 lg:grid-cols-4">
                   <div className="space-y-2"><Label htmlFor="fuel-km">KM no abastecimento</Label><Input id="fuel-km" type="number" inputMode="decimal" value={fuelOdometer} onChange={(event) => setFuelOdometer(event.target.value)} placeholder="Ex.: 15120" /></div>
                   <div className="space-y-2"><Label htmlFor="fuel-amount">Valor pago (R$)</Label><Input id="fuel-amount" inputMode="decimal" value={fuelAmount} onChange={(event) => setFuelAmount(event.target.value)} placeholder="Ex.: 150,00" /></div>
                   <div className="space-y-2"><Label htmlFor="fuel-liters">Litros</Label><Input id="fuel-liters" inputMode="decimal" value={fuelLiters} onChange={(event) => setFuelLiters(event.target.value)} placeholder="Ex.: 28,5" /></div>
@@ -551,13 +603,13 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   <div className="rounded-lg border border-emerald-100 bg-white p-3"><CircleDollarSign className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">Custo por KM</p><p className="mt-1 text-xl font-bold text-slate-950">{formatCurrency(fuelSummary?.latestMetrics?.costPerKm)}</p></div>
                   <div className="rounded-lg border border-emerald-100 bg-white p-3"><Droplets className="h-4 w-4 text-emerald-700" /><p className="mt-2 text-xs font-semibold uppercase text-slate-500">KM entre abastecimentos</p><p className="mt-1 text-xl font-bold text-slate-950">{formatNumber(fuelSummary?.latestMetrics?.distanceSincePrevious, " km")}</p></div>
                 </div>
-                {fuelSummary && fuelSummary.history.length > 0 && <div className="mt-5"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><History className="h-4 w-4" />Últimos abastecimentos — {fuelSummary.vehicle.plate}</div><div className="mt-2 overflow-x-auto rounded-lg border border-emerald-100 bg-white"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-emerald-50 text-xs uppercase text-emerald-900"><tr><th className="p-3">Data</th><th className="p-3">KM</th><th className="p-3">Combustível</th><th className="p-3">Valor / litros</th><th className="p-3">Média</th><th className="p-3">Custo/KM</th><th className="p-3 text-right">Ação</th></tr></thead><tbody>{fuelSummary.history.slice(0, 5).map((log) => <tr key={log.id} className="border-t border-emerald-50"><td className="p-3">{new Date(log.createdAt).toLocaleDateString("pt-BR")}</td><td className="p-3">{formatNumber(Number(log.odometerKm), " km")}</td><td className="p-3">{{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[log.fuelType]}</td><td className="p-3">{formatCurrency(Number(log.amount))} · {formatNumber(Number(log.liters), " L")}</td><td className="p-3">{formatNumber(log.consumptionKmPerLiter, " km/L")}</td><td className="p-3">{formatCurrency(log.costPerKm)}</td><td className="p-3 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => openFuelEditor(log)} aria-label={`Editar abastecimento de ${new Date(log.createdAt).toLocaleDateString("pt-BR")}`}><Pencil className="h-4 w-4" /></Button></td></tr>)}</tbody></table></div></div>}
+                {fuelSummary && fuelSummary.history.length > 0 && <div className="mt-5"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><History className="h-4 w-4" />Últimos abastecimentos — {fuelSummary.vehicle.plate}</div><div className="mt-2 overflow-x-auto rounded-lg border border-emerald-100 bg-white"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-emerald-50 text-xs uppercase text-emerald-900"><tr><th className="p-3">Data</th><th className="p-3">KM</th><th className="p-3">Combustível</th><th className="p-3">Valor / litros</th><th className="p-3">Média</th><th className="p-3">Custo/KM</th>{canManageOperations && <th className="p-3 text-right">Ação</th>}</tr></thead><tbody>{fuelSummary.history.slice(0, 5).map((log) => <tr key={log.id} className="border-t border-emerald-50"><td className="p-3">{new Date(log.createdAt).toLocaleDateString("pt-BR")}</td><td className="p-3">{formatNumber(Number(log.odometerKm), " km")}</td><td className="p-3">{{ gasoline: "Gasolina", ethanol: "Etanol", diesel: "Diesel" }[log.fuelType]}</td><td className="p-3">{formatCurrency(Number(log.amount))} · {formatNumber(Number(log.liters), " L")}</td><td className="p-3">{formatNumber(log.consumptionKmPerLiter, " km/L")}</td><td className="p-3">{formatCurrency(log.costPerKm)}</td>{canManageOperations && <td className="p-3 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => openFuelEditor(log)} aria-label={`Editar abastecimento de ${new Date(log.createdAt).toLocaleDateString("pt-BR")}`}><Pencil className="h-4 w-4" /></Button></td>}</tr>)}</tbody></table></div></div>}
               </div>
             </CardContent>
           </Card>
-        </section>
+        </section>}
 
-        {!isBaseOperational && <section className="mb-8" aria-labelledby="occurrence-title">
+        {canManageOperations && !isBaseOperational && <section className="mb-8" aria-labelledby="occurrence-title">
           <Card className="border-violet-200 bg-violet-50/40 shadow-sm">
             <CardHeader>
               <CardTitle id="occurrence-title" className="flex items-center gap-2 text-violet-950">
@@ -565,10 +617,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 Ocorrência ou atividade na Base Operacional
               </CardTitle>
               <CardDescription>
-                Use para registrar uma ocorrência em um posto não previsto nesta rota ou uma atividade realizada na Base Operacional. A justificativa ficará disponível para o Gestor.
+                {canManageOperations ? "Use para registrar uma ocorrência em um posto não previsto nesta rota ou uma atividade realizada na Base Operacional. A justificativa ficará disponível para o Gestor." : "Consulte abaixo o status e os registros já associados à rota."}
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
+            {canManageOperations ? <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
               <div className="space-y-2">
                 <Label htmlFor="occurrence-post">Posto ou atividade</Label>
                 <select
@@ -609,9 +661,9 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
               >
                 {createOccurrenceMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : occurrencePostId === OPERATIONAL_BASE_OCCURRENCE_VALUE ? "Registrar atividade na base" : "Adicionar ocorrência"}
               </Button>
-            </CardContent>
-            {route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar ocorrências.</CardContent>}
-            {activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de registrar uma ocorrência.</CardContent>}
+            </CardContent> : <CardContent className="text-sm text-violet-900">Registro de ocorrência e cobertura disponíveis somente no fluxo operacional do Supervisor.</CardContent>}
+            {canManageOperations && route.status !== "in_progress" && <CardContent className="pt-0 text-sm text-violet-800">Registre o KM inicial para liberar ocorrências.</CardContent>}
+            {canManageOperations && activeChecklist && <CardContent className="pt-0 text-sm text-violet-800">Finalize a visita ativa antes de registrar uma ocorrência.</CardContent>}
           </Card>
         </section>}
 
@@ -626,13 +678,13 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
           </Card>
         </section> : <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">Postos a Visitar</h2>
-            <span className="text-sm text-gray-600">
+            <h2 className="text-xl font-bold text-gray-900">{isAdminReadOnly ? "Postos" : "Postos a Visitar"}</h2>
+            {!isAdminReadOnly && <span className="text-sm text-gray-600">
               {postCards.filter(({ checklist }) => checklist.status === 'visited').length} / {postCards.length} postos concluídos
-            </span>
+            </span>}
           </div>
 
-          {createChecklistsMutation.isPending && (
+          {canManageOperations && createChecklistsMutation.isPending && (
             <Card className="border-blue-200 bg-blue-50">
               <CardContent className="flex items-center gap-3 py-5 text-sm text-blue-900">
                 <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
@@ -650,11 +702,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
             </Card>
           )}
 
-          {!checklistsError && !createChecklistsMutation.isPending && postCards.length === 0 && (
+          {canManageOperations && !checklistsError && !createChecklistsMutation.isPending && postCards.length === 0 && (
             <Card className="border-amber-200 bg-amber-50">
               <CardContent className="flex flex-col gap-3 py-5 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
-                <span>Os postos ainda estão sendo preparados. Atualize a tela em alguns segundos.</span>
-                <Button
+                <span>{canManageOperations ? "Os postos ainda estão sendo preparados. Atualize a tela em alguns segundos." : "Aguardando o Supervisor preparar os postos da rota."}</span>
+                {canManageOperations && <Button
                   type="button"
                   size="sm"
                   variant="outline"
@@ -664,32 +716,32 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                   })}
                 >
                   Tentar novamente
-                </Button>
+                </Button>}
               </CardContent>
             </Card>
           )}
 
-          {postCards.map(({ checklist, post }) => {
+          {postCards.map(({ checklist, post, cardKey }) => {
             return (
               <PostCard
-                key={checklist.id}
-                id={checklist.id}
-                postId={checklist.postId}
-                supervisorRouteId={supervisorRouteId}
-                postName={post?.name || `Posto #${checklist.postId}`}
+                key={cardKey}
+                {...(!isAdminReadOnly && checklist.id !== undefined ? { id: checklist.id } : {})}
+                {...(!isAdminReadOnly && checklist.postId !== undefined ? { postId: checklist.postId } : {})}
+                {...(!isAdminReadOnly ? { supervisorRouteId } : {})}
+                postName={post?.name || checklist.postName || (checklist.postId !== undefined ? `Posto #${checklist.postId}` : "Posto")}
                 postAddress={post?.address}
                 status={checklist.status as 'pending' | 'in_progress' | 'visited'}
-                observations={checklist.observations || undefined}
+                observations={checklist.observations ?? undefined}
                 occurrenceReport={checklist.occurrenceReport}
-                isCoverage={checklist.isCoverage}
+                isCoverage={checklist.isCoverage ?? false}
                 isOperationalBaseCoverage={Boolean(post && "routeActivityType" in post && post.routeActivityType === "operational_base")}
                 coverageReason={checklist.coverageReason}
                 arrivalTime={checklist.arrivalTime}
                 departureTime={checklist.departureTime}
-                arrivalLatitude={checklist.arrivalLatitude as number | null | undefined}
-                arrivalLongitude={checklist.arrivalLongitude as number | null | undefined}
-                departureLatitude={checklist.departureLatitude as number | null | undefined}
-                departureLongitude={checklist.departureLongitude as number | null | undefined}
+                arrivalLatitude={checklist.arrivalLatitude}
+                arrivalLongitude={checklist.arrivalLongitude}
+                departureLatitude={checklist.departureLatitude}
+                departureLongitude={checklist.departureLongitude}
                 onCheckIn={async (checklistId) => {
                   try {
                     const coordinates = await captureCoordinates();
@@ -713,9 +765,10 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
                 onOpenOccurrence={(checklistId) => {
                   window.location.href = `/supervisor/occurrence/${checklistId}`;
                 }}
-                hasActiveVisit={Boolean(activeChecklist && activeChecklist.id !== checklist.id)}
-                isActiveVisit={activeChecklist?.id === checklist.id}
+                hasActiveVisit={Boolean(!isAdminReadOnly && activeChecklist?.id !== undefined && activeChecklist.id !== checklist.id)}
+                isActiveVisit={Boolean(!isAdminReadOnly && activeChecklist?.id !== undefined && activeChecklist.id === checklist.id)}
                 isLoading={checkInMutation.isPending || checkOutMutation.isPending}
+                readOnly={!canManageOperations}
               />
             );
           })}
@@ -723,7 +776,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
 
       </div>
 
-      <AlertDialog open={Boolean(editingFuel)} onOpenChange={(open) => {
+      <AlertDialog open={canManageOperations && Boolean(editingFuel)} onOpenChange={(open) => {
         if (!open && !updateFuelMutation.isPending) {
           setEditingFuel(null);
           setFuelEditWarnings([]);
@@ -751,7 +804,7 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         </AlertDialogContent>
       </AlertDialog>
       <SupervisorShiftReportDialog
-        open={showShiftReport}
+        open={canManageOperations && showShiftReport}
         onOpenChange={(open) => {
           setShowShiftReport(open);
           if (!open) setShiftReport(null);
@@ -760,11 +813,11 @@ export default function RouteDetails({ params }: RouteDetailsProps) {
         isLoading={shiftReportQuery.isLoading && !shiftReport}
         isClosing={finishShiftMutation.isPending}
         initialKmFinal={kmFinal}
-        canClose={route.status === "in_progress"}
+        canClose={canManageOperations && route.status === "in_progress"}
         onConfirmClose={handleFinishShift}
       />
 
-      <AlertDialog open={showCancelConfirmation} onOpenChange={setShowCancelConfirmation}>
+      <AlertDialog open={canManageOperations && showCancelConfirmation} onOpenChange={setShowCancelConfirmation}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar esta rota?</AlertDialogTitle>

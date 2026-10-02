@@ -69,4 +69,30 @@ describe("supervisorRoutes.create", () => {
     await expect(caller.supervisorRoutes.cancelPending({ id: 44 })).resolves.toEqual({ cancelled: true, supervisorRouteId: 44 });
     expect(db.cancelPendingSupervisorRoute).toHaveBeenCalledWith(44, 1);
   });
+
+  it("nega criação de rota para RH mesmo com usuário autenticado", async () => {
+    const rhContext: TrpcContext = {
+      ...context,
+      user: { ...context.user!, personnelRole: "RH" },
+    };
+    const caller = appRouter.createCaller(rhContext);
+
+    await expect(caller.supervisorRoutes.create({ routeId: 1, date: new Date() }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.getSupervisorRoutesToday).not.toHaveBeenCalled();
+    expect(db.createSupervisorRoute).not.toHaveBeenCalled();
+  });
+
+  it("nega criação de rota para admin mesmo com personnelRole Supervisor conflitante", async () => {
+    const adminContext: TrpcContext = {
+      ...context,
+      user: { ...context.user!, role: "admin", personnelRole: "SUPERVISOR" },
+    };
+    const caller = appRouter.createCaller(adminContext);
+
+    await expect(caller.supervisorRoutes.create({ routeId: 1, date: new Date() }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.getSupervisorRoutesToday).not.toHaveBeenCalled();
+    expect(db.createSupervisorRoute).not.toHaveBeenCalled();
+  });
 });

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_personnel_work_schedules_name_ci" ON "personnel_work_schedules" USING btree (lower("name"));

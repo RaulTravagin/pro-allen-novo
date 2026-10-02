@@ -5,6 +5,7 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { isCivilDate, isCivilMonth } from "../shared/personnel-schedules";
+import { isValidCoordinatePair } from "../shared/geographic-coordinates";
 import { TRPCError } from "@trpc/server";
 import { RouteClosureError } from "./route-closure";
 import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
@@ -39,6 +40,7 @@ import { canManagePostPops } from "./post-pops-access";
 import {
   MAX_UPLOAD_BASE64_LENGTH,
   isValidUploadBase64,
+  isValidUploadContent,
   resolvePersonnelDocumentMimeType,
   resolvePostPopMimeType,
 } from "../shared/upload-file-types";
@@ -80,17 +82,68 @@ const gestorProcedure = publicProcedure.use(async ({ ctx, next }) => {
   return next();
 });
 
-const gestorOrAdminProcedure = publicProcedure.use(async ({ ctx, next }) => {
-  if (ctx.user?.role === "admin" || await hasGestorSession(ctx.req)) return next();
-  throw new TRPCError({ code: "FORBIDDEN", message: "Acesso do Gestor ou Administrador necessário" });
-});
-
 const postPopManagerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const role = ctx.user ? db.getPersonnelRole(ctx.user) : null;
   if (!canManagePostPops(role, await hasGestorSession(ctx.req))) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Somente ADM ou Gestor pode administrar POPs" });
   }
   return next();
+});
+
+const routeCatalogReadProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const role = ctx.user ? db.getPersonnelRole(ctx.user) : null;
+  const gestorSession = await hasGestorSession(ctx.req);
+  if (role !== "SUPERVISOR" && !canManagePostPops(role, gestorSession)) {
+    throw new TRPCError({
+      code: ctx.user ? "FORBIDDEN" : "UNAUTHORIZED",
+      message: "Acesso ao catálogo de rotas e postos não autorizado",
+    });
+  }
+  return next({ ctx });
+});
+
+const supervisorProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const personnelRole = ctx.user.role === "admin" ? "ADM" : (ctx.user.personnelRole ?? "SUPERVISOR");
+  if (personnelRole !== "SUPERVISOR") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Esta operação é exclusiva do perfil Supervisor" });
+  }
+  return next({ ctx });
+});
+
+const supervisorReadProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const personnelRole = ctx.user.role === "admin" ? "ADM" : (ctx.user.personnelRole ?? "SUPERVISOR");
+  if (ctx.user.role !== "admin" && personnelRole !== "SUPERVISOR") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Acesso de leitura operacional não autorizado" });
+  }
+  return next({ ctx });
+});
+
+const supervisorOrGestorReadProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const personnelRole = ctx.user
+    ? (ctx.user.role === "admin" ? "ADM" : (ctx.user.personnelRole ?? "SUPERVISOR"))
+    : null;
+  if (personnelRole === "SUPERVISOR" || await hasGestorSession(ctx.req)) return next({ ctx });
+  throw new TRPCError({ code: "FORBIDDEN", message: "Acesso de leitura operacional não autorizado" });
+});
+
+function isAdminOperationalViewer(user: { role: string; personnelRole?: string | null }) {
+  return user.role === "admin";
+}
+
+const adminOperationalReadProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Somente role=admin pode consultar o monitoramento operacional" });
+  }
+  return next({ ctx });
+});
+
+const visitPresenceInput = z.object({
+  checklistId: z.number().int().positive(),
+  latitude: z.number().finite().optional(),
+  longitude: z.number().finite().optional(),
+}).refine(({ latitude, longitude }) => isValidCoordinatePair(latitude, longitude), {
+  message: "Informe latitude e longitude juntas e dentro das faixas geográficas válidas",
+  path: ["longitude"],
 });
 
 function getPostPopStorageFailure(error: unknown) {
@@ -528,6 +581,20 @@ export const appRouter = router({
     }),
   }),
 
+  adminOperations: router({
+    liveSnapshot: adminOperationalReadProcedure.query(async () => {
+      const snapshot = await db.getAdminOperationalLiveSnapshot();
+      return {
+        visits: snapshot.visits.map(({ postName, status, arrivalTime, departureTime }) => ({
+          postName,
+          status,
+          arrivalTime,
+          departureTime,
+        })),
+      };
+    }),
+  }),
+
   gestor: router({
     dashboard: gestorProcedure.input(z.object({ shiftType: z.enum(["day", "night"]).optional().nullable() }).optional()).query(async ({ input }) => {
       const shiftType = input?.shiftType ?? null;
@@ -544,7 +611,7 @@ export const appRouter = router({
     personnelMovementReport: gestorProcedure
       .input(movementReportInput)
       .query(async ({ input }) => projectGestorPersonnelMovementReport(await db.getGestorPersonnelMovementReport(input.month, input.period as MovementPeriod))),
-    operationalReport: gestorOrAdminProcedure.input(z.object({
+    operationalReport: gestorProcedure.input(z.object({
       startDate: z.date(),
       endDate: z.date(),
       supervisorId: z.number().int().positive().optional().nullable(),
@@ -556,7 +623,7 @@ export const appRouter = router({
       }
       return db.getOperationalManagementReport(input);
     }),
-    updateFuelAmount: gestorOrAdminProcedure.input(z.object({
+    updateFuelAmount: gestorProcedure.input(z.object({
       id: z.number().int().positive(),
       amount: z.number().finite().positive().max(9999999999.99),
     })).mutation(async ({ input }) => {
@@ -665,6 +732,9 @@ export const appRouter = router({
         if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter até 10 MB" });
         }
+        if (!isValidUploadContent(bytes, mimeType)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O conteúdo do arquivo não corresponde ao formato informado" });
+        }
         const safeName = input.name.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "").slice(-200) || "procedimento";
         const key = `posts/pops/${input.postId}/${randomUUID()}-${safeName}`;
         let stored: { key: string; url: string };
@@ -724,17 +794,19 @@ export const appRouter = router({
 
   // Routes and Posts
   routes: router({
-    list: publicProcedure.query(async () => {
+    list: routeCatalogReadProcedure.query(async ({ ctx }) => {
+      if (!ctx.user || db.getPersonnelRole(ctx.user) !== "SUPERVISOR") return db.getAdminRoutesWithoutPostCoordinates();
       return await db.getAllRoutes();
     }),
-    getById: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    getById: routeCatalogReadProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       return await db.getRouteById(input.id);
     }),
-    getPostsByRoute: publicProcedure.input(z.object({ routeId: z.number() })).query(async ({ input }) => {
+    getPostsByRoute: routeCatalogReadProcedure.input(z.object({ routeId: z.number() })).query(async ({ ctx, input }) => {
+      if (!ctx.user || db.getPersonnelRole(ctx.user) !== "SUPERVISOR") return db.getAdminPostsByRouteId(input.routeId);
       return await db.getPostsByRouteId(input.routeId);
     }),
     getPostsWithPriority: adminProcedure.input(z.object({ routeId: z.number() })).query(async ({ input }) => {
-      const posts = await db.getPostsByRouteId(input.routeId);
+      const posts = await db.getAdminPostsByRouteId(input.routeId);
       
       const postsWithPriority = await Promise.all(posts.map(async (post) => {
         const lastVisit = await db.getLastPostVisit(post.id);
@@ -753,18 +825,18 @@ export const appRouter = router({
   }),
 
   posts: router({
-    getById: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    getById: routeCatalogReadProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+      if (!ctx.user || db.getPersonnelRole(ctx.user) !== "SUPERVISOR") return db.getAdminPostByIdWithoutCoordinates(input.id);
       return await db.getPostById(input.id);
     }),
   }),
 
   fleet: router({
-    listVehicles: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+    listVehicles: supervisorOrGestorReadProcedure.query(async () => {
       return db.listActiveVehicles();
     }),
 
-    saveVehicle: protectedProcedure
+    saveVehicle: supervisorProcedure
       .input(z.object({ plate: z.string().min(7).max(12), model: z.string().min(2).max(120) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -775,14 +847,13 @@ export const appRouter = router({
         }
       }),
 
-    getFuelSummary: protectedProcedure
+    getFuelSummary: supervisorOrGestorReadProcedure
       .input(z.object({ vehicleId: z.number().int().positive() }))
-      .query(async ({ ctx, input }) => {
-        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      .query(async ({ input }) => {
         return db.getVehicleFuelSummary(input.vehicleId);
       }),
 
-    registerFuel: protectedProcedure
+    registerFuel: supervisorProcedure
       .input(z.object({
         supervisorRouteId: z.number().int().positive(),
         odometerKm: z.number().finite().nonnegative(),
@@ -805,7 +876,7 @@ export const appRouter = router({
         return db.createFuelLog({ vehicleId: route.vehicleId, supervisorRouteId: route.id, supervisorId: ctx.user.id, ...fuelInput });
       }),
 
-    updateFuel: protectedProcedure
+    updateFuel: supervisorProcedure
       .input(z.object({
         id: z.number().int().positive(),
         odometerKm: z.number().finite().positive(),
@@ -826,15 +897,19 @@ export const appRouter = router({
 
   // Supervisor Routes
   supervisorRoutes: router({
-    getPostPops: protectedProcedure.input(z.object({ supervisorRouteId: z.number().int().positive(), postId: z.number().int().positive() })).query(async ({ ctx, input }) => {
-      if (!ctx.user || db.getPersonnelRole(ctx.user) !== "SUPERVISOR") throw new TRPCError({ code: "FORBIDDEN", message: "Somente o supervisor vinculado pode consultar os POPs" });
-      if (!await db.supervisorRouteCanAccessPost(input.supervisorRouteId, input.postId, ctx.user.id)) {
+    getPostPops: supervisorProcedure.input(z.object({ supervisorRouteId: z.number().int().positive(), postId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      const route = await db.getSupervisorRouteById(input.supervisorRouteId);
+      if (!route || route.supervisorId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Este posto não pertence à rota vinculada ao supervisor" });
+      }
+      if (!await db.supervisorRouteCanAccessPost(input.supervisorRouteId, input.postId, route.supervisorId)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Este posto não pertence à rota vinculada ao supervisor" });
       }
       const documents = await db.listPostPopDocuments(input.postId);
       return documents.map(({ id, postId, originalName, mimeType, createdAt }) => ({ id, postId, originalName, mimeType, createdAt }));
     }),
-    create: protectedProcedure
+    create: supervisorProcedure
       .input(z.object({ routeId: z.number(), date: z.date() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -848,29 +923,29 @@ export const appRouter = router({
         return await db.createSupervisorRoute(ctx.user.id, input.routeId, input.date);
       }),
     
-    getTodayRoute: protectedProcedure.query(async ({ ctx }) => {
+    getTodayRoute: supervisorProcedure.query(async ({ ctx }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       const routes = await db.getSupervisorRoutesToday(ctx.user.id);
       return selectOpenSupervisorRoute(routes);
     }),
 
-    getTodayHistory: protectedProcedure.query(async ({ ctx }) => {
+    getTodayHistory: supervisorProcedure.query(async ({ ctx }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       return await db.getSupervisorRoutesToday(ctx.user.id);
     }),
 
-    getShiftReport: protectedProcedure
+    getShiftReport: supervisorProcedure
       .input(z.object({ supervisorRouteId: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         const route = await db.getSupervisorRouteById(input.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        const report = await db.getSupervisorShiftReport(ctx.user.id, input.supervisorRouteId);
+        const report = await db.getSupervisorShiftReport(route.supervisorId, input.supervisorRouteId);
         if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Não foi possível consolidar o turno' });
         return report;
       }),
 
-    finishShift: protectedProcedure
+    finishShift: supervisorProcedure
       .input(z.object({
         supervisorRouteId: z.number().int().positive(),
         kmFinal: z.number().finite().nonnegative(),
@@ -895,19 +970,24 @@ export const appRouter = router({
         return { ...closure, report };
       }),
     
-    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    getById: supervisorReadProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      const isAdminViewer = isAdminOperationalViewer(ctx.user);
+      if (isAdminViewer) {
+        const route = await db.getAdminSupervisorRouteStatusById(input.id);
+        return route ? { id: route.id, status: route.status } : null;
+      }
       const route = await db.getSupervisorRouteById(input.id);
       if (!route || route.supervisorId !== ctx.user.id) return null;
       return route;
     }),
 
-    cancelPending: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    cancelPending: supervisorProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
       return runChecklistMutation(() => db.cancelPendingSupervisorRoute(input.id, ctx.user.id));
     }),
     
-    updateKm: protectedProcedure
+    updateKm: supervisorProcedure
       .input(z.object({ id: z.number(), vehicleId: z.number().int().positive().optional(), kmInitial: z.number().optional(), kmFinal: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -935,30 +1015,37 @@ export const appRouter = router({
 
   // Visit Checklists
   checklists: router({
-    createForRoute: protectedProcedure
+    createForRoute: supervisorProcedure
       .input(z.object({ supervisorRouteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         return runChecklistMutation(() => db.createRouteChecklists(input.supervisorRouteId, ctx.user.id));
       }),
 
-    startNewVisit: protectedProcedure
+    startNewVisit: supervisorProcedure
       .input(z.object({ checklistId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         return runChecklistMutation(() => db.startNewVisitForRoute({ checklistId: input.checklistId, supervisorId: ctx.user.id }));
       }),
     
-    getByRoute: protectedProcedure
+    getByRoute: supervisorReadProcedure
       .input(z.object({ supervisorRouteId: z.number() }))
       .query(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const isAdminViewer = isAdminOperationalViewer(ctx.user);
+        if (isAdminViewer) {
+          const route = await db.getAdminSupervisorRouteStatusById(input.supervisorRouteId);
+          if (!route) throw new TRPCError({ code: 'NOT_FOUND' });
+          const visits = await db.getAdminVisitChecklistsByRoute(input.supervisorRouteId);
+          return visits.map(({ postName, status, arrivalTime, departureTime }) => ({ postName, status, arrivalTime, departureTime }));
+        }
         const route = await db.getSupervisorRouteById(input.supervisorRouteId);
         if (!route || route.supervisorId !== ctx.user.id) throw new TRPCError({ code: 'NOT_FOUND' });
-        return await db.getVisitChecklistsByRoute(input.supervisorRouteId);
+        return db.getVisitChecklistsByRoute(input.supervisorRouteId);
       }),
 
-    getCoveragePosts: protectedProcedure
+    getCoveragePosts: supervisorProcedure
       .input(z.object({ supervisorRouteId: z.number() }))
       .query(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -967,7 +1054,7 @@ export const appRouter = router({
         return await db.getCoveragePostsBySupervisorRoute(input.supervisorRouteId);
       }),
 
-    createCoverage: protectedProcedure
+    createCoverage: supervisorProcedure
       .input(z.object({
         supervisorRouteId: z.number(),
         postId: z.union([z.number().int().positive(), z.literal("operational_base")]),
@@ -983,10 +1070,22 @@ export const appRouter = router({
         }));
       }),
     
-    getById: protectedProcedure
+    getById: supervisorReadProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+        const isAdminViewer = isAdminOperationalViewer(ctx.user);
+        if (isAdminViewer) {
+          const visit = await db.getAdminVisitChecklistById(input.id);
+          if (!visit) return null;
+          const route = await db.getAdminSupervisorRouteStatusById(visit.supervisorRouteId);
+          return route ? {
+            postName: visit.postName,
+            status: visit.status,
+            arrivalTime: visit.arrivalTime,
+            departureTime: visit.departureTime,
+          } : null;
+        }
         const visit = await db.getVisitChecklistById(input.id);
         if (!visit) return null;
         const route = await db.getSupervisorRouteById(visit.supervisorRouteId);
@@ -994,7 +1093,7 @@ export const appRouter = router({
         return visit;
       }),
 
-    submitOccurrence: protectedProcedure
+    submitOccurrence: supervisorProcedure
       .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8, 'Informe pelo menos 8 caracteres no relato da ocorrência').max(5000) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -1005,7 +1104,7 @@ export const appRouter = router({
         }));
       }),
     
-    markVisited: protectedProcedure
+    markVisited: supervisorProcedure
       .input(z.object({ checklistId: z.number(), occurrenceReport: z.string().trim().min(8).max(5000) }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -1016,12 +1115,8 @@ export const appRouter = router({
         }));
       }),
     
-    checkIn: protectedProcedure
-      .input(z.object({ 
-        checklistId: z.number(),
-        latitude: z.number().optional(),
-        longitude: z.number().optional(),
-      }))
+    checkIn: supervisorProcedure
+      .input(visitPresenceInput)
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         return runChecklistMutation(() => db.checkInVisitForRoute({
@@ -1032,12 +1127,8 @@ export const appRouter = router({
         }));
       }),
     
-    checkOut: protectedProcedure
-      .input(z.object({ 
-        checklistId: z.number(),
-        latitude: z.number().optional(),
-        longitude: z.number().optional(),
-      }))
+    checkOut: supervisorProcedure
+      .input(visitPresenceInput)
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
         return runChecklistMutation(() => db.checkOutVisitForRoute({
@@ -1051,12 +1142,15 @@ export const appRouter = router({
 
   // Supervisor Locations
   locations: router({
-    record: protectedProcedure
+    record: supervisorProcedure
       .input(z.object({
-        latitude: z.number(),
-        longitude: z.number(),
-        accuracy: z.number().optional(),
+        latitude: z.number().finite(),
+        longitude: z.number().finite(),
+        accuracy: z.number().finite().nonnegative().optional(),
         supervisorRouteId: z.number().optional(),
+      }).refine(({ latitude, longitude }) => isValidCoordinatePair(latitude, longitude), {
+        message: "Informe latitude e longitude dentro das faixas geográficas válidas",
+        path: ["latitude"],
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -1074,17 +1168,17 @@ export const appRouter = router({
         );
       }),
     
-    getLatest: protectedProcedure
+    getLatest: supervisorOrGestorReadProcedure
       .input(z.object({ supervisorId: z.number() }))
       .query(async ({ ctx, input }) => {
-        if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-        if (ctx.user.role !== 'admin' && ctx.user.id !== input.supervisorId) {
+        const isGestor = await hasGestorSession(ctx.req);
+        if (!isGestor && (!ctx.user || ctx.user.id !== input.supervisorId)) {
           throw new TRPCError({ code: 'FORBIDDEN' });
         }
         return await db.getLatestSupervisorLocation(input.supervisorId);
       }),
     
-    getAllLatest: adminProcedure.query(async () => {
+    getAllLatest: gestorProcedure.query(async () => {
       return await db.getAllSupervisorsLatestLocations();
     }),
   }),

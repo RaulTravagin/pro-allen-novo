@@ -18,6 +18,7 @@ vi.mock("@/lib/trpc", () => ({
       create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
     },
     checklists: { createForRoute: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) }, getByRoute: { useQuery: () => ({ data: [] }) } },
+    adminOperations: { liveSnapshot: { useQuery: () => ({ data: null, isLoading: false, error: null, refetch: vi.fn() }) } },
   },
 }));
 

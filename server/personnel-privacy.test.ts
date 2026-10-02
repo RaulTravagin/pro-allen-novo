@@ -62,6 +62,15 @@ const dashboardFixture = {
   extras: [{ id: 2, employeeId: 81, employeeName: employeeFixture.name, employeePixKey: "PIX-FICTICIO-0001", amount: "20.00", status: "PENDING" }],
   summary: { pendingCount: 3, pendingFinancialCount: 0, approvedAmount: 0, paidAmount: 0, employeesCount: 1 },
 };
+const validDocumentBytes: Record<string, Buffer> = {
+  "application/pdf": Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"),
+  "image/jpeg": Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0xff, 0xd9]),
+  "image/png": Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+  "image/webp": Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"),
+};
+function uploadBase64ForMime(mimeType: string) {
+  return validDocumentBytes[mimeType]?.toString("base64") ?? "";
+}
 const scheduleFixture = {
   id: 51,
   name: "Ciclo fictício de teste",
@@ -142,6 +151,16 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     else process.env.JWT_SECRET = originalJwtSecret;
   });
 
+  it.each([
+    ["SUPERVISOR", false],
+    ["FINANCEIRO", false],
+    ["RH", true],
+    ["ADM", true],
+  ] as const)("expõe postos no dashboard somente aos perfis autorizados (%s)", async (role, canReadPosts) => {
+    const dashboard = await appRouter.createCaller(contextFor(userFor(role))).personnel.dashboard();
+    expect(dashboard.posts).toEqual(canReadPosts ? dashboardFixture.posts : []);
+  });
+
   it("remove CPF, PIX e documentos das respostas do Supervisor e preserva somente seu uso operacional", async () => {
     const caller = appRouter.createCaller(contextFor(userFor("SUPERVISOR")));
     const dashboard = await caller.personnel.dashboard();
@@ -160,7 +179,7 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
       employeeId: 81,
       type: "ATESTADO",
       date: new Date("2026-01-15T12:00:00Z"),
-      document: { name: "atestado-ficticio.pdf", mimeType: "application/pdf", base64: "ZmljdGljaW8=" },
+      document: { name: "atestado-ficticio.pdf", mimeType: "application/pdf", base64: uploadBase64ForMime("application/pdf") },
     });
     expect(created).not.toHaveProperty("documentUrl");
     expect(created).not.toHaveProperty("documentName");
@@ -178,7 +197,7 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
       employeeId: 81,
       type: "ATESTADO",
       date: new Date("2026-01-15T12:00:00Z"),
-      document: { name, mimeType: reportedMime, base64: "ZmljdGljaW8=" },
+      document: { name, mimeType: reportedMime, base64: uploadBase64ForMime(canonicalMime) },
     });
     expect(db.uploadPersonnelDocument).toHaveBeenCalledWith(17, expect.objectContaining({ mimeType: canonicalMime }));
   });
