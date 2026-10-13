@@ -8,7 +8,7 @@ const invalidate = vi.fn();
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({ supervisorRoutes: { getTodayRoute: { invalidate }, getTodayHistory: { invalidate } }, checklists: { getByRoute: { invalidate } } }),
+    useUtils: () => ({ supervisorRoutes: { getTodayRoute: { invalidate }, getTodayHistory: { invalidate } }, checklists: { getByRoute: { invalidate } }, adminOperations: { listCancelableRoutes: { invalidate }, liveSnapshot: { invalidate } } }),
     routes: {
       list: { useQuery: () => ({ data: [{ id: 1, name: "Rota 1", region: "Jundiaí", activityType: "field_route", postCount: 2, posts: [{ id: 11, name: "Carmel", region: "Cabreúva" }, { id: 12, name: "Bottcher", region: "Jundiaí" }] }, { id: 50_001, name: "Base Operacional", region: "Operação Interna", activityType: "operational_base", postCount: 0, posts: [] }], isLoading: false, isError: false }) },
     },
@@ -18,7 +18,7 @@ vi.mock("@/lib/trpc", () => ({
       create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
     },
     checklists: { createForRoute: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) }, getByRoute: { useQuery: () => ({ data: [] }) } },
-    adminOperations: { liveSnapshot: { useQuery: () => ({ data: null, isLoading: false, error: null, refetch: vi.fn() }) } },
+    adminOperations: { liveSnapshot: { useQuery: () => ({ data: null, isLoading: false, error: null, refetch: vi.fn() }) }, listCancelableRoutes: { useQuery: () => ({ data: [], isLoading: false, error: null, refetch: vi.fn() }) }, cancelActiveRoute: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) } },
   },
 }));
 

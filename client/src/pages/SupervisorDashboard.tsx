@@ -1,6 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, ArrowRight, Building2, CheckCircle2, ClipboardCheck, Clock3, ListChecks, Loader2, MapPin, Route as RouteIcon, ShieldCheck } from "lucide-react";
@@ -38,8 +40,26 @@ export default function SupervisorDashboard() {
   const canManageOperations = canMutateSupervisorOperations(user);
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
   const [hasAttemptedAutomaticResume, setHasAttemptedAutomaticResume] = useState(false);
+  const [cancellationRoute, setCancellationRoute] = useState<{
+    id: number;
+    routeName: string;
+    routeActivityType: "field_route" | "operational_base";
+    supervisorName: string | null;
+    status: "pending" | "in_progress" | "completed" | "cancelled";
+    shiftType: "day" | "night";
+    shiftStartedAt: Date;
+    startedAt: Date | null;
+  } | null>(null);
+  const [cancellationReason, setCancellationReason] = useState("");
 
   const adminLiveQuery = trpc.adminOperations.liveSnapshot.useQuery(undefined, {
+    enabled: isAdminReadOnly,
+    retry: false,
+    refetchInterval: isAdminReadOnly ? LIVE_OPERATION_REFRESH_INTERVAL : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+  });
+  const adminCancelableRoutesQuery = trpc.adminOperations.listCancelableRoutes.useQuery(undefined, {
     enabled: isAdminReadOnly,
     retry: false,
     refetchInterval: isAdminReadOnly ? LIVE_OPERATION_REFRESH_INTERVAL : false,
@@ -61,6 +81,7 @@ export default function SupervisorDashboard() {
 
   const createRouteMutation = trpc.supervisorRoutes.create.useMutation();
   const createChecklistsMutation = trpc.checklists.createForRoute.useMutation();
+  const cancelActiveRouteMutation = trpc.adminOperations.cancelActiveRoute.useMutation();
 
   const handleStartRoute = async () => {
     if (todayRoute) {
@@ -112,9 +133,31 @@ export default function SupervisorDashboard() {
   }, [canManageOperations, hasAttemptedAutomaticResume, navigate, todayRoute?.id, todayRoute?.status]);
 
   const isStarting = createRouteMutation.isPending || createChecklistsMutation.isPending;
+  const handleCancelAdminActiveRoute = async () => {
+    if (!cancellationRoute) return;
+    const reason = cancellationReason.trim();
+    if (reason.length < 8) {
+      toast.error("Informe um motivo com pelo menos 8 caracteres");
+      return;
+    }
+    try {
+      const result = await cancelActiveRouteMutation.mutateAsync({ supervisorRouteId: cancellationRoute.id, reason });
+      await Promise.all([
+        utils.adminOperations.listCancelableRoutes.invalidate(),
+        utils.adminOperations.liveSnapshot.invalidate(),
+      ]);
+      toast.success(`Cancelamento registrado na auditoria #${result.auditId}.`);
+      setCancellationRoute(null);
+      setCancellationReason("");
+    } catch (error) {
+      void adminCancelableRoutesQuery.refetch();
+      toast.error(supervisorErrorMessage(error, "Não foi possível cancelar a rota ativa"));
+    }
+  };
 
   if (isAdminReadOnly) {
     const visits = adminLiveQuery.data?.visits ?? [];
+    const cancelableRoutes = adminCancelableRoutesQuery.data ?? [];
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
@@ -134,7 +177,7 @@ export default function SupervisorDashboard() {
 
         <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:py-8">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
-            <span><ShieldCheck className="mr-2 inline h-4 w-4" />Acesso somente para consulta; ações operacionais permanecem exclusivas do Supervisor.</span>
+            <span><ShieldCheck className="mr-2 inline h-4 w-4" />Monitor disponível apenas ao Admin global; cancelamentos de rotas iniciadas exigem revisão e motivo.</span>
             <span>Atualização automática a cada 15 segundos.</span>
           </div>
 
@@ -149,7 +192,57 @@ export default function SupervisorDashboard() {
               )}
             </section>
           )}
+
+          <section aria-label="Rotas iniciadas que podem ser canceladas" className="space-y-3 rounded-xl border border-amber-200 bg-white p-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Rotas ativas iniciadas</h2>
+              <p className="mt-1 text-sm text-slate-600">Revise rota, supervisor, turno e horário de início. KM, veículo, GPS e dados de visitas não são exibidos nesta lista.</p>
+            </div>
+            {adminCancelableRoutesQuery.error && <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><span>{supervisorErrorMessage(adminCancelableRoutesQuery.error, "Não foi possível carregar as rotas iniciadas.")}</span><Button type="button" size="sm" variant="outline" onClick={() => void adminCancelableRoutesQuery.refetch()} className="border-red-300 bg-white text-red-900">Tentar novamente</Button></div>}
+            {adminCancelableRoutesQuery.isLoading ? <div className="flex items-center gap-2 py-4 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando rotas iniciadas...</div> : cancelableRoutes.length === 0 ? <p className="py-4 text-sm text-slate-600">Nenhuma rota iniciada disponível para cancelamento.</p> : (
+              <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+                {cancelableRoutes.map((route) => (
+                  <div key={route.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1 text-sm">
+                      <p className="font-semibold text-slate-950">{route.routeName}{route.routeActivityType === "operational_base" ? " · Base Operacional" : ""}</p>
+                      <p className="text-slate-700">Supervisor: {route.supervisorName || "Não identificado"} · {route.shiftType === "night" ? "Turno noturno" : "Turno diurno"}</p>
+                      <p className="text-slate-600">Rota #{route.id} · Iniciada em {formatOperationDateTime(route.startedAt)} · Em andamento</p>
+                    </div>
+                    <Button type="button" variant="outline" onClick={() => { setCancellationRoute(route); setCancellationReason(""); }} className="border-amber-300 text-amber-900 hover:bg-amber-50" aria-label={`Revisar cancelamento da rota ${route.routeName} #${route.id}`}>Revisar e cancelar</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </main>
+        <AlertDialog open={Boolean(cancellationRoute)} onOpenChange={(open) => {
+          if (!open && !cancelActiveRouteMutation.isPending) { setCancellationRoute(null); setCancellationReason(""); }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar cancelamento da rota iniciada?</AlertDialogTitle>
+              <AlertDialogDescription>Confira a identificação antes de prosseguir. O servidor verificará novamente o estado atual e registrará o ator, horário e motivo na auditoria.</AlertDialogDescription>
+            </AlertDialogHeader>
+            {cancellationRoute && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <p><strong>Rota:</strong> {cancellationRoute.routeName}{cancellationRoute.routeActivityType === "operational_base" ? " · Base Operacional" : ""} · #{cancellationRoute.id}</p>
+              <p><strong>Supervisor:</strong> {cancellationRoute.supervisorName || "Não identificado"}</p>
+              <p><strong>Turno:</strong> {cancellationRoute.shiftType === "night" ? "Noturno" : "Diurno"}</p>
+              <p><strong>Início:</strong> {formatOperationDateTime(cancellationRoute.startedAt)}</p>
+              <p><strong>Status conferido:</strong> Em andamento</p>
+            </div>}
+            <div className="space-y-2">
+              <label htmlFor="active-route-cancellation-reason" className="text-sm font-medium text-slate-900">Motivo obrigatório</label>
+              <Textarea id="active-route-cancellation-reason" value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} minLength={8} maxLength={1000} rows={4} placeholder="Explique por que esta rota iniciada deve ser cancelada." disabled={cancelActiveRouteMutation.isPending} />
+              <p className="text-xs text-slate-600">Mínimo de 8 caracteres. O cancelamento não apaga nem altera KM, abastecimentos, checklists, visitas, GPS ou dados de RH/Financeiro.</p>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={cancelActiveRouteMutation.isPending}>Manter rota</AlertDialogCancel>
+              <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); void handleCancelAdminActiveRoute(); }}>
+                <Button type="button" disabled={cancelActiveRouteMutation.isPending || cancellationReason.trim().length < 8} className="bg-rose-600 text-white hover:bg-rose-700">{cancelActiveRouteMutation.isPending ? "Cancelando..." : "Confirmar cancelamento"}</Button>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }

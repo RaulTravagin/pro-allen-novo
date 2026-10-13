@@ -330,6 +330,21 @@ export const supervisorRouteClosureExceptions = pgTable("supervisor_route_closur
 
 export type SupervisorRouteClosureException = typeof supervisorRouteClosureExceptions.$inferSelect;
 
+export const supervisorRouteCancellations = pgTable("supervisor_route_cancellations", {
+  id: serial("id").primaryKey(),
+  supervisorRouteId: integer("supervisor_route_id").notNull().references(() => supervisorRoutes.id, { onDelete: "restrict" }),
+  cancelledByUserId: integer("cancelled_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  previousStatus: supervisorRouteStatusEnum("previous_status").notNull(),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }).notNull(),
+  reason: text("reason").notNull(),
+}, (table) => ({
+  routeUnique: uniqueIndex("uq_supervisor_route_cancellations_route").on(table.supervisorRouteId),
+  cancelledByAtIdx: index("idx_supervisor_route_cancellations_actor_at").on(table.cancelledByUserId, table.cancelledAt),
+  previousStatusCheck: check("chk_supervisor_route_cancellations_previous_status", sql`${table.previousStatus} = 'in_progress'`),
+  reasonLengthCheck: check("chk_supervisor_route_cancellations_reason_length", sql`char_length(btrim(${table.reason})) >= 8 AND char_length(${table.reason}) <= 1000`),
+}));
+export type SupervisorRouteCancellation = typeof supervisorRouteCancellations.$inferSelect;
+
 export const fuelLogs = pgTable("fuel_logs", {
   id: serial("id").primaryKey(),
   vehicleId: integer("vehicleId").notNull(),

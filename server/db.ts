@@ -1,4 +1,4 @@
-import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
@@ -16,6 +16,7 @@ import { RouteClosureError } from "./route-closure";
 import { lockSupervisorRouteOperations, withLockedSupervisorRoute } from "./route-checklist-lock";
 import { closeSupervisorRouteInTransaction } from "./supervisor-route-closure";
 import { startSupervisorRouteInTransaction, type StartSupervisorRouteInput } from "./supervisor-route-start";
+import { cancelActiveSupervisorRouteInTransaction, type CancelActiveSupervisorRouteInput } from "./supervisor-route-cancellation";
 import { MAX_UPLOAD_FILE_BYTES, isValidUploadBase64, isValidUploadContent, resolvePersonnelDocumentMimeType } from "../shared/upload-file-types";
 
 let _db: NodePgDatabase<typeof schema> | null = null;
@@ -812,6 +813,13 @@ export async function closeSupervisorRoute(input: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.transaction((transaction) => closeSupervisorRouteInTransaction(transaction, input));
+}
+
+/** Cancela uma rota iniciada com auditoria, estado e evento persistidos na mesma transação. */
+export async function cancelActiveSupervisorRoute(input: CancelActiveSupervisorRouteInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.transaction((transaction) => cancelActiveSupervisorRouteInTransaction(transaction, input));
 }
 
 /** Cancela uma preparação ainda pendente e remove os checklists ainda não utilizados dela. */
@@ -2812,6 +2820,32 @@ export async function getAdminSupervisorRouteStatusById(id: number) {
   }).from(supervisorRoutes)
     .where(eq(supervisorRoutes.id, id)).limit(1);
   return result.length > 0 ? result[0] : null;
+}
+
+/** Projeção mínima de rotas iniciadas que o Admin global pode revisar antes de cancelar. */
+export async function getAdminCancelableSupervisorRoutes() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: supervisorRoutes.id,
+    routeName: routes.name,
+    routeActivityType: routes.activityType,
+    supervisorName: users.name,
+    status: supervisorRoutes.status,
+    shiftType: supervisorRoutes.shiftType,
+    shiftStartedAt: supervisorRoutes.shiftStartedAt,
+    startedAt: supervisorRoutes.startedAt,
+  })
+    .from(supervisorRoutes)
+    .innerJoin(routes, eq(routes.id, supervisorRoutes.routeId))
+    .leftJoin(users, eq(users.id, supervisorRoutes.supervisorId))
+    .where(and(
+      eq(supervisorRoutes.status, "in_progress"),
+      isNotNull(supervisorRoutes.kmInitial),
+      isNotNull(supervisorRoutes.startedAt),
+      isNull(supervisorRoutes.completedAt)
+    ))
+    .orderBy(desc(supervisorRoutes.startedAt), desc(supervisorRoutes.id));
 }
 
 /** Status/chegadas para a tela Admin. A consulta deliberadamente não lê quilometragem, veículos, GPS ou abastecimentos. */

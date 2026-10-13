@@ -593,6 +593,30 @@ export const appRouter = router({
         })),
       };
     }),
+    listCancelableRoutes: adminOperationalReadProcedure.query(async () => {
+      const routes = await db.getAdminCancelableSupervisorRoutes();
+      return routes.map(({ id, routeName, routeActivityType, supervisorName, status, shiftType, shiftStartedAt, startedAt }) => ({
+        id, routeName, routeActivityType, supervisorName, status, shiftType, shiftStartedAt, startedAt,
+      }));
+    }),
+    cancelActiveRoute: adminProcedure
+      .input(z.object({
+        supervisorRouteId: z.number().int().positive(),
+        reason: z.string().trim().min(8, "Informe um motivo com pelo menos 8 caracteres").max(1000, "O motivo deve ter no máximo 1000 caracteres"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        try {
+          return await db.cancelActiveSupervisorRoute({
+            supervisorRouteId: input.supervisorRouteId,
+            cancelledByUserId: ctx.user.id,
+            reason: input.reason,
+          });
+        } catch (error) {
+          if (error instanceof RouteClosureError) throw new TRPCError({ code: error.code, message: error.message });
+          throw error;
+        }
+      }),
   }),
 
   gestor: router({
