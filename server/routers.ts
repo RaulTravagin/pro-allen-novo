@@ -6,6 +6,10 @@ import { z } from "zod";
 import * as db from "./db";
 import { isCivilDate, isCivilMonth } from "../shared/personnel-schedules";
 import { isValidCoordinatePair } from "../shared/geographic-coordinates";
+import {
+  normalizePersonnelIdentifier,
+  personnelIdentifierSchema,
+} from "../shared/personnelIdentifier";
 import { TRPCError } from "@trpc/server";
 import { RouteClosureError } from "./route-closure";
 import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
@@ -173,12 +177,6 @@ const gestorPostInput = z.object({
   addressPostalCode: z.string().trim().regex(/^\d{5}-?\d{3}$/, "Informe um CEP válido"),
 });
 
-function normalizePersonnelIdentifier(value: string) {
-  const trimmed = value.trim();
-  const digits = trimmed.replace(/\D/g, "");
-  return digits.length === 11 ? digits : trimmed;
-}
-
 async function runChecklistMutation<T>(mutation: () => Promise<T>): Promise<T> {
   try {
     return await mutation();
@@ -337,7 +335,7 @@ export const appRouter = router({
     createEmployee: protectedProcedure
       .input(z.object({
         name: z.string().trim().min(2, "Informe o nome do funcionário").max(255),
-        cpf: z.string().trim().min(3, "Informe o CPF ou a matrícula").max(14, "CPF ou matrícula muito longo"),
+        cpf: personnelIdentifierSchema,
         position: z.string().trim().min(2, "Informe o cargo/função").max(255),
         postId: z.number().int().positive("Selecione o posto principal").nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
@@ -359,7 +357,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int().positive(),
         name: z.string().trim().min(2).max(255),
-        cpf: z.string().trim().min(3).max(14).optional(),
+        cpf: personnelIdentifierSchema.optional(),
         position: z.string().trim().min(2).max(255),
         postId: z.number().int().positive().nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),

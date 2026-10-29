@@ -1378,6 +1378,8 @@ function EmployeesSection({
                     value={cpf}
                     onChange={event => setCpf(event.target.value)}
                     placeholder="CPF ou matrícula"
+                    minLength={1}
+                    maxLength={14}
                     required
                   />
                 </div>}
