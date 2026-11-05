@@ -134,6 +134,13 @@
       "when": 1793904261916,
       "tag": "0018_personnel_import_batches",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793907006648,
+      "tag": "0019_personnel_freelancers",
+      "breakpoints": true
     }
   ]
 }

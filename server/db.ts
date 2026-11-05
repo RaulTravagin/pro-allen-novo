@@ -2,9 +2,10 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, isNotNull, sql }
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, personnelImportBatches, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFreelancers, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, personnelImportBatches, type InsertPersonnelEmployee, type InsertPersonnelFreelancer, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
 import type { PersonnelImportPayload, PersonnelImportBatchMetadata } from "../shared/personnelImport";
+import type { PersonnelFreelancerImportRow } from "../shared/personnelFreelancer";
 import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
 import { isValidCoordinatePair } from "../shared/geographic-coordinates";
 import { ENV } from './_core/env';
@@ -2078,6 +2079,69 @@ export async function updatePersonnelEmployee(id: number, input: Partial<InsertP
   if (!db) throw new Error("Database not available");
   await db.update(personnelEmployees).set({ ...input, updatedAt: new Date() }).where(eq(personnelEmployees.id, id));
   return getPersonnelEmployeeById(id);
+}
+
+export async function listPersonnelFreelancers(sourceFileSha256?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(personnelFreelancers)
+    .where(sourceFileSha256 ? eq(personnelFreelancers.sourceFileSha256, sourceFileSha256) : undefined)
+    .orderBy(asc(personnelFreelancers.collaboratorRaw), asc(personnelFreelancers.id));
+}
+
+export async function getPersonnelFreelancerById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [record] = await db.select().from(personnelFreelancers).where(eq(personnelFreelancers.id, id)).limit(1);
+  return record;
+}
+
+export async function createPersonnelFreelancer(input: InsertPersonnelFreelancer) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [record] = await db.insert(personnelFreelancers).values(input).returning({ id: personnelFreelancers.id });
+  if (!record) throw new Error("Não foi possível cadastrar o freelancer");
+  return getPersonnelFreelancerById(record.id);
+}
+
+export async function updatePersonnelFreelancer(id: number, input: Partial<InsertPersonnelFreelancer>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [record] = await db.update(personnelFreelancers).set({ ...input, updatedAt: new Date() })
+    .where(eq(personnelFreelancers.id, id)).returning({ id: personnelFreelancers.id });
+  return record ? getPersonnelFreelancerById(id) : undefined;
+}
+
+export async function importPersonnelFreelancers(rows: PersonnelFreelancerImportRow[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.transaction(async (tx) => {
+    const result: Array<{ sourceRow: number; freelancerId: number; created: boolean }> = [];
+    for (const row of rows) {
+      const values: InsertPersonnelFreelancer = {
+        ...row.fields,
+        sourceFileSha256: row.sourceFileSha256,
+        sourceSheet: row.sourceSheet,
+        sourceRow: row.sourceRow,
+        sourceData: row.sourceData,
+      };
+      const [inserted] = await tx.insert(personnelFreelancers).values(values)
+        .onConflictDoNothing({ target: [personnelFreelancers.sourceFileSha256, personnelFreelancers.sourceSheet, personnelFreelancers.sourceRow] })
+        .returning({ id: personnelFreelancers.id });
+      let freelancerId = inserted?.id;
+      if (!freelancerId) {
+        const [existing] = await tx.select({ id: personnelFreelancers.id }).from(personnelFreelancers).where(and(
+          eq(personnelFreelancers.sourceFileSha256, row.sourceFileSha256),
+          eq(personnelFreelancers.sourceSheet, row.sourceSheet),
+          eq(personnelFreelancers.sourceRow, row.sourceRow),
+        )).limit(1);
+        freelancerId = existing?.id;
+      }
+      if (!freelancerId) throw new Error(`Importação freelancer sem resultado verificável na linha ${row.sourceRow}`);
+      result.push({ sourceRow: row.sourceRow, freelancerId, created: Boolean(inserted) });
+    }
+    return result;
+  });
 }
 
 export async function getPersonnelEmployeeById(id: number) {

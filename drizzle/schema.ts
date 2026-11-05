@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import type { WorkSchedulePattern } from "../shared/personnel-schedules";
 import type { PersonnelEmployeeProfile } from "../shared/personnelEmployeeProfile";
 import type { PersonnelImportPayload, PersonnelImportSummary } from "../shared/personnelImport";
+import type { PersonnelFreelancerSourceData } from "../shared/personnelFreelancer";
 import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 const updatedAt = () => timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull();
@@ -58,6 +59,31 @@ export const personnelEmployees = pgTable("personnel_employees", {
 
 export type PersonnelEmployee = typeof personnelEmployees.$inferSelect;
 export type InsertPersonnelEmployee = typeof personnelEmployees.$inferInsert;
+
+export const personnelFreelancers = pgTable("personnel_freelancers", {
+  id: serial("id").primaryKey(),
+  collaboratorRaw: text("collaboratorRaw").notNull().default(""),
+  jobFunction: text("jobFunction").notNull().default(""),
+  situation: text("situation").notNull().default(""),
+  hours: text("hours").notNull().default(""),
+  posts: text("posts").notNull().default(""),
+  coverage: text("coverage").notNull().default(""),
+  pix: text("pix").notNull().default(""),
+  value: text("value").notNull().default(""),
+  supervision: text("supervision").notNull().default(""),
+  observations: text("observations").notNull().default(""),
+  sourceFileSha256: varchar("sourceFileSha256", { length: 64 }),
+  sourceSheet: varchar("sourceSheet", { length: 128 }),
+  sourceRow: integer("sourceRow"),
+  sourceData: jsonb("sourceData").$type<PersonnelFreelancerSourceData | null>(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  sourceRowUnique: uniqueIndex("uq_personnel_freelancers_source_row").on(table.sourceFileSha256, table.sourceSheet, table.sourceRow),
+}));
+
+export type PersonnelFreelancer = typeof personnelFreelancers.$inferSelect;
+export type InsertPersonnelFreelancer = typeof personnelFreelancers.$inferInsert;
 
 export const personnelImportBatches = pgTable("personnel_import_batches", {
   id: serial("id").primaryKey(),

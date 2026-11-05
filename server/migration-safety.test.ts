@@ -19,4 +19,14 @@ describe("segurança das migrations PostgreSQL", () => {
 
     expect(offendingFiles).toEqual([]);
   });
+
+  it("cria freelancers numa tabela aditiva, sem employeeId nem FK para empregados", () => {
+    const schema = readFileSync(join(process.cwd(), "drizzle/schema.ts"), "utf8");
+    const freelancerDefinition = schema.match(/export const personnelFreelancers = pgTable\([\s\S]*?^\}\)\);/m);
+    const migration = readFileSync(join(migrationDirectory, "0019_personnel_freelancers.sql"), "utf8");
+    expect(freelancerDefinition?.[0]).toBeTruthy();
+    expect(freelancerDefinition?.[0]).not.toMatch(/\bemployeeId\b|references\(/i);
+    expect(migration).toMatch(/CREATE TABLE "personnel_freelancers"/);
+    expect(migration).not.toMatch(/employeeId|FOREIGN KEY/i);
+  });
 });

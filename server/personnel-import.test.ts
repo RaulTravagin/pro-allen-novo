@@ -20,9 +20,9 @@ import { appRouter } from "./routers";
 const payload: PersonnelImportPayload = {
   fileName: "importacao-ficticia.xlsx",
   fileSha256: "a".repeat(64),
-  summary: { sourceEmployees: 2, created: 1, updated: 0, pending: 1, warnings: 0, unlinkedContacts: 1 },
+  summary: { sourceEmployees: 2, created: 1, updated: 0, pending: 1, warnings: 0, unlinkedContacts: 1, freelancersImported: 0, freelancersPending: 0 },
   sheets: [{
-    name: "Funcionarios",
+    name: "PRIMEIRO PEDIDO",
     headerRow: 1,
     rows: [
       { row: 2, status: "IMPORTED", employeeId: 12, reasons: [], cells: [{ column: "A", header: "Nome", value: "Registro ficticio" }] },
@@ -84,6 +84,23 @@ describe("personnelImportPayloadSchema", () => {
       { ...payload, sheets: [{ ...payload.sheets[0]!, rows: [{ ...payload.sheets[0]!.rows[0]!, cells: [{ ...payload.sheets[0]!.rows[0]!.cells[0]!, extra: true }] }] }] },
     ];
     for (const candidate of cases) expect(personnelImportPayloadSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it("distingue freelancerId em Planilha2 de employeeId e preserva notas como pendentes", () => {
+    const freelancerPayload: PersonnelImportPayload = {
+      ...payload,
+      summary: { ...payload.summary, freelancersImported: 1, freelancersPending: 0 },
+      sheets: [{ name: "Planilha2", headerRow: 3, rows: [
+        { row: 5, status: "IMPORTED", freelancerId: 44, reasons: ["Lista separada"], cells: [{ column: "A", header: "Colaborador", value: "Texto bruto fictício" }] },
+        { row: 51, status: "PENDING", reasons: ["Nota preservada"], cells: [{ column: "F", header: "Obs.", value: "Nota fictícia sem vínculo" }] },
+      ] }],
+    };
+    const parsed = personnelImportPayloadSchema.parse(freelancerPayload);
+    expect(parsed.sheets[0]?.rows[0]?.freelancerId).toBe(44);
+    expect(parsed.sheets[0]?.rows[0]?.employeeId).toBeUndefined();
+    expect(parsed.sheets[0]?.rows[1]?.status).toBe("PENDING");
+    expect(personnelImportPayloadSchema.safeParse({ ...freelancerPayload, sheets: [{ ...freelancerPayload.sheets[0]!, rows: [{ ...freelancerPayload.sheets[0]!.rows[0]!, employeeId: 44 }] }] }).success).toBe(false);
+    expect(personnelImportPayloadSchema.safeParse({ ...freelancerPayload, sheets: [{ ...freelancerPayload.sheets[0]!, rows: [{ ...freelancerPayload.sheets[0]!.rows[0]!, row: 51 }] }] }).success).toBe(false);
   });
 
   it("aplica limites de contagens, texto de celula e razoes", () => {

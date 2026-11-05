@@ -8,6 +8,10 @@ import type { PersonnelImportPayload } from "@shared/personnelImport";
 
 const statusLabels = { IMPORTED: "Aplicado ao cadastro", PENDING: "Pendente — não aplicado ao cadastro", REFERENCE: "Referência da planilha" } as const;
 
+function rowStatusLabel(row: PersonnelImportPayload["sheets"][number]["rows"][number]) {
+  return row.freelancerId ? "Aplicado à lista de freelancers" : statusLabels[row.status];
+}
+
 export function PersonnelImportSourceViewer({ payload }: { payload: PersonnelImportPayload }) {
   const [sheetName, setSheetName] = useState("");
   const [status, setStatus] = useState("PENDING");
@@ -19,7 +23,8 @@ export function PersonnelImportSourceViewer({ payload }: { payload: PersonnelImp
       <div className="grid gap-3 text-xs sm:grid-cols-3">
         <div className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{payload.summary.updated} atualizados · {payload.summary.created} incluídos</div>
         <div className="rounded-lg bg-amber-50 p-3 text-amber-900">{payload.summary.pending} linhas de funcionários em espera · {payload.summary.warnings} com alerta</div>
-        <div className="rounded-lg bg-slate-100 p-3 text-slate-700">{payload.summary.unlinkedContacts} contatos sem vínculo automático</div>
+        <div className="rounded-lg bg-slate-100 p-3 text-slate-700">{payload.summary.freelancersImported ?? 0} freelancers na lista separada · {payload.summary.freelancersPending ?? 0} linhas de freelancers pendentes</div>
+        <div className="rounded-lg bg-slate-100 p-3 text-slate-700">{payload.summary.unlinkedContacts} contatos sem vínculo automático com funcionários</div>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <div className="space-y-1.5"><Label htmlFor="import-source-sheet">Aba da planilha</Label><select id="import-source-sheet" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={sheet?.name ?? ""} onChange={event => setSheetName(event.target.value)}>{payload.sheets.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}</select></div>
@@ -30,7 +35,7 @@ export function PersonnelImportSourceViewer({ payload }: { payload: PersonnelImp
       <div className="max-h-[600px] space-y-2 overflow-y-auto">
         {rows.map(row => (
           <details key={row.row} className={`rounded-lg border bg-white ${row.status === "PENDING" ? "border-amber-200" : "border-slate-200"}`}>
-            <summary className="cursor-pointer px-3 py-3 text-sm font-semibold text-slate-800">Linha {row.row} · {statusLabels[row.status]}{row.employeeId ? <span className="ml-2 font-normal text-slate-500">Cadastro #{row.employeeId}</span> : null}</summary>
+            <summary className="cursor-pointer px-3 py-3 text-sm font-semibold text-slate-800">Linha {row.row} · {rowStatusLabel(row)}{row.employeeId ? <span className="ml-2 font-normal text-slate-500">Funcionário #{row.employeeId}</span> : null}{row.freelancerId ? <span className="ml-2 font-normal text-slate-500">Freelancer #{row.freelancerId}</span> : null}</summary>
             <div className="space-y-3 border-t border-slate-100 p-3">
               {row.reasons.length > 0 && <ul className="list-inside list-disc space-y-1 text-xs text-amber-900">{row.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>}
               <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{row.cells.map((cell, index) => <div key={`${cell.column}-${index}`} className="rounded bg-slate-50 p-2 text-xs"><dt className="break-words font-semibold text-slate-500">{cell.column} · {cell.header || "Sem cabeçalho"}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-800">{cell.value || "—"}</dd>{cell.formula && <dd className="mt-1 break-words font-mono text-[10px] text-slate-500">Fórmula: {cell.formula}</dd>}</div>)}</dl>
@@ -51,7 +56,7 @@ function HistoryContent() {
   const detail = trpc.personnel.importBatch.useQuery({ id: activeId ?? 1 }, { enabled: showSources && Boolean(activeId) });
   return (
     <Card className="border-slate-200 shadow-sm">
-      <CardHeader><CardTitle className="text-lg">Planilhas e pendências do RH</CardTitle><CardDescription>Origem preservada para conferência. Contatos e linhas sem identificação não são transformados automaticamente em funcionários.</CardDescription></CardHeader>
+      <CardHeader><CardTitle className="text-lg">Planilhas e pendências do RH</CardTitle><CardDescription>Origem preservada para conferência. As linhas de freelancers ficam em lista separada; linhas sem vínculo seguem preservadas aqui, sem associação automática a funcionários.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
         {batches.isLoading && <p className="text-sm text-slate-500">Carregando histórico...</p>}
         {batches.isError && <p className="text-sm text-red-700">Não foi possível carregar o histórico de planilhas.</p>}

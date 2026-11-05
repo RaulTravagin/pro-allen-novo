@@ -11,7 +11,7 @@ import { PersonnelImportHistory, PersonnelImportSourceViewer } from "./Personnel
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const payload: PersonnelImportPayload = {
   fileName: "modelo-ficticio.xlsx", fileSha256: "b".repeat(64),
-  summary: { sourceEmployees: 2, created: 1, updated: 0, pending: 1, warnings: 0, unlinkedContacts: 0 },
+  summary: { sourceEmployees: 2, created: 1, updated: 0, pending: 1, warnings: 0, unlinkedContacts: 0, freelancersImported: 0, freelancersPending: 0 },
   sheets: [{ name: "Cadastro", headerRow: 1, rows: [
     { row: 1, status: "REFERENCE", reasons: [], cells: [{ column: "B", header: "Matrícula", value: "Cabeçalho fictício" }] },
     { row: 2, status: "IMPORTED", employeeId: 7, reasons: [], cells: [{ column: "B", header: "Matrícula", value: "0007" }] },

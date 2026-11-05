@@ -12,6 +12,7 @@ import {
 } from "../shared/personnelIdentifier";
 import { personnelEmployeeProfileSchema } from "../shared/personnelEmployeeProfile";
 import { personnelImportPayloadSchema } from "../shared/personnelImport";
+import { personnelFreelancerFieldsSchema, personnelFreelancerImportRowSchema } from "../shared/personnelFreelancer";
 import { TRPCError } from "@trpc/server";
 import { RouteClosureError } from "./route-closure";
 import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
@@ -112,6 +113,14 @@ const supervisorProcedure = protectedProcedure.use(({ ctx, next }) => {
   const personnelRole = ctx.user.role === "admin" ? "ADM" : (ctx.user.personnelRole ?? "SUPERVISOR");
   if (personnelRole !== "SUPERVISOR") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Esta operação é exclusiva do perfil Supervisor" });
+  }
+  return next({ ctx });
+});
+
+const personnelHrAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const role = db.getPersonnelRole(ctx.user);
+  if (role !== "RH" && role !== "ADM") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode gerenciar freelancers" });
   }
   return next({ ctx });
 });
@@ -270,6 +279,41 @@ export const appRouter = router({
       const employees = await db.listPersonnelEmployees(role !== "SUPERVISOR", role === "RH" || role === "ADM");
       return employees.map((employee) => projectPersonnelEmployee(employee, role));
     }),
+
+    freelancers: personnelHrAdminProcedure
+      .input(z.object({ sourceFileSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional() }).strict().optional())
+      .query(({ input }) => db.listPersonnelFreelancers(input?.sourceFileSha256)),
+
+    createFreelancer: personnelHrAdminProcedure
+      .input(personnelFreelancerFieldsSchema)
+      .mutation(({ input }) => db.createPersonnelFreelancer(input)),
+
+    updateFreelancer: personnelHrAdminProcedure
+      .input(z.object({ id: z.number().int().positive() }).merge(personnelFreelancerFieldsSchema).strict())
+      .mutation(async ({ input }) => {
+        const { id, ...fields } = input;
+        const updated = await db.updatePersonnelFreelancer(id, fields);
+        if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Freelancer não encontrado" });
+        return updated;
+      }),
+
+    importFreelancers: personnelHrAdminProcedure
+      .input(z.object({
+        sourceFileSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+        rows: z.array(personnelFreelancerImportRowSchema).min(1).max(20),
+      }).strict().superRefine((input, ctx) => {
+        const seenRows = new Set<number>();
+        input.rows.forEach((row, index) => {
+          if (row.sourceFileSha256 !== input.sourceFileSha256) {
+            ctx.addIssue({ code: "custom", message: "A linha pertence a outro arquivo de origem", path: ["rows", index, "sourceFileSha256"] });
+          }
+          if (seenRows.has(row.sourceRow)) {
+            ctx.addIssue({ code: "custom", message: "A linha de origem aparece mais de uma vez no mesmo lote", path: ["rows", index, "sourceRow"] });
+          }
+          seenRows.add(row.sourceRow);
+        });
+      }))
+      .mutation(({ input }) => db.importPersonnelFreelancers(input.rows)),
 
     posts: protectedProcedure.query(async ({ ctx }) => {
       const role = db.getPersonnelRole(ctx.user);

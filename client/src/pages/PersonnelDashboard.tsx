@@ -42,6 +42,7 @@ import { PersonnelMovementReport } from "@/components/PersonnelMovementReport";
 import { PersonnelEmployeeProfileEditor, countPersonnelProfileFields, personnelEmployeeMatchesSearch } from "@/components/PersonnelEmployeeProfile";
 import type { PersonnelEmployeeProfile } from "@shared/personnelEmployeeProfile";
 import { PersonnelImportHistory } from "@/components/PersonnelImportHistory";
+import { PersonnelFreelancers } from "@/components/PersonnelFreelancers";
 import { civilDateFromLegacyFt, getFtSettlementPeriod, isCivilDate } from "@shared/personnel-schedules";
 import { civilDateAsLocalDate, formatCivilDate, localCivilToday } from "@/lib/personnelCivilCalendar";
 import { MAX_UPLOAD_FILE_BYTES, PERSONNEL_DOCUMENT_FILE_ACCEPT, resolvePersonnelDocumentMimeType } from "@shared/upload-file-types";
@@ -183,7 +184,7 @@ async function fileToPayload(file: File, mimeType: string): Promise<FilePayload>
   return { name: file.name, mimeType, base64 };
 }
 
-type PersonnelSection = "workspace" | "employees" | "users" | "finance" | "reports";
+type PersonnelSection = "workspace" | "employees" | "freelancers" | "users" | "finance" | "reports";
 
 export default function PersonnelDashboard({
   initialSection = "workspace",
@@ -329,6 +330,12 @@ export default function PersonnelDashboard({
               label="Funcionários"
               onClick={() => setActiveSection("employees")}
             />}
+            {isReviewer && <NavButton
+              active={activeSection === "freelancers"}
+              icon={BriefcaseBusiness}
+              label="Freelancers"
+              onClick={() => setActiveSection("freelancers")}
+            />}
             {isReviewer && (
               <NavButton
                 active={activeSection === "users"}
@@ -415,6 +422,7 @@ export default function PersonnelDashboard({
               onRefresh={invalidateDashboard}
             />
           )}
+          {activeSection === "freelancers" && isReviewer && <PersonnelFreelancers role={role} />}
           {activeSection === "users" && isReviewer && (
             <UsersSection onRefresh={invalidateDashboard} canManageRoles={isAdmin} />
           )}
