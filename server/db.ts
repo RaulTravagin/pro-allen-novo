@@ -2,8 +2,9 @@ import { eq, desc, asc, and, or, gte, lte, lt, inArray, isNull, isNotNull, sql }
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
-import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
+import { InsertUser, users, routes, posts, postPopDocuments, supervisorRoutes, visitChecklists, supervisorLocations, postVisitHistory, supervisorSchedules, vehicles, fuelLogs, personnelEmployees, personnelFts, personnelOccurrences, personnelExtras, personnelWorkSchedules, personnelEmployeeScheduleAssignments, personnelEmployeeScheduleAssignmentAudit, personnelImportBatches, type InsertPersonnelEmployee, type InsertPersonnelFt, type InsertPersonnelOccurrence, type InsertPersonnelExtra, type PersonnelEmployee, type InsertPersonnelWorkSchedule, type PersonnelWorkScheduleAssignmentAuditSnapshot } from "../drizzle/schema";
 import { addCivilDays, assertFtAllowedForScheduleDay, classifyScheduleDay, getFtSettlementPeriod, hasOverlappingScheduleAssignment, isCivilDate, isCivilMonth, monthCalendarDays, validateWorkSchedulePattern, weeklyHoursFromPattern, type ScheduleAssignment as PersonnelScheduleAssignment, type WorkSchedulePattern } from "../shared/personnel-schedules";
+import type { PersonnelImportPayload, PersonnelImportBatchMetadata } from "../shared/personnelImport";
 import { getPersonnelMovementWindow, type MovementPeriod } from "../shared/personnel-movement-report";
 import { isValidCoordinatePair } from "../shared/geographic-coordinates";
 import { ENV } from './_core/env';
@@ -1972,6 +1973,55 @@ export function getPersonnelRole(user: Pick<NonNullable<TrpcContextUser>, "role"
   return user.personnelRole ?? "SUPERVISOR";
 }
 
+export async function listPersonnelImportBatches(): Promise<PersonnelImportBatchMetadata[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: personnelImportBatches.id,
+    fileName: personnelImportBatches.fileName,
+    fileSha256: personnelImportBatches.fileSha256,
+    summary: personnelImportBatches.summary,
+    createdAt: personnelImportBatches.createdAt,
+    updatedAt: personnelImportBatches.updatedAt,
+  }).from(personnelImportBatches).orderBy(desc(personnelImportBatches.createdAt), desc(personnelImportBatches.id));
+}
+
+export async function getPersonnelImportBatch(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [batch] = await db.select().from(personnelImportBatches).where(eq(personnelImportBatches.id, id)).limit(1);
+  return batch ?? null;
+}
+
+export async function upsertPersonnelImportBatch(payload: PersonnelImportPayload, createdBy: number): Promise<PersonnelImportBatchMetadata> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [batch] = await db.insert(personnelImportBatches).values({
+    fileName: payload.fileName,
+    fileSha256: payload.fileSha256,
+    summary: payload.summary,
+    sourceData: payload,
+    createdBy,
+  }).onConflictDoUpdate({
+    target: personnelImportBatches.fileSha256,
+    set: {
+      fileName: payload.fileName,
+      summary: payload.summary,
+      sourceData: payload,
+      updatedAt: new Date(),
+    },
+  }).returning({
+    id: personnelImportBatches.id,
+    fileName: personnelImportBatches.fileName,
+    fileSha256: personnelImportBatches.fileSha256,
+    summary: personnelImportBatches.summary,
+    createdAt: personnelImportBatches.createdAt,
+    updatedAt: personnelImportBatches.updatedAt,
+  });
+  if (!batch) throw new Error("Não foi possível registrar o histórico de importação");
+  return batch;
+}
+
 type TrpcContextUser = {
   role: "user" | "admin";
   personnelRole: PersonnelRole | null;
@@ -2002,7 +2052,7 @@ export async function listPersonnelEmployees(includeInactive = false, includeSen
     isActive: personnelEmployees.isActive,
   };
   return includeSensitive
-    ? db.select({ ...publicFields, cpf: personnelEmployees.cpf, pixKey: personnelEmployees.pixKey })
+    ? db.select({ ...publicFields, cpf: personnelEmployees.cpf, pixKey: personnelEmployees.pixKey, profileData: personnelEmployees.profileData })
       .from(personnelEmployees).where(where).orderBy(personnelEmployees.name)
     : db.select(publicFields).from(personnelEmployees).where(where).orderBy(personnelEmployees.name);
 }

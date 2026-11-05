@@ -16,7 +16,7 @@ function mapRows(value: unknown, project: (row: RecordValue) => RecordValue): un
 
 export function projectPersonnelEmployee<T extends RecordValue>(employee: T, role: PersonnelRole) {
   if (role === "RH" || role === "ADM") return { ...employee };
-  return withoutFields(employee, role === "SUPERVISOR" ? ["cpf", "pixKey", "postId"] : ["cpf", "pixKey"]);
+  return withoutFields(employee, role === "SUPERVISOR" ? ["cpf", "pixKey", "postId", "profileData"] : ["cpf", "pixKey", "profileData"]);
 }
 
 export function projectPersonnelOccurrence<T extends RecordValue>(occurrence: T, role: PersonnelRole) {

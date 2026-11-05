@@ -1,5 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import type { WorkSchedulePattern } from "../shared/personnel-schedules";
+import type { PersonnelEmployeeProfile } from "../shared/personnelEmployeeProfile";
+import type { PersonnelImportPayload, PersonnelImportSummary } from "../shared/personnelImport";
 import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 const updatedAt = () => timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull();
@@ -42,6 +44,7 @@ export const personnelEmployees = pgTable("personnel_employees", {
   name: varchar("name", { length: 255 }).notNull(),
   cpf: varchar("cpf", { length: 14 }).notNull(),
   position: varchar("position", { length: 255 }),
+  profileData: jsonb("profileData").$type<PersonnelEmployeeProfile | null>(),
   postId: integer("postId"),
   pixKey: varchar("pixKey", { length: 255 }),
   post: varchar("post", { length: 255 }).notNull(),
@@ -55,6 +58,22 @@ export const personnelEmployees = pgTable("personnel_employees", {
 
 export type PersonnelEmployee = typeof personnelEmployees.$inferSelect;
 export type InsertPersonnelEmployee = typeof personnelEmployees.$inferInsert;
+
+export const personnelImportBatches = pgTable("personnel_import_batches", {
+  id: serial("id").primaryKey(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileSha256: varchar("fileSha256", { length: 64 }).notNull(),
+  summary: jsonb("summary").$type<PersonnelImportSummary>().notNull(),
+  sourceData: jsonb("sourceData").$type<PersonnelImportPayload>().notNull(),
+  createdBy: integer("createdBy").notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: updatedAt(),
+}, (table) => ({
+  fileSha256Unique: uniqueIndex("uq_personnel_import_batches_file_sha256").on(table.fileSha256),
+}));
+
+export type PersonnelImportBatchRecord = typeof personnelImportBatches.$inferSelect;
+export type InsertPersonnelImportBatch = typeof personnelImportBatches.$inferInsert;
 
 export const personnelWorkSchedules = pgTable("personnel_work_schedules", {
   id: serial("id").primaryKey(),

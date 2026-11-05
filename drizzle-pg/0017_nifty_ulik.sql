@@ -1,0 +1,1 @@
+ALTER TABLE "personnel_employees" ADD COLUMN "profileData" jsonb;

@@ -39,6 +39,9 @@ import { personnelEmployeeEmptyState } from "@/lib/personnelEmptyState";
 import { formatDateInputValue } from "@/lib/reportDateRange";
 import { PersonnelWorkSchedules } from "@/components/PersonnelWorkSchedules";
 import { PersonnelMovementReport } from "@/components/PersonnelMovementReport";
+import { PersonnelEmployeeProfileEditor, countPersonnelProfileFields, personnelEmployeeMatchesSearch } from "@/components/PersonnelEmployeeProfile";
+import type { PersonnelEmployeeProfile } from "@shared/personnelEmployeeProfile";
+import { PersonnelImportHistory } from "@/components/PersonnelImportHistory";
 import { civilDateFromLegacyFt, getFtSettlementPeriod, isCivilDate } from "@shared/personnel-schedules";
 import { civilDateAsLocalDate, formatCivilDate, localCivilToday } from "@/lib/personnelCivilCalendar";
 import { MAX_UPLOAD_FILE_BYTES, PERSONNEL_DOCUMENT_FILE_ACCEPT, resolvePersonnelDocumentMimeType } from "@shared/upload-file-types";
@@ -1274,11 +1277,16 @@ function EmployeesSection({
   const [postId, setPostId] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [profileData, setProfileData] = useState<PersonnelEmployeeProfile>({ fields: {} });
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const createEmployee = trpc.personnel.createEmployee.useMutation();
   const updateEmployee = trpc.personnel.updateEmployee.useMutation();
   const canEdit = role === "RH" || role === "ADM";
   const canManageSensitiveFields = role === "RH" || role === "ADM";
   const canCreate = role === "RH" || role === "ADM";
+  const isSaving = createEmployee.isPending || updateEmployee.isPending;
+  const filteredEmployees = (data?.employees ?? []).filter((employee: any) => personnelEmployeeMatchesSearch(employee, employeeSearch));
+  const activeEmployees = (data?.employees ?? []).filter((employee: any) => employee.isActive).length;
   const reset = () => {
     setEditing(null);
     setName("");
@@ -1287,10 +1295,11 @@ function EmployeesSection({
     setPostId("");
     setPixKey("");
     setIsActive(true);
+    setProfileData({ fields: {} });
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!canEdit || (!editing && !canCreate)) return;
+    if (!canEdit || (!editing && !canCreate) || isSaving) return;
     try {
       if (editing)
         await updateEmployee.mutateAsync({
@@ -1300,6 +1309,7 @@ function EmployeesSection({
           position,
           postId: postId ? Number(postId) : null,
           ...(canManageSensitiveFields ? { pixKey: pixKey || null } : {}),
+          ...(canManageSensitiveFields ? { profileData } : {}),
           isActive,
         });
       else if (canCreate)
@@ -1309,6 +1319,8 @@ function EmployeesSection({
           position,
           postId: postId ? Number(postId) : null,
           pixKey: pixKey || null,
+          profileData,
+          isActive,
         });
       toast.success(
         editing ? "Funcionário atualizado" : "Funcionário cadastrado"
@@ -1356,7 +1368,7 @@ function EmployeesSection({
                 {editing ? "Editar funcionário" : "Novo funcionário"}
               </CardTitle>
               <CardDescription>
-                CPF e PIX permanecem restritos aos perfis RH/ADM autorizados.
+                Ficha cadastral, documentos, endereços e benefícios restritos a RH/ADM.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1372,7 +1384,7 @@ function EmployeesSection({
                   />
                 </div>
                 {canManageSensitiveFields && <div className="space-y-1.5">
-                  <Label htmlFor="employee-cpf">CPF / matrícula</Label>
+                  <Label htmlFor="employee-cpf">Identificador no sistema (CPF / matrícula)</Label>
                   <Input
                     id="employee-cpf"
                     value={cpf}
@@ -1382,15 +1394,15 @@ function EmployeesSection({
                     maxLength={14}
                     required
                   />
+                  <p className="text-xs text-slate-500">Mantido para preservar o histórico. CPF e matrícula separados ficam na ficha completa abaixo.</p>
                 </div>}
                 <div className="space-y-1.5">
-                  <Label htmlFor="employee-position">Cargo / função</Label>
+                  <Label htmlFor="employee-position">Cargo / função (se informado)</Label>
                   <Input
                     id="employee-position"
                     value={position}
                     onChange={event => setPosition(event.target.value)}
                     placeholder="Ex.: Vigia, Controlador de acesso"
-                    required
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1418,6 +1430,7 @@ function EmployeesSection({
                     placeholder="CPF, e-mail, telefone ou chave aleatória"
                   />
                 </div>}
+                {canManageSensitiveFields && <PersonnelEmployeeProfileEditor profile={profileData} onChange={setProfileData} role={role} />}
                 <div className="space-y-1.5">
                   <Label htmlFor="employee-status">Status</Label>
                   <select
@@ -1434,11 +1447,12 @@ function EmployeesSection({
                   <Button
                     type="submit"
                     className="bg-[#0d1b2a] hover:bg-slate-800"
+                    disabled={isSaving}
                   >
-                    {editing ? "Salvar alterações" : "Cadastrar"}
+                    {isSaving ? "Salvando..." : editing ? "Salvar alterações" : "Cadastrar"}
                   </Button>
                   {editing && (
-                    <Button type="button" variant="outline" onClick={reset}>
+                    <Button type="button" variant="outline" onClick={reset} disabled={isSaving}>
                       Cancelar
                     </Button>
                   )}
@@ -1454,16 +1468,21 @@ function EmployeesSection({
               Base cadastrada
             </CardTitle>
             <CardDescription>
-              {data?.employees?.length ?? 0} funcionários ativos
+              {data?.employees?.length ?? 0} cadastrados · {activeEmployees} ativos · {(data?.employees?.length ?? 0) - activeEmployees} inativos
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 space-y-1.5">
+              <Label htmlFor="employee-search">Buscar funcionário</Label>
+              <Input id="employee-search" value={employeeSearch} onChange={event => setEmployeeSearch(event.target.value)} placeholder="Nome, CPF, matrícula ou posto" />
+              <p className="text-xs text-slate-500" aria-live="polite">{filteredEmployees.length} encontrados</p>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[550px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-3">Nome</th>
-                    {canManageSensitiveFields && <th className="px-3 py-3">CPF</th>}
+                    {canManageSensitiveFields && <th className="px-3 py-3">Identificação</th>}
                     <th className="px-3 py-3">Cargo / posto</th>
                     <th className="px-3 py-3">Status</th>
                     {canManageSensitiveFields && <th className="px-3 py-3">PIX</th>}
@@ -1471,13 +1490,16 @@ function EmployeesSection({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(data?.employees ?? []).map((employee: any) => (
+                  {filteredEmployees.map((employee: any) => (
                     <tr key={employee.id}>
                       <td className="px-3 py-3 font-semibold">
                         {employee.name}
+                        {canManageSensitiveFields && <span className="mt-1 block text-xs font-normal text-slate-500">Ficha: {countPersonnelProfileFields(employee.profileData)} campos</span>}
                       </td>
                       {canManageSensitiveFields && <td className="px-3 py-3 text-slate-600">
-                        {employee.cpf}
+                        <span className="block text-xs">Sistema: {employee.cpf}</span>
+                        {employee.profileData?.fields?.registrationNumber && <span className="block text-xs">Matrícula: {employee.profileData.fields.registrationNumber}</span>}
+                        {employee.profileData?.fields?.documentCpf && <span className="block text-xs">CPF: {employee.profileData.fields.documentCpf}</span>}
                       </td>}
                       <td className="px-3 py-3 text-slate-600">
                         <span className="font-semibold">{employee.position || "—"}</span>
@@ -1504,9 +1526,10 @@ function EmployeesSection({
                               setPostId(employee.postId ? String(employee.postId) : "");
                               setPixKey(employee.pixKey || "");
                               setIsActive(employee.isActive);
+                              setProfileData(employee.profileData ?? { fields: {} });
                             }}
                           >
-                            Editar
+                            Editar ficha
                           </Button>
                         </td>
                       )}
@@ -1521,9 +1544,11 @@ function EmployeesSection({
                 description="Cadastre o primeiro funcionário para começar."
               />
             )}
+            {Boolean(data?.employees?.length) && !filteredEmployees.length && <p className="py-6 text-center text-sm text-slate-500">Nenhum funcionário corresponde à busca.</p>}
           </CardContent>
         </Card>
       </div>
+      {canManageSensitiveFields && <PersonnelImportHistory role={role} />}
       {canManageSensitiveFields && (
         <PersonnelWorkSchedules
           employees={(data?.employees ?? []).map((employee: any) => ({

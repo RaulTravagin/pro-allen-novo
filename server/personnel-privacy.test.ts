@@ -36,6 +36,13 @@ const employeeFixture = {
   postId: 4,
   post: "Posto fictício",
   isActive: true,
+  profileData: {
+    fields: {
+      documentCpf: "PROFILE_CPF_SENTINEL_FICTICIO",
+      bankAccountNumber: "PROFILE_BANK_SENTINEL_FICTICIO",
+      homeStreet: "PROFILE_ADDRESS_SENTINEL_FICTICIO",
+    },
+  },
 };
 const occurrenceFixture = {
   id: 91,
@@ -174,6 +181,11 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     expect(dashboard.fts?.[0]).not.toHaveProperty("employeePixKey");
     expect(employees[0]).not.toHaveProperty("cpf");
     expect(employees[0]).not.toHaveProperty("pixKey");
+    expect(dashboard.employees?.[0]).not.toHaveProperty("profileData");
+    expect(employees[0]).not.toHaveProperty("profileData");
+    expect(JSON.stringify({ dashboard, employees })).not.toContain("PROFILE_CPF_SENTINEL_FICTICIO");
+    expect(JSON.stringify({ dashboard, employees })).not.toContain("PROFILE_BANK_SENTINEL_FICTICIO");
+    expect(JSON.stringify({ dashboard, employees })).not.toContain("PROFILE_ADDRESS_SENTINEL_FICTICIO");
 
     const created = await caller.personnel.createOccurrence({
       employeeId: 81,
@@ -236,6 +248,9 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     const dashboard = await caller.personnel.dashboard();
 
     expect(dashboard.employees).toEqual([]);
+    expect(JSON.stringify(dashboard)).not.toContain("PROFILE_CPF_SENTINEL_FICTICIO");
+    expect(JSON.stringify(dashboard)).not.toContain("PROFILE_BANK_SENTINEL_FICTICIO");
+    expect(JSON.stringify(dashboard)).not.toContain("PROFILE_ADDRESS_SENTINEL_FICTICIO");
     expect(dashboard.occurrences).toEqual([]);
     expect(dashboard.summary.pendingCount).toBe(2);
     expect(dashboard.fts?.[0]).not.toHaveProperty("employeePixKey");
@@ -250,9 +265,11 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     const employees = await caller.personnel.employees();
 
     expect(dashboard.employees?.[0]).toMatchObject({ cpf: "CPF-FICTICIO-0001", pixKey: "PIX-FICTICIO-0001" });
+    expect(dashboard.employees?.[0]?.profileData?.fields).toMatchObject({ documentCpf: "PROFILE_CPF_SENTINEL_FICTICIO" });
     expect(dashboard.occurrences?.[0]).toHaveProperty("documentUrl", occurrenceFixture.documentUrl);
     expect(dashboard.occurrences?.[0]).not.toHaveProperty("documentKey");
     expect(employees[0]).toMatchObject({ cpf: "CPF-FICTICIO-0001", pixKey: "PIX-FICTICIO-0001" });
+    expect(employees[0]?.profileData?.fields).toMatchObject({ bankAccountNumber: "PROFILE_BANK_SENTINEL_FICTICIO" });
   });
 
   it("limita o endpoint de pessoal do Gestor a contagens agregadas", async () => {
@@ -276,7 +293,9 @@ describe("proteção de dados pessoais nas APIs de pessoal", () => {
     const reviewed = await caller.personnel.reviewOccurrence({ id: 91, status: "APPROVED" });
 
     expect(dashboard.employees?.[0]).toMatchObject({ cpf: "CPF-FICTICIO-0001", pixKey: "PIX-FICTICIO-0001" });
+    expect(dashboard.employees?.[0]?.profileData?.fields).toMatchObject({ documentCpf: "PROFILE_CPF_SENTINEL_FICTICIO" });
     expect(employees[0]).toMatchObject({ cpf: "CPF-FICTICIO-0001", pixKey: "PIX-FICTICIO-0001" });
+    expect(employees[0]?.profileData?.fields).toMatchObject({ bankAccountNumber: "PROFILE_BANK_SENTINEL_FICTICIO" });
     expect(dashboard.occurrences?.[0]).toHaveProperty("documentUrl", occurrenceFixture.documentUrl);
     expect(dashboard.occurrences?.[0]).toHaveProperty("documentName", occurrenceFixture.documentName);
     expect(dashboard.occurrences?.[0]).not.toHaveProperty("documentKey");

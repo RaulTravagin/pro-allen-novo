@@ -10,6 +10,8 @@ import {
   normalizePersonnelIdentifier,
   personnelIdentifierSchema,
 } from "../shared/personnelIdentifier";
+import { personnelEmployeeProfileSchema } from "../shared/personnelEmployeeProfile";
+import { personnelImportPayloadSchema } from "../shared/personnelImport";
 import { TRPCError } from "@trpc/server";
 import { RouteClosureError } from "./route-closure";
 import { selectOpenSupervisorRoute } from "./supervisor-route-selection";
@@ -217,6 +219,34 @@ export const appRouter = router({
   }),
 
   personnel: router({
+    importBatches: protectedProcedure.query(async ({ ctx }) => {
+      const role = db.getPersonnelRole(ctx.user);
+      if (role !== "RH" && role !== "ADM") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar o histórico de importações" });
+      }
+      return db.listPersonnelImportBatches();
+    }),
+
+    importBatch: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }).strict())
+      .query(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode consultar o histórico de importações" });
+        }
+        return db.getPersonnelImportBatch(input.id);
+      }),
+
+    recordImportBatch: protectedProcedure
+      .input(personnelImportPayloadSchema)
+      .mutation(async ({ ctx, input }) => {
+        const role = db.getPersonnelRole(ctx.user);
+        if (role !== "RH" && role !== "ADM") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente RH ou ADM pode registrar o histórico de importações" });
+        }
+        return db.upsertPersonnelImportBatch(input, ctx.user.id);
+      }),
+
     dashboard: protectedProcedure.query(async ({ ctx }) => {
       const role = db.getPersonnelRole(ctx.user);
       const data = await db.getPersonnelDashboardData(ctx.user.id, role);
@@ -336,9 +366,11 @@ export const appRouter = router({
       .input(z.object({
         name: z.string().trim().min(2, "Informe o nome do funcionário").max(255),
         cpf: personnelIdentifierSchema,
-        position: z.string().trim().min(2, "Informe o cargo/função").max(255),
+        position: z.string().trim().max(255).transform((value) => value || null).nullable(),
         postId: z.number().int().positive("Selecione o posto principal").nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
+        profileData: personnelEmployeeProfileSchema.nullable().optional(),
+        isActive: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const role = db.getPersonnelRole(ctx.user);
@@ -358,9 +390,10 @@ export const appRouter = router({
         id: z.number().int().positive(),
         name: z.string().trim().min(2).max(255),
         cpf: personnelIdentifierSchema.optional(),
-        position: z.string().trim().min(2).max(255),
+        position: z.string().trim().max(255).transform((value) => value || null).nullable(),
         postId: z.number().int().positive().nullable(),
         pixKey: z.string().trim().max(255).optional().nullable(),
+        profileData: personnelEmployeeProfileSchema.nullable().optional(),
         isActive: z.boolean(),
       }))
       .mutation(async ({ ctx, input }) => {
